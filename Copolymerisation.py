@@ -264,31 +264,44 @@ fig3.savefig('Copolydiagram', bbox_inches='tight', dpi=300, transparent=False)
 fig4, ax4 = plt.subplots()
 
 # qe = {
-# "MMA_exp" : [0.73281289 ,	-1.296463646],
+# "MMA exp." : [0.73281289 ,	-1.296463646],
+# "MMA lit."	:[0.78,	0.4],
 # "Styrol":	[1,	-0.8],
-# "MMA_lit"	:[0.74,	0.4],
-# "acrolein":	[0.85,	0.73],
-# "vibylchlorid":	[0.044,	-0.2] }
+# "Acrylonitrile":	[0.48,	1.23],
+# "1,3-Butadiene":	[1.7,	-0.5], 
+# "Isobutylen" : [0.023, -1.2],
+# "Isoprene" : [1.99, -0.55],
+# "Maleic anhydride" , [0.86, 3.69]
+#}
 
 qe = {
-"2":	[1,	-0.8],
-"3"	:[0.74,	0.4],
-"4":	[0.85,	0.73],
-"5":	[0.044,	-0.2] }
+"2":	[0.78,	0.4],
+"3"	:[1,	-0.8],
+"4":	[0.48,	1.23],
+"5":	[1.7,	-0.5], 
+"6" : [0.023, -1.2],
+# "7": [1.99, -0.55],
+"7" : [0.86, 3.69],
+}
 
 plt.scatter(0.73281289 , -1.296463646, marker = "x")
-
-for i in range(2,6):
+plt.text(0.73281289 , -1.296463646-.35, "MMA exp.")
+legend4 = ["Quadrant separation linie", "MMA exp.", "MMA lit.", "Styrol",
+           "Acrylonitrile", "1,3-Butadiene", "Isobutylen", #"Isoprene", 
+           "Maleic anhydride"]
+for i in range(2,8):
     plt.scatter(qe[str(i)][0], qe[str(i)][1])
+    plt.text(qe[str(i)][0], qe[str(i)][1]-.35, legend4[i])
 
 ax4.set_xlabel("Q")
 ax4.set_ylabel("e")
-ax4.set_xlim(0,1.1)
-ax4.set_ylim(-2,2)
+ax4.set_xlim(-.5,2.5)
+ax4.set_ylim(-2,4)
 
-legend4 = ["Quadrant separation linie", "MMA_exp", "Styrol",  "MMA_lit", "acrolein", "vibylchlorid"]
+legend4 = ["Quadrant separation linie", "MMA exp.", "MMA lit.", "Styrol",
+           "Acrylonitrile", "1,3-Butadiene", "Isobutylen","Isoprene", "Maleic anhydride"]
 ax4.axvline(x=0.35, linestyle = "dotted")
-ax4.legend(legend4)
+# ax4.legend(legend4)
 
 ax4.axhline(y=0, color= "k", linewidth=1)
 fig4.savefig('qe-diagram', bbox_inches='tight', dpi=300, transparent=False)
