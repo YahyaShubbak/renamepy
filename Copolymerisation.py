@@ -304,4 +304,4 @@ ax4.axvline(x=0.35, linestyle = "dotted")
 # ax4.legend(legend4)
 
 ax4.axhline(y=0, color= "k", linewidth=1)
-fig4.savefig('qe-diagram', bbox_inches='tight', dpi=300, transparent=False)
+fig4.savefig('qe-diagram', bbox_inches='tight', dpi=300,format='png', transparent=False)
