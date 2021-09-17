@@ -148,4 +148,5 @@ fig4.savefig(datapath+"Export/"+'Particle_plot', bbox_inches='tight', dpi=300, t
 
 # #%%
 
+# fig2 = px.scatter(df.x, df.y)
 # fig2.show()
