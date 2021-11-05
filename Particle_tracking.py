@@ -19,7 +19,7 @@ if not os.path.exists(datapath+"Export/"):
 hd_files = sorted(glob.glob(datapath+"*.h5"), key=os.path.getmtime)
 # hdtest = pd.read_hdf
 
-df = pd.read_hdf(hd_files[0])
+df = pd.read_hdf(hd_files[16])
 # xy = plt.plot(df.x, df.y)
 
 # df.hist()

@@ -9,7 +9,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.colors as mcolors
 
-excel_file = pd.read_excel('C:/Users/yshub/Dropbox/01_Uni Valenica/01_Spin Crossover research/Databook.xlsx',sheet_name='SCO6_50nm')
+datapath = 'C:/Users/yshub/Dropbox/01_Uni Valenica/01_Spin Crossover research/'
+excel_file = pd.read_excel(datapath+'Databook.xlsx',sheet_name='SCO6_50nm')
 
 t = excel_file['t / minutes']
 T = excel_file['T / K']
@@ -72,3 +73,27 @@ ax2.tick_params(left=True, right=True,top=True,direction='in')
 # cbar = fig.colorbar(sc, orientation='vertical', label= 'rate / A / s')
 
 plt.show()
+
+fig3, ax3 = plt.subplots(3,1, sharex=True)
+
+ax3[0].scatter(t, T, marker='.')
+# ax3[0].set_xlabel("T / K")
+ax3[0].set_ylabel("Temperature / K")
+ax3[0].tick_params( bottom=True, left=True, right=True,top=True,direction='in')
+ax3[0].vlines(x=18, ymin=min(T), ymax=max(T), color='gray', linestyle='dotted')
+
+
+ax3[2].scatter(t, P*10**7, marker='.')
+ax3[2].set_ylabel("Pressure / $10^{-7}\,$mbar")
+ax3[2].tick_params(bottom=True, left=True, right=True,top=True,direction='in')
+ax3[2].set_xlabel("time / 60 s")
+ax3[2].vlines(x=18, ymin=min(P*10**7), ymax=max(P*10**7), color='gray', linestyle='dotted')
+
+ax3[1].scatter(t, R, marker='.')
+ax3[1].set_ylabel("Rate / $\AA$ / s")
+ax3[1].tick_params( bottom=True, left=True, right=True,top=True,direction='in')
+ax3[1].vlines(x=18, ymin=min(R), ymax=max(R), color='gray', linestyle='dotted')
+
+plt.savefig(datapath+'p_T_R_plot.png', bbox_inches='tight', dpi=300, transparent=False)
+
+
