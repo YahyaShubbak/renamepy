@@ -19,7 +19,7 @@ if not os.path.exists(datapath+"Export/"):
 hd_files = sorted(glob.glob(datapath+"*.h5"), key=os.path.getmtime)
 # hdtest = pd.read_hdf
 
-df = pd.read_hdf(hd_files[16])
+df = pd.read_hdf(hd_files[0])
 # xy = plt.plot(df.x, df.y)
 
 # df.hist()
@@ -98,6 +98,8 @@ for i in range(max(df["particle"].unique())):
     x = df.x[df['particle']==i]
     y = df.y[df['particle']==i]
     ax4.plot(x, y)
+    ax4.set_xlim(100,400)
+    ax4.set_ylim(200,500)
 # ax4.add_patch(Rectangle((680,280), width=140, height=60, 
                         # edgecolor = 'red',fill=False, lw=1))
 fig4.show()
