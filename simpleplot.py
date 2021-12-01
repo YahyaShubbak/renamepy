@@ -99,24 +99,5 @@ ax3[1].vlines(x=18, ymin=min(R), ymax=max(R), color='gray', linestyle='dotted')
 plt.savefig(datapath+'p_T_R_plot.png', bbox_inches='tight', dpi=300, transparent=False)
 
 
-#%%
-datapath = 'C:/Users/yshub/Dropbox/Git/Master-Thesis-Spin-Crossover/Images/Theory/'
-# if not os.path.exists(datapath+"Export/"):
-#     os.makedirs(datapath+"Export/")
-fig4, ax4 = plt.subplots()
-Tc=150
-n= [1,5,100]
-T=np.linspace(1,300, 1000000)
 
-for i in n:
-    y = 1/ (1 + np.exp((i*600/con.R)*(1/T-1/Tc)))
-    ax4.plot(T,y)
-
-ax4.tick_params(left=True, right=True,top=True,direction='in')
-ax4.set_xlabel('Temperature / K')
-ax4.set_ylabel('HS molar fraction $x$')
-ax4.set_xlim(0,300)
-ax4.set_ylim(-0.1,1.1)
-plt.rc('font', size=18) #fontsize of the legend
-fig4.savefig(datapath+'HS_molar_fraction.png' , bbox_inches='tight', dpi=300, transparent=False)
 
