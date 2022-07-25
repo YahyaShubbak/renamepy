@@ -8,7 +8,7 @@ Created on Fri Dec 31 01:38:43 2021
 import pdf2image as pdf
 import numpy as np
 
-pdffile = pdf.convert_from_path('C:/Users/yshub/Desktop/Master_Thesis_Spin_Crossover (10).pdf')
+pdffile = pdf.convert_from_path('C:/Users/yshub/Desktop/Master_Thesis_Spin_Crossover (13).pdf')
 bw=0
 color=0
 for image in pdffile:
