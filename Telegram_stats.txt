@@ -1,0 +1,3 @@
+conda activate telegram
+cd  C:\Users\yshub\Documents\GitHub\TelegramChatStats>
+ python .\telegram-statistics.py -i .\result.json -c "245478515"
