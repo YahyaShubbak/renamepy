@@ -258,12 +258,23 @@ fig.add_trace(go.Scatter(
 # ...existing code...
 
 # Bottom plot: Cumulative cost comparison with separate lines
+# ...existing code...
+
 fig.add_trace(go.Scatter(
     x=all_years[:kneader_added_idx],
     y=buy_costs_1,
     name="Brot beim Bäcker (bis 2024)",
     mode='lines+markers',
-    line=dict(color='blue')
+    line=dict(color='blue'),
+    customdata=[
+        (breads_per_year * (i + 1),)  # cumulative breads consumed
+        for i in range(kneader_added_idx)
+    ],
+    hovertemplate=(
+        "Jahr: %{x}<br>"
+        "Kumulierte Kosten: %{y:.2f} €<br>"
+        "Verzehrte Brote: %{customdata[0]:.0f}<extra></extra>"
+    )
 ), row=2, col=1)
 
 fig.add_trace(go.Scatter(
@@ -276,7 +287,8 @@ fig.add_trace(go.Scatter(
         (
             elec_costs_per_bread[i] + flour_costs_per_bread[i],
             elec_costs_per_bread[i],
-            flour_costs_per_bread[i]
+            flour_costs_per_bread[i],
+            breads_per_year * (i + 1)  # cumulative breads consumed
         ) for i in range(kneader_added_idx)
     ],
     hovertemplate=(
@@ -284,7 +296,8 @@ fig.add_trace(go.Scatter(
         "Kumulierte Kosten: %{y:.2f} €<br>"
         "Kosten pro Laib: %{customdata[0]:.2f} €<br>"
         "davon Stromkosten: %{customdata[1]:.2f} €<br>"
-        "davon Mehlkosten: %{customdata[2]:.2f} €<extra></extra>"
+        "davon Mehlkosten: %{customdata[2]:.2f} €<br>"
+        "Verzehrte Brote: %{customdata[3]:.0f}<extra></extra>"
     )
 ), row=2, col=1)
 
@@ -293,7 +306,16 @@ fig.add_trace(go.Scatter(
     y=buy_costs_2,
     name="Brot beim Bäcker (ab 2025)",
     mode='lines+markers',
-    line=dict(color='blue', dash='dash')
+    line=dict(color='blue', dash='dash'),
+    customdata=[
+        (breads_per_year * (i + 1),)
+        for i in range(len(all_years) - kneader_added_idx)
+    ],
+    hovertemplate=(
+        "Jahr: %{x}<br>"
+        "Kumulierte Kosten: %{y:.2f} €<br>"
+        "Verzehrte Brote: %{customdata[0]:.0f}<extra></extra>"
+    )
 ), row=2, col=1)
 
 fig.add_trace(go.Scatter(
@@ -306,7 +328,8 @@ fig.add_trace(go.Scatter(
         (
             elec_costs_per_bread[i] + flour_costs_per_bread[i],
             elec_costs_per_bread[i],
-            flour_costs_per_bread[i]
+            flour_costs_per_bread[i],
+            breads_per_year * (i + 1)
         ) for i in range(kneader_added_idx, len(all_years))
     ],
     hovertemplate=(
@@ -314,10 +337,12 @@ fig.add_trace(go.Scatter(
         "Kumulierte Kosten: %{y:.2f} €<br>"
         "Kosten pro Laib: %{customdata[0]:.2f} €<br>"
         "davon Stromkosten: %{customdata[1]:.2f} €<br>"
-        "davon Mehlkosten: %{customdata[2]:.2f} €<extra></extra>"
+        "davon Mehlkosten: %{customdata[2]:.2f} €<br>"
+        "Verzehrte Brote: %{customdata[3]:.0f}<extra></extra>"
     )
 ), row=2, col=1)
 
+# ...existing code...
 
 # ...existing code...
 # --- Add parameter annotation to bottom plot ---
@@ -327,7 +352,7 @@ param_text = (
     f"Brote/Backvorgang: {loaves_per_batch}<br>"
     f"Kneter: {kneader_price} €<br>"
     f"Kneten: {kneader_power} kW × {knead_time} h<br>"
-    f"Vorheizen: {oven_power} kW × {preheat_time} h"
+    f"Vorheizen: {oven_power} kW × {preheat_time} h<br>"
     f"Backen: {oven_power} kW × {bake_time} h<br>"
 )
 fig.add_annotation(
@@ -373,7 +398,35 @@ if amortized_idx is not None:
 fig.update_yaxes(title_text="Brotpreis (EUR/loaf)", row=1, col=1, secondary_y=False)
 fig.update_yaxes(title_text="Strompreis (ct/kWh)", row=1, col=1, secondary_y=True)
 fig.update_yaxes(title_text="EUR (kumuliert)", row=2, col=1)
-fig.update_xaxes(title_text="Jahr", row=2, col=1)
+
+# Set x-axis to show years as default, but allow monthly ticks when zoomed in
+fig.update_xaxes(
+    title_text="Jahr",
+    row=1, col=1,
+    dtick="M12",  # Default: one tick per year
+    tickformat="%Y",  # Show only year by default
+    ticklabelmode="period",
+    ticklabelstep=1,
+    rangeslider_visible=False,  # Optional: add a range slider for easier zooming
+    tickformatstops=[
+        dict(dtickrange=[None, "M1"], value="%b %Y"),   # If zoomed in to months, show "Jan 2025"
+        dict(dtickrange=["M1", None], value="%Y")       # Otherwise, show just the year
+    ]
+)
+fig.update_xaxes(
+    title_text="Jahr",
+    row=2, col=1,
+    dtick="M12",  # Default: one tick per year
+    tickformat="%Y",  # Show only year by default
+    ticklabelmode="period",
+    ticklabelstep=1,
+    rangeslider_visible=False,  # Optional: add a range slider for easier zooming
+    tickformatstops=[
+        dict(dtickrange=[None, "M1"], value="%b %Y"),   # If zoomed in to months, show "Jan 2025"
+        dict(dtickrange=["M1", None], value="%Y")       # Otherwise, show just the year
+    ]
+)
+
 fig.update_layout(
     height=1400,  # Increased height for taller plots
     legend=dict(x=0.01, y=0.99),
