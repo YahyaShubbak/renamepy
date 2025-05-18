@@ -121,40 +121,48 @@ all_elec_full = np.concatenate([all_elec, future_elec])
 all_bread_full = np.concatenate([all_bread, future_bread])
 all_flour_markenmehl = np.concatenate([all_flour_markenmehl, future_flour])
 
-# --- USER INPUT ---
-breads_per_week = int(input("How many breads do you eat per week? (e.g. 3): "))
-loaves_per_batch = 2  # how many loaves fit in the oven at once
-# Calculate number of batches needed per week
-batches_per_week = int(np.ceil(breads_per_week / loaves_per_batch))
-
-
 kneader_price = 1000  # EUR
 kneader_power = 0.5  # kW
 knead_time = 0.25  # hours (15 min)
 oven_power = 0.93  # kW
 bake_time = 0.75  # hours
 preheat_time = 0.75  # hours
+weeks_per_year = 52
+flour_per_bread_kg = 0.6  # 800g
+
+# --- USER INPUT ---
+breads_per_week = int(input("How many breads do you eat per week? (e.g. 3): "))
+loaves_per_batch = int(input("How many loaves do you bake at once? (e.g. 4): "))
+oven_capacity = 2  # how many loaves fit in the oven at once
 
 weeks_per_year = 52
 breads_per_year = breads_per_week * weeks_per_year
 
-# Total oven time per week
-total_bake_time_per_week = batches_per_week * bake_time
-total_preheat_time_per_week = preheat_time
+# Calculate how many baking sessions per year
+baking_sessions_per_year = int(np.ceil(breads_per_year / loaves_per_batch))
 
-flour_per_bread_kg = 0.6  # 800g
+# For each session, how many batches are needed?
+batches_per_session = int(np.ceil(loaves_per_batch / oven_capacity))
 
+# Total oven time per year
+total_bake_time_per_year = baking_sessions_per_year * batches_per_session * bake_time
+total_preheat_time_per_year = baking_sessions_per_year * preheat_time
 
-# Home baking cost per bread (electricity only, EUR)
-# For cost per bread, calculate per batch
-kWh_per_bread = (
-    kneader_power * knead_time +
-    oven_power * (bake_time * batches_per_week + preheat_time * batches_per_week)
-) / breads_per_week
+# Kneading time per year (assuming you knead once per session)
+total_knead_time_per_year = baking_sessions_per_year * knead_time * kneader_power
 
+# Total kWh per year
+total_kWh_per_year = (
+    total_knead_time_per_year +
+    oven_power * (total_bake_time_per_year + total_preheat_time_per_year)
+)
+
+# Per bread
+kWh_per_bread = total_kWh_per_year / breads_per_year
+
+# Update cost calculations
 elec_costs_per_bread = all_elec_full / 100 * kWh_per_bread  # ct to EUR
 flour_costs_per_bread = flour_per_bread_kg * all_flour_markenmehl
-
 
 
 # Total cost per year
@@ -190,12 +198,12 @@ for i in range(kneader_added_idx):
 for i in range(kneader_added_idx, len(all_years)):
     annual_bake_cost = (elec_costs_per_bread[i] + flour_costs_per_bread[i]) * breads_per_year
     if i == kneader_added_idx:
-        buy_costs_2.append(0)
-        bake_costs_2.append(kneader_price)
+        # Start at the first value of the first phase again (not cumulative)
+        buy_costs_2.append(all_bread_full[i] * breads_per_year)
+        bake_costs_2.append(kneader_price + annual_bake_cost)
     else:
         buy_costs_2.append(buy_costs_2[-1] + all_bread_full[i] * breads_per_year)
         bake_costs_2.append(bake_costs_2[-1] + annual_bake_cost)
-
 
 # Find amortization year (start checking only from the year the kneader was bought, after reset)
 amortization_mask = np.array(bake_costs_2) < np.array(buy_costs_2)
@@ -264,6 +272,7 @@ fig.add_trace(go.Scatter(
 param_text = (
     f"<b>Parameter:</b><br>"
     f"Brote/Woche: {breads_per_week}<br>"
+    f"Brote/Backvorgang: {loaves_per_batch}<br>"
     f"Kneter: {kneader_price} €<br>"
     f"Kneten: {kneader_power} kW × {knead_time} h<br>"
     f"Vorheizen: {oven_power} kW × {preheat_time} h"
