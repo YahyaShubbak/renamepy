@@ -255,19 +255,71 @@ fig.add_trace(go.Scatter(
 # ...existing code...
 
 # Bottom plot: Cumulative cost comparison with separate lines
+# ...existing code...
+
+# Bottom plot: Cumulative cost comparison with separate lines
 fig.add_trace(go.Scatter(
-    x=all_years[:kneader_added_idx], y=buy_costs_1, name="Brot beim Bäcker (bis 2024)", mode='lines+markers', line=dict(color='blue')
-), row=2, col=1)
-fig.add_trace(go.Scatter(
-    x=all_years[:kneader_added_idx], y=bake_costs_1, name="Brot zu Hause (bis 2024)", mode='lines+markers', line=dict(color='orange')
-), row=2, col=1)
-fig.add_trace(go.Scatter(
-    x=all_years[kneader_added_idx:], y=buy_costs_2, name="Brot beim Bäcker (ab 2025)", mode='lines+markers', line=dict(color='blue', dash='dash')
-), row=2, col=1)
-fig.add_trace(go.Scatter(
-    x=all_years[kneader_added_idx:], y=bake_costs_2, name="Brot zu Hause (ab 2025, mit Kneter)", mode='lines+markers', line=dict(color='orange', dash='dash')
+    x=all_years[:kneader_added_idx],
+    y=buy_costs_1,
+    name="Brot beim Bäcker (bis 2024)",
+    mode='lines+markers',
+    line=dict(color='blue')
 ), row=2, col=1)
 
+fig.add_trace(go.Scatter(
+    x=all_years[:kneader_added_idx],
+    y=bake_costs_1,
+    name="Brot zu Hause (bis 2024)",
+    mode='lines+markers',
+    line=dict(color='orange'),
+    customdata=[
+        (
+            elec_costs_per_bread[i] + flour_costs_per_bread[i],
+            elec_costs_per_bread[i],
+            flour_costs_per_bread[i]
+        ) for i in range(kneader_added_idx)
+    ],
+    hovertemplate=(
+        "Jahr: %{x}<br>"
+        "Kumulierte Kosten: %{y:.2f} €<br>"
+        "Kosten pro Laib: %{customdata[0]:.2f} €<br>"
+        "davon Stromkosten: %{customdata[1]:.2f} €<br>"
+        "davon Mehlkosten: %{customdata[2]:.2f} €<extra></extra>"
+    )
+), row=2, col=1)
+
+fig.add_trace(go.Scatter(
+    x=all_years[kneader_added_idx:],
+    y=buy_costs_2,
+    name="Brot beim Bäcker (ab 2025)",
+    mode='lines+markers',
+    line=dict(color='blue', dash='dash')
+), row=2, col=1)
+
+fig.add_trace(go.Scatter(
+    x=all_years[kneader_added_idx:],
+    y=bake_costs_2,
+    name="Brot zu Hause (ab 2025, mit Kneter)",
+    mode='lines+markers',
+    line=dict(color='orange', dash='dash'),
+    customdata=[
+        (
+            elec_costs_per_bread[i] + flour_costs_per_bread[i],
+            elec_costs_per_bread[i],
+            flour_costs_per_bread[i]
+        ) for i in range(kneader_added_idx, len(all_years))
+    ],
+    hovertemplate=(
+        "Jahr: %{x}<br>"
+        "Kumulierte Kosten: %{y:.2f} €<br>"
+        "Kosten pro Laib: %{customdata[0]:.2f} €<br>"
+        "davon Stromkosten: %{customdata[1]:.2f} €<br>"
+        "davon Mehlkosten: %{customdata[2]:.2f} €<extra></extra>"
+    )
+), row=2, col=1)
+
+
+# ...existing code...
 # --- Add parameter annotation to bottom plot ---
 param_text = (
     f"<b>Parameter:</b><br>"
