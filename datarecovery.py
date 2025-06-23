@@ -10,9 +10,10 @@ import numpy as np
 
 
 # Konfiguration
-ROOT_DIR = r'F:\Backup'
-ZIEL_DIR = r'F:\Backup_sortiert'
-
+# ROOT_DIR = r'F:\Backup'
+# ZIEL_DIR = r'F:\Backup_sortiert'
+# ROOT_DIR = r'F:\Backup'
+ZIEL_DIR = r'F:\test'
 
 PATTERNS = [
     (
@@ -185,6 +186,88 @@ def plot_histogramme_fuer_dublikate_ordner(ziel_dir):
             plt.ylabel('Anzahl Dateien')
             plt.show()
 
+def sortiere_fraktionen_mit_zwischenordner(ordnerpfad):
+    dublikate_ordner = os.path.join(ordnerpfad, "dublikate")
+    zwischenordner = os.path.join(ordnerpfad, "zwischenordner")
+    os.makedirs(zwischenordner, exist_ok=True)
+
+    # Alle Dateien und Änderungszeiten sammeln
+    dateien = []
+    for fname in os.listdir(ordnerpfad):
+        fpath = os.path.join(ordnerpfad, fname)
+        if os.path.isfile(fpath):
+            ts = os.path.getmtime(fpath)
+            dateien.append((fpath, fname, ts, "haupt"))
+    if os.path.isdir(dublikate_ordner):
+        for fname in os.listdir(dublikate_ordner):
+            fpath = os.path.join(dublikate_ordner, fname)
+            if os.path.isfile(fpath):
+                ts = os.path.getmtime(fpath)
+                dateien.append((fpath, fname, ts, "dublikate"))
+    if not dateien:
+        return
+
+    # Fraktionen bestimmen
+    sekunden_liste = [datetime.fromtimestamp(ts).hour * 3600 + datetime.fromtimestamp(ts).minute * 60 + datetime.fromtimestamp(ts).second for _, _, ts, _ in dateien]
+    fraktionen = finde_fraktionen(sekunden_liste, n_fraktionen=2)
+    if len(fraktionen) < 2:
+        # Nur eine Fraktion gefunden: alles bleibt wie es ist, keine Sortierung nötig
+        return
+
+    idx_groß = 0 if len(fraktionen[0]) >= len(fraktionen[1]) else 1
+    große_fraktion = set(fraktionen[idx_groß])
+    kleine_fraktion = set(fraktionen[1-idx_groß])
+
+    # 1. Dateien im dublikate-Ordner, die zur großen Fraktion gehören, in zwischenordner verschieben
+    for fpath, fname, ts, location in dateien:
+        sek = datetime.fromtimestamp(ts).hour * 3600 + datetime.fromtimestamp(ts).minute * 60 + datetime.fromtimestamp(ts).second
+        if location == "dublikate" and sek in große_fraktion:
+            zielpfad = os.path.join(zwischenordner, fname)
+            base, ext = os.path.splitext(fname)
+            count = 1
+            while os.path.exists(zielpfad):
+                zielpfad = os.path.join(zwischenordner, f"{base}_fr1_{count}{ext}")
+                count += 1
+            shutil.move(fpath, zielpfad)
+
+    # 2. Dateien der kleinen Fraktion in dublikate-Ordner verschieben
+    os.makedirs(dublikate_ordner, exist_ok=True)
+    for fpath, fname, ts, location in dateien:
+        sek = datetime.fromtimestamp(ts).hour * 3600 + datetime.fromtimestamp(ts).minute * 60 + datetime.fromtimestamp(ts).second
+        if sek in kleine_fraktion:
+            zielpfad = os.path.join(dublikate_ordner, fname)
+            base, ext = os.path.splitext(fname)
+            count = 1
+            while os.path.exists(zielpfad):
+                zielpfad = os.path.join(dublikate_ordner, f"{base}_fr2_{count}{ext}")
+                count += 1
+            shutil.move(fpath, zielpfad)
+
+    # 3. Dateien aus zwischenordner zurück in Hauptordner verschieben
+    for fname in os.listdir(zwischenordner):
+        fpath = os.path.join(zwischenordner, fname)
+        if os.path.isfile(fpath):
+            zielpfad = os.path.join(ordnerpfad, fname)
+            base, ext = os.path.splitext(fname)
+            count = 1
+            while os.path.exists(zielpfad):
+                zielpfad = os.path.join(ordnerpfad, f"{base}_fr1_{count}{ext}")
+                count += 1
+            shutil.move(fpath, zielpfad)
+    try:
+        if not os.listdir(zwischenordner):
+            os.rmdir(zwischenordner)
+    except Exception:
+        pass
+
+# Beispielaufruf für alle Ordner:
+def sortiere_alle_ordner_nach_fraktion_mit_zwischenordner(ziel_dir):
+    ordnernamen = [o for o in os.listdir(ziel_dir) if os.path.isdir(os.path.join(ziel_dir, o))]
+    for ordnername in tqdm(ordnernamen, desc="Fraktionssortierung"):
+        ordnerpfad = os.path.join(ziel_dir, ordnername)
+        sortiere_fraktionen_mit_zwischenordner(ordnerpfad)
+
+
 def main():
     # print("Sammle alle passenden Dateien...")
     # files, andere_files = collect_files(ROOT_DIR)
@@ -193,10 +276,13 @@ def main():
     # print(f"{len(andere_files)} andere Dateien gefunden. Verschiebe diese nach 'Andere'...")
     # verschiebe_andere_dateien(andere_files, ZIEL_DIR)
     # print("Fertig! Dateien wurden verschoben. Bei Duplikaten wurde ein Unterordner 'dublikate' angelegt.")
-    ZIEL_DIR = r'F:\Backup_sortiert\vermutlich in paper'
+    
+    # ZIEL_DIR = r'F:\Backup_sortiert\vermutlich in paper'
     plot_histogramme_fuer_dublikate_ordner(ZIEL_DIR)
-    # plt.show()
-
+    plt.show()
+    sortiere_alle_ordner_nach_fraktion_mit_zwischenordner(ZIEL_DIR)
+    plot_histogramme_fuer_dublikate_ordner(ZIEL_DIR)
+    plt.show()
 
 if __name__ == "__main__":
     main()
