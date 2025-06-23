@@ -11,9 +11,10 @@ import numpy as np
 
 # Konfiguration
 # ROOT_DIR = r'F:\Backup'
-# ZIEL_DIR = r'F:\Backup_sortiert'
+ZIEL_DIR = r'F:\Backup_sortiert'
 # ROOT_DIR = r'F:\Backup'
-ZIEL_DIR = r'F:\test'
+# ZIEL_DIR = r'F:\Test'
+EXPORT_FOLDER = r'F:\Export'
 
 PATTERNS = [
     (
@@ -125,7 +126,7 @@ def finde_fraktionen(sekunden_liste, n_fraktionen=2, min_diff_sec=600):
             fraktionen.append(fraktion)
     return fraktionen
 
-def plot_histogramme_fuer_dublikate_ordner(ziel_dir):
+def plot_histogramme_fuer_dublikate_ordner(ziel_dir, export_folder=None, suffix=""):
     ordnernamen = [o for o in os.listdir(ziel_dir) if os.path.isdir(os.path.join(ziel_dir, o))]
     for ordnername in tqdm(ordnernamen, desc="Histogramme werden erstellt"):
         ordnerpfad = os.path.join(ziel_dir, ordnername)
@@ -151,8 +152,9 @@ def plot_histogramme_fuer_dublikate_ordner(ziel_dir):
                 continue
             # --- Fraktionen finden ---
             fraktionen = finde_fraktionen(all_secs, n_fraktionen=2)
-            # Anzahl der Fraktionen für den Plot-Titel
             anzahl_fraktionen = sum(1 for f in fraktionen if f)
+            fraktions_anzahlen = [len(f) for f in fraktionen]
+            gesamtanzahl = len(all_secs)
             min_sec = min(all_secs)
             max_sec = max(all_secs)
             xlim_min = max(0, min_sec - 600)
@@ -160,13 +162,15 @@ def plot_histogramme_fuer_dublikate_ordner(ziel_dir):
             xticks = list(range(xlim_min, xlim_max + 1, 60))
             xticklabels = [f"{s//3600:02d}:{(s%3600)//60:02d}" for s in xticks]
             bins = (xlim_max - xlim_min) // 60  # 1-Minuten-Bins
+
+            # Histogramme plotten
             plt.hist(
                 haupt_secs,
                 bins=bins,
                 range=(xlim_min, xlim_max),
                 color='tab:blue',
                 alpha=0.7,
-                label='Original',
+                label=f'Original ({len(haupt_secs)})',
                 edgecolor='black'
             )
             if dubl_secs:
@@ -176,14 +180,23 @@ def plot_histogramme_fuer_dublikate_ordner(ziel_dir):
                     range=(xlim_min, xlim_max),
                     color='tab:orange',
                     alpha=0.7,
-                    label='Dublikate',
+                    label=f'Dublikate ({len(dubl_secs)})',
                     edgecolor='black'
                 )
+            # Fraktionsgrößen in die Legende aufnehmen
+            fraktions_legende = ", ".join([f"Fraktion {i+1}: {anz}" for i, anz in enumerate(fraktions_anzahlen)])
             plt.xticks(xticks[::10], xticklabels[::10], rotation=45)  # alle 10 Minuten ein Label
             plt.xlim(xlim_min, xlim_max)
-            plt.title(f'Änderungszeit Histogramm: {ordnername} (Original & Dublikate)\nAnzahl Fraktionen: {anzahl_fraktionen}')
+            plt.title(
+                f'Änderungszeit Histogramm: {ordnername}\n'
+                f'Anzahl Fraktionen: {anzahl_fraktionen} | {fraktions_legende} | Gesamt: {gesamtanzahl}'
+            )
             plt.xlabel('Uhrzeit')
             plt.ylabel('Anzahl Dateien')
+            plt.legend()
+            plt.tight_layout()
+            if export_folder:
+                plt.savefig(os.path.join(export_folder, f"{ordnername}{suffix}.png"))
             plt.show()
 
 def sortiere_fraktionen_mit_zwischenordner(ordnerpfad):
@@ -267,7 +280,23 @@ def sortiere_alle_ordner_nach_fraktion_mit_zwischenordner(ziel_dir):
         ordnerpfad = os.path.join(ziel_dir, ordnername)
         sortiere_fraktionen_mit_zwischenordner(ordnerpfad)
 
-
+def benenne_dublikate_ordner_um(ziel_dir):
+    """
+    Benennt alle 'dublikate'-Ordner im ziel_dir so um, dass sie den Namen ihres Vaterordners bekommen.
+    """
+    ordnernamen = [o for o in os.listdir(ziel_dir) if os.path.isdir(os.path.join(ziel_dir, o))]
+    for ordnername in tqdm(ordnernamen, desc="Dublikate-Ordner umbenennen"):
+        ordnerpfad = os.path.join(ziel_dir, ordnername)
+        dublikate_ordner = os.path.join(ordnerpfad, "dublikate")
+        neues_dublikate = os.path.join(ordnerpfad, ordnername)
+        if os.path.isdir(dublikate_ordner):
+            # Falls Zielordner schon existiert, hänge Suffix an
+            zielpfad = neues_dublikate
+            count = 1
+            while os.path.exists(zielpfad):
+                zielpfad = os.path.join(ordnerpfad, f"{ordnername}_dublikate_{count}")
+                count += 1
+            os.rename(dublikate_ordner, zielpfad)
 def main():
     # print("Sammle alle passenden Dateien...")
     # files, andere_files = collect_files(ROOT_DIR)
@@ -277,12 +306,13 @@ def main():
     # verschiebe_andere_dateien(andere_files, ZIEL_DIR)
     # print("Fertig! Dateien wurden verschoben. Bei Duplikaten wurde ein Unterordner 'dublikate' angelegt.")
     
-    # ZIEL_DIR = r'F:\Backup_sortiert\vermutlich in paper'
-    plot_histogramme_fuer_dublikate_ordner(ZIEL_DIR)
-    plt.show()
-    sortiere_alle_ordner_nach_fraktion_mit_zwischenordner(ZIEL_DIR)
-    plot_histogramme_fuer_dublikate_ordner(ZIEL_DIR)
-    plt.show()
-
+    ZIEL_DIR = r'F:\Backup_sortiert\vermutlich in paper'
+    # plot_histogramme_fuer_dublikate_ordner(ZIEL_DIR, EXPORT_FOLDER, "_vor_sortierung")
+    # plt.show()
+    # sortiere_alle_ordner_nach_fraktion_mit_zwischenordner(ZIEL_DIR)
+    # plot_histogramme_fuer_dublikate_ordner(ZIEL_DIR, EXPORT_FOLDER, "_nach_sortierung")
+    # plt.show()
+    
+    benenne_dublikate_ordner_um(ZIEL_DIR)
 if __name__ == "__main__":
     main()
