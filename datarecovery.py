@@ -103,16 +103,25 @@ def verschiebe_andere_dateien(andere_files, ziel_dir):
         except Exception as e:
             print(f"Ordner {dirpath} konnte nicht gelöscht werden: {e}")
 
-def finde_fraktionen(sekunden_liste, n_fraktionen=2):
+def finde_fraktionen(sekunden_liste, n_fraktionen=2, min_diff_sec=600):
+    """
+    Cluster die sekunden_liste in n_fraktionen, aber gibt nur mehrere Fraktionen zurück,
+    wenn die Clusterzentren mindestens min_diff_sec auseinander liegen.
+    """
     if len(sekunden_liste) < n_fraktionen:
         return [sekunden_liste]  # nicht genug Daten
     X = np.array(sekunden_liste).reshape(-1, 1)
     kmeans = KMeans(n_clusters=n_fraktionen, n_init=10, random_state=0)
     labels = kmeans.fit_predict(X)
+    centers = sorted([c[0] for c in kmeans.cluster_centers_])
+    # Prüfe, ob die Clusterzentren weit genug auseinander liegen
+    if n_fraktionen == 2 and abs(centers[1] - centers[0]) < min_diff_sec:
+        return [sekunden_liste]  # nur eine Fraktion, da zu nah beieinander
     fraktionen = []
     for i in range(n_fraktionen):
         fraktion = [sekunden_liste[j] for j in range(len(sekunden_liste)) if labels[j] == i]
-        fraktionen.append(fraktion)
+        if fraktion:
+            fraktionen.append(fraktion)
     return fraktionen
 
 def plot_histogramme_fuer_dublikate_ordner(ziel_dir):
