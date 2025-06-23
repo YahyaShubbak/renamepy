@@ -174,7 +174,7 @@ def plot_histogramme_fuer_dublikate_ordner(ziel_dir):
             plt.title(f'Änderungszeit Histogramm: {ordnername} (Original & Dublikate)\nAnzahl Fraktionen: {anzahl_fraktionen}')
             plt.xlabel('Uhrzeit')
             plt.ylabel('Anzahl Dateien')
-
+            plt.show()
 
 def main():
     # print("Sammle alle passenden Dateien...")
@@ -186,7 +186,7 @@ def main():
     # print("Fertig! Dateien wurden verschoben. Bei Duplikaten wurde ein Unterordner 'dublikate' angelegt.")
     ZIEL_DIR = r'F:\Backup_sortiert\vermutlich in paper'
     plot_histogramme_fuer_dublikate_ordner(ZIEL_DIR)
-    plt.show()
+    # plt.show()
 
 
 if __name__ == "__main__":
