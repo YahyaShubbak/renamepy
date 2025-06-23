@@ -2,11 +2,16 @@ import os
 import re
 import shutil
 from tqdm import tqdm  # Fortschrittsbalken
+from datetime import datetime
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from sklearn.cluster import KMeans
+import numpy as np
 
 
 # Konfiguration
 ROOT_DIR = r'F:\Backup'
-ZIEL_DIR = r'F:\test'
+ZIEL_DIR = r'F:\Backup_sortiert'
 
 
 PATTERNS = [
@@ -17,6 +22,10 @@ PATTERNS = [
     ),
     (
         re.compile(r'^(NH2|COOH)_DestH2O_PMMA700nm_(\d+mT)_(\d+ms)_(\w*)\.bmp$', re.IGNORECASE),
+        lambda m: f"{m.group(1)}_DestH2O_PMMA700nm_{m.group(2)}_{m.group(3)}"
+    ),
+    (
+        re.compile(r'^(NH2|COOH)_DestH2O_PMMA700nm_(\d+mT)_(\d+s)_(\w*)\.bmp$', re.IGNORECASE),
         lambda m: f"{m.group(1)}_DestH2O_PMMA700nm_{m.group(2)}_{m.group(3)}"
     ),
     # Weitere Patterns und Ordnerfunktionen hier ergänzen
@@ -33,12 +42,15 @@ def match_any_pattern(fname):
 
 def collect_files(root_dir):
     files = []
+    andere_files = []
     for dirpath, _, filenames in os.walk(root_dir):
         for fname in filenames:
             match, _ = match_any_pattern(fname)
             if match:
                 files.append((dirpath, fname))
-    return files
+            else:
+                andere_files.append((dirpath, fname))
+    return files, andere_files
 
 def move_file(src, dst):
     try:
@@ -63,13 +75,119 @@ def sortiere_und_verschiebe_dateien(files, ziel_dir):
                 zielpfad = os.path.join(dublikate_ordner, fname)
 
             move_file(pfad, zielpfad)
+            # Prüfen, ob der Ursprungsordner jetzt leer ist und ggf. löschen
+            try:
+                if not os.listdir(dirpath):
+                    os.rmdir(dirpath)
+            except Exception as e:
+                print(f"Ordner {dirpath} konnte nicht gelöscht werden: {e}")
+
+def verschiebe_andere_dateien(andere_files, ziel_dir):
+    andere_dir = os.path.join(ziel_dir, "Andere")
+    os.makedirs(andere_dir, exist_ok=True)
+    for dirpath, fname in tqdm(andere_files, desc="Andere Dateien werden verschoben"):
+        pfad = os.path.join(dirpath, fname)
+        zielpfad = os.path.join(andere_dir, fname)
+        if os.path.exists(zielpfad):
+            # Bei Namenskonflikt Zähler anhängen
+            base, ext = os.path.splitext(fname)
+            i = 1
+            while os.path.exists(os.path.join(andere_dir, f"{base}_{i}{ext}")):
+                i += 1
+            zielpfad = os.path.join(andere_dir, f"{base}_{i}{ext}")
+        move_file(pfad, zielpfad)
+        # Prüfen, ob der Ursprungsordner jetzt leer ist und ggf. löschen
+        try:
+            if not os.listdir(dirpath):
+                os.rmdir(dirpath)
+        except Exception as e:
+            print(f"Ordner {dirpath} konnte nicht gelöscht werden: {e}")
+
+def finde_fraktionen(sekunden_liste, n_fraktionen=2):
+    if len(sekunden_liste) < n_fraktionen:
+        return [sekunden_liste]  # nicht genug Daten
+    X = np.array(sekunden_liste).reshape(-1, 1)
+    kmeans = KMeans(n_clusters=n_fraktionen, n_init=10, random_state=0)
+    labels = kmeans.fit_predict(X)
+    fraktionen = []
+    for i in range(n_fraktionen):
+        fraktion = [sekunden_liste[j] for j in range(len(sekunden_liste)) if labels[j] == i]
+        fraktionen.append(fraktion)
+    return fraktionen
+
+def plot_histogramme_fuer_dublikate_ordner(ziel_dir):
+    ordnernamen = [o for o in os.listdir(ziel_dir) if os.path.isdir(os.path.join(ziel_dir, o))]
+    for ordnername in tqdm(ordnernamen, desc="Histogramme werden erstellt"):
+        ordnerpfad = os.path.join(ziel_dir, ordnername)
+        dublikate_ordner = os.path.join(ordnerpfad, "dublikate")
+        haupt_aenderungsdaten = []
+        for fname in os.listdir(ordnerpfad):
+            fpath = os.path.join(ordnerpfad, fname)
+            if os.path.isfile(fpath):
+                ts = os.path.getmtime(fpath)
+                haupt_aenderungsdaten.append(datetime.fromtimestamp(ts).time())
+        dublikate_aenderungsdaten = []
+        if os.path.isdir(dublikate_ordner):
+            for fname in os.listdir(dublikate_ordner):
+                fpath = os.path.join(dublikate_ordner, fname)
+                if os.path.isfile(fpath):
+                    ts = os.path.getmtime(fpath)
+                    dublikate_aenderungsdaten.append(datetime.fromtimestamp(ts).time())
+        if haupt_aenderungsdaten or dublikate_aenderungsdaten:
+            haupt_secs = [t.hour * 3600 + t.minute * 60 + t.second for t in haupt_aenderungsdaten]
+            dubl_secs = [t.hour * 3600 + t.minute * 60 + t.second for t in dublikate_aenderungsdaten]
+            all_secs = haupt_secs + dubl_secs
+            if not all_secs:
+                continue
+            # --- Fraktionen finden ---
+            fraktionen = finde_fraktionen(all_secs, n_fraktionen=2)
+            # Anzahl der Fraktionen für den Plot-Titel
+            anzahl_fraktionen = sum(1 for f in fraktionen if f)
+            min_sec = min(all_secs)
+            max_sec = max(all_secs)
+            xlim_min = max(0, min_sec - 600)
+            xlim_max = min(24 * 3600, max_sec + 600)
+            xticks = list(range(xlim_min, xlim_max + 1, 60))
+            xticklabels = [f"{s//3600:02d}:{(s%3600)//60:02d}" for s in xticks]
+            bins = (xlim_max - xlim_min) // 60  # 1-Minuten-Bins
+            plt.hist(
+                haupt_secs,
+                bins=bins,
+                range=(xlim_min, xlim_max),
+                color='tab:blue',
+                alpha=0.7,
+                label='Original',
+                edgecolor='black'
+            )
+            if dubl_secs:
+                plt.hist(
+                    dubl_secs,
+                    bins=bins,
+                    range=(xlim_min, xlim_max),
+                    color='tab:orange',
+                    alpha=0.7,
+                    label='Dublikate',
+                    edgecolor='black'
+                )
+            plt.xticks(xticks[::10], xticklabels[::10], rotation=45)  # alle 10 Minuten ein Label
+            plt.xlim(xlim_min, xlim_max)
+            plt.title(f'Änderungszeit Histogramm: {ordnername} (Original & Dublikate)\nAnzahl Fraktionen: {anzahl_fraktionen}')
+            plt.xlabel('Uhrzeit')
+            plt.ylabel('Anzahl Dateien')
+
 
 def main():
-    print("Sammle alle passenden Dateien...")
-    files = collect_files(ROOT_DIR)
-    print(f"{len(files)} Dateien gefunden. Starte das Verschieben...")
-    sortiere_und_verschiebe_dateien(files, ZIEL_DIR)
-    print("Fertig! Dateien wurden verschoben. Bei Duplikaten wurde ein Unterordner 'dublikate' angelegt.")
+    # print("Sammle alle passenden Dateien...")
+    # files, andere_files = collect_files(ROOT_DIR)
+    # print(f"{len(files)} passende Dateien gefunden. Starte das Verschieben...")
+    # sortiere_und_verschiebe_dateien(files, ZIEL_DIR)
+    # print(f"{len(andere_files)} andere Dateien gefunden. Verschiebe diese nach 'Andere'...")
+    # verschiebe_andere_dateien(andere_files, ZIEL_DIR)
+    # print("Fertig! Dateien wurden verschoben. Bei Duplikaten wurde ein Unterordner 'dublikate' angelegt.")
+    ZIEL_DIR = r'F:\Backup_sortiert\vermutlich in paper'
+    plot_histogramme_fuer_dublikate_ordner(ZIEL_DIR)
+    plt.show()
+
 
 if __name__ == "__main__":
     main()
