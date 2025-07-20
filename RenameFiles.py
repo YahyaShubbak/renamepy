@@ -1,6 +1,6 @@
 import os
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox
+    QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox, QCheckBox
 )
 from PyQt6.QtCore import Qt
 from PIL import Image
@@ -28,7 +28,33 @@ def extract_date_taken(image_path):
         print(f"Error extracting date: {e}")
         return None
 
-def rename_files(files, camera_prefix, additional):
+def extract_camera_model(image_path):
+    try:
+        image = Image.open(image_path)
+        exif_data = image._getexif()
+        if exif_data:
+            for tag, value in exif_data.items():
+                decoded_tag = TAGS.get(tag, tag)
+                if decoded_tag == "Model":
+                    return str(value).replace(" ", "-")
+        return None
+    except Exception:
+        return None
+
+def extract_lens_model(image_path):
+    try:
+        image = Image.open(image_path)
+        exif_data = image._getexif()
+        if exif_data:
+            for tag, value in exif_data.items():
+                decoded_tag = TAGS.get(tag, tag)
+                if decoded_tag == "LensModel":
+                    return str(value).replace(" ", "-")
+        return None
+    except Exception:
+        return None
+
+def rename_files(files, camera_prefix, additional, use_camera, use_lens):
     # Gruppiere nach Basename (ohne Endung), damit gleiche Bilder mit verschiedenen Endungen gleich behandelt werden
     from collections import defaultdict
     import re
@@ -42,9 +68,16 @@ def rename_files(files, camera_prefix, additional):
     for group_files in grouped.values():
         # Finde das Bild mit EXIF-Datum, falls möglich
         date_taken = None
+        camera_model = None
+        lens_model = None
         for file in group_files:
-            date_taken = extract_date_taken(file)
-            if date_taken:
+            if use_camera and not camera_model:
+                camera_model = extract_camera_model(file)
+            if use_lens and not lens_model:
+                lens_model = extract_lens_model(file)
+            if not date_taken:
+                date_taken = extract_date_taken(file)
+            if date_taken and (not use_camera or camera_model) and (not use_lens or lens_model):
                 break
         if not date_taken:
             # Fallback: Dateiname nach Muster JJJJMMTT extrahieren
@@ -77,6 +110,10 @@ def rename_files(files, camera_prefix, additional):
                 name_parts.append(camera_prefix)
             if additional:
                 name_parts.append(additional)
+            if use_camera and camera_model:
+                name_parts.append(camera_model)
+            if use_lens and lens_model:
+                name_parts.append(lens_model)
             new_name = "_".join(name_parts) + ext
             new_path = os.path.join(os.path.dirname(file), new_name)
             os.rename(file, new_path)
@@ -96,18 +133,22 @@ class FileRenamerApp(QMainWindow):
 
         self.label = QLabel("Kamera Präfix:")
         self.layout.addWidget(self.label)
-
         self.camera_prefix_entry = QLineEdit()
         self.layout.addWidget(self.camera_prefix_entry)
 
         self.label_additional = QLabel("Weitere:")
         self.layout.addWidget(self.label_additional)
-
         self.additional_entry = QLineEdit()
         self.layout.addWidget(self.additional_entry)
 
+        self.checkbox_camera = QCheckBox("Kameramodell in Dateiname")
+        self.layout.addWidget(self.checkbox_camera)
+        self.checkbox_lens = QCheckBox("Objektiv in Dateiname")
+        self.layout.addWidget(self.checkbox_lens)
+
         self.file_list = QListWidget()
         self.layout.addWidget(self.file_list)
+        self.file_list.itemDoubleClicked.connect(self.show_selected_exif)
 
         self.select_files_button = QPushButton("Select Files")
         self.select_files_button.clicked.connect(self.select_files)
@@ -125,16 +166,21 @@ class FileRenamerApp(QMainWindow):
 
         self.files = []
 
-    def select_files(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "Select Files", "", "Image Files (*.jpg *.jpeg *.png)")
-        if files:
-            self.add_files_to_list(files)
-
-    def select_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Folder")
-        if folder:
-            files = [os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-            self.add_files_to_list(files)
+    def show_exif_info(self, file):
+        try:
+            image = Image.open(file)
+            exif_data = image._getexif()
+            if not exif_data:
+                QMessageBox.information(self, "EXIF Info", f"Keine EXIF-Daten gefunden für {file}.")
+                return
+            info = []
+            for tag, value in exif_data.items():
+                decoded_tag = TAGS.get(tag, tag)
+                info.append(f"{decoded_tag}: {value}")
+            info_str = "\n".join(info)
+            QMessageBox.information(self, "EXIF Info", f"{file}\n\n{info_str}")
+        except Exception as e:
+            QMessageBox.information(self, "EXIF Info", f"{file}\nFehler beim Auslesen: {e}")
 
     def add_files_to_list(self, files):
         # Verhindere doppelte Einträge
@@ -142,6 +188,13 @@ class FileRenamerApp(QMainWindow):
             if file not in self.files:
                 self.files.append(file)
                 self.file_list.addItem(file)
+
+        # Entferne EXIF-Anzeige beim Einladen
+
+    def show_selected_exif(self, item):
+        file = item.text()
+        if is_image_file(file):
+            self.show_exif_info(file)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -160,12 +213,25 @@ class FileRenamerApp(QMainWindow):
                     files.append(path)
             self.add_files_to_list(files)
 
+    def select_files(self):
+        files, _ = QFileDialog.getOpenFileNames(self, "Select Files", "", "Image Files (*.jpg *.jpeg *.png *.arw *.cr2 *.nef *.dng *.tif *.tiff *.bmp *.gif)")
+        if files:
+            self.add_files_to_list(files)
+
+    def select_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Folder")
+        if folder:
+            files = [os.path.join(folder, f) for f in os.listdir(folder) if is_image_file(f)]
+            self.add_files_to_list(files)
+
     def rename_files_action(self):
         if not self.files:
             QMessageBox.warning(self, "Warnung", "Keine Dateien zum Umbenennen ausgewählt.")
             return
         camera_prefix = self.camera_prefix_entry.text().strip()
         additional = self.additional_entry.text().strip()
+        use_camera = self.checkbox_camera.isChecked()
+        use_lens = self.checkbox_lens.isChecked()
         # Kamerakürzel darf leer bleiben, keine Warnung mehr
         # Prüfe, ob alle Dateien Bilddateien sind
         non_images = [f for f in self.files if not is_image_file(f)]
@@ -184,7 +250,7 @@ class FileRenamerApp(QMainWindow):
             QMessageBox.warning(self, "Warnung", "Keine Bilddateien zum Umbenennen gefunden.")
             return
         try:
-            rename_files(image_files, camera_prefix, additional)
+            rename_files(image_files, camera_prefix, additional, use_camera, use_lens)
             QMessageBox.information(self, "Fertig", "Dateien wurden umbenannt.")
             self.file_list.clear()
             self.files = []
