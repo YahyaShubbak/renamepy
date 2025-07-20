@@ -20,18 +20,21 @@ except ImportError:
     PIL_AVAILABLE = False
 
 IMAGE_EXTENSIONS = [
-    '.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.gif',
+    '.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.gif', 
     '.cr2', '.nef', '.arw', '.orf', '.rw2', '.dng', '.raw', '.sr2', '.pef', '.raf', '.3fr', '.erf', '.kdc', '.mos', '.nrw', '.srw', '.x3f'
 ]
 
 def is_image_file(filename):
+    """
+    Returns True if the file is an image or RAW file based on its extension.
+    """
     return os.path.splitext(filename)[1].lower() in IMAGE_EXTENSIONS
 
 def is_exiftool_installed():
     exe = shutil.which("exiftool")
     if exe:
         return exe
-    # Prüfe im aktuellen Verzeichnis
+    # Check in current directory
     local = os.path.join(os.getcwd(), "exiftool.exe")
     if os.path.exists(local):
         return local
@@ -44,6 +47,10 @@ def is_exiftool_installed():
 # Dynamische EXIF-Auslese
 
 def extract_exif_fields(image_path, method, exiftool_path=None):
+    """
+    Extracts date, camera model, and lens model from an image using the specified method.
+    Returns (date, camera, lens) or (None, None, None) if not found.
+    """
     if method == "exiftool":
         try:
             if exiftool_path:
@@ -87,18 +94,33 @@ def extract_exif_fields(image_path, method, exiftool_path=None):
         return None, None, None
 
 def extract_date_taken(image_path, method):
+    """
+    Extracts only the date from an image using the specified method.
+    """
     date, _, _ = extract_exif_fields(image_path, method)
     return date
 
 def extract_camera_model(image_path, method):
+    """
+    Extracts only the camera model from an image using the specified method.
+    """
     _, camera, _ = extract_exif_fields(image_path, method)
     return camera
 
 def extract_lens_model(image_path, method):
+    """
+    Extracts only the lens model from an image using the specified method.
+    """
     _, _, lens = extract_exif_fields(image_path, method)
     return lens
 
+
 def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_method):
+    """
+    Batch rename files based on EXIF data and user options.
+    Groups files by base name, extracts EXIF only once per group, and applies a running counter per date.
+    Returns a list of new file paths.
+    """
     from collections import defaultdict
     import re
     grouped = defaultdict(list)
@@ -122,26 +144,24 @@ def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_me
             if date_taken and (not use_camera or camera_model) and (not use_lens or lens_model):
                 break
         if not date_taken:
-            # Fallback: Dateiname nach Muster JJJJMMTT extrahieren
             for file in group_files:
                 m = re.search(r'(20\d{2})(\d{2})(\d{2})', os.path.basename(file))
                 if m:
                     date_taken = f"{m.group(1)}{m.group(2)}{m.group(3)}"
                     break
         if not date_taken:
-            # Fallback: Änderungsdatum der Datei
+            # Fallback: use file modification date
             file = group_files[0]
             mtime = os.path.getmtime(file)
             import datetime
             dt = datetime.datetime.fromtimestamp(mtime)
             date_taken = dt.strftime('%Y%m%d')
-        # Zähle fortlaufende Nummer pro Datum
+        # Running counter per date
         if date_taken not in date_counter:
             date_counter[date_taken] = 1
         else:
             date_counter[date_taken] += 1
         num = date_counter[date_taken]
-        # Format: Jahr_Monat_Tag_Fortlaufendenummer_Kamerakürzel
         year = date_taken[:4]
         month = date_taken[4:6]
         day = date_taken[6:8]
@@ -184,8 +204,6 @@ class FileRenamerApp(QMainWindow):
         self.layout.addLayout(camera_row)
         self.camera_prefix_entry = QLineEdit()
         self.layout.addWidget(self.camera_prefix_entry)
-        self.camera_prefix_entry.textChanged.connect(self.update_preview)
-
         # Additional with info icon
         additional_label = QLabel("Additional:")
         additional_info = QLabel()
@@ -194,6 +212,11 @@ class FileRenamerApp(QMainWindow):
         additional_row = QHBoxLayout()
         additional_row.addWidget(additional_label)
         additional_row.addWidget(additional_info)
+        additional_row.addStretch()
+        self.layout.addLayout(additional_row)
+        self.additional_entry = QLineEdit()
+        self.layout.addWidget(self.additional_entry)
+        self.additional_entry.textChanged.connect(self.update_preview)
         additional_row.addStretch()
         self.layout.addLayout(additional_row)
         self.additional_entry = QLineEdit()
