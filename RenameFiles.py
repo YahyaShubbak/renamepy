@@ -249,7 +249,6 @@ class FileRenamerApp(QMainWindow):
         self.layout.addWidget(self.rename_button)
 
         self.files = []
-        # Bestimme EXIF-Methode
         self.exiftool_path = is_exiftool_installed()
         if EXIFTOOL_AVAILABLE and self.exiftool_path:
             self.exif_method = "exiftool"
@@ -260,19 +259,27 @@ class FileRenamerApp(QMainWindow):
         # Statusbar für Info unten rechts
         self.status = QStatusBar()
         self.setStatusBar(self.status)
+        # Label für Methode und ggf. Info-Icon
+        self.exif_status_label = QLabel()
+        self.status.addPermanentWidget(self.exif_status_label)
         self.update_exif_status()
         self.update_preview()
 
     def update_exif_status(self):
-        debug = ""
         if self.exif_method == "exiftool":
-            debug = f" | exiftool path: {self.exiftool_path}"
-            msg = "EXIF method: exiftool (recommended) | To make use of the great exiftool, go to https://exiftool.org to download it, place exiftool.exe in your program folder or PATH, then restart." + debug
+            self.exif_status_label.setText("EXIF method: exiftool (recommended)")
+            self.exif_status_label.clear()  # Kein Icon
+            self.exif_status_label.setToolTip("")
         elif self.exif_method == "pillow":
-            msg = "EXIF method: Pillow (limited RAW support) | To make use of the great exiftool, go to https://exiftool.org to download it, place exiftool.exe in your program folder or PATH, then restart."
+            self.exif_status_label.setText("EXIF method: Pillow")
+            info_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16)
+            self.exif_status_label.setPixmap(info_icon)
+            self.exif_status_label.setToolTip("To make use of the great exiftool, go to https://exiftool.org to download it, place exiftool.exe in your program folder or PATH, then restart. RAW support is limited with Pillow.")
         else:
-            msg = "No EXIF support available. Please install exiftool or Pillow."
-        self.status.showMessage(msg)
+            self.exif_status_label.setText("No EXIF support available")
+            info_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16)
+            self.exif_status_label.setPixmap(info_icon)
+            self.exif_status_label.setToolTip("Please install exiftool (https://exiftool.org) or Pillow for EXIF support.")
 
     def update_preview(self):
         # Wähle erste JPG-Datei, falls vorhanden, sonst erste Datei, sonst Dummy
