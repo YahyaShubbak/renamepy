@@ -204,6 +204,7 @@ class FileRenamerApp(QMainWindow):
         self.layout.addLayout(camera_row)
         self.camera_prefix_entry = QLineEdit()
         self.layout.addWidget(self.camera_prefix_entry)
+        self.camera_prefix_entry.textChanged.connect(self.update_preview)
         # Additional with info icon
         additional_label = QLabel("Additional:")
         additional_info = QLabel()
@@ -212,11 +213,6 @@ class FileRenamerApp(QMainWindow):
         additional_row = QHBoxLayout()
         additional_row.addWidget(additional_label)
         additional_row.addWidget(additional_info)
-        additional_row.addStretch()
-        self.layout.addLayout(additional_row)
-        self.additional_entry = QLineEdit()
-        self.layout.addWidget(self.additional_entry)
-        self.additional_entry.textChanged.connect(self.update_preview)
         additional_row.addStretch()
         self.layout.addLayout(additional_row)
         self.additional_entry = QLineEdit()
@@ -288,6 +284,10 @@ class FileRenamerApp(QMainWindow):
         self.update_exif_status()
         self.update_preview()
 
+        # EXIF cache for preview file
+        self._preview_exif_cache = {}
+        self._preview_exif_file = None
+
     def update_exif_status(self):
         if self.exif_method == "exiftool":
             self.exif_status_label.setText("EXIF method: exiftool (recommended)")
@@ -305,12 +305,8 @@ class FileRenamerApp(QMainWindow):
             self.exif_status_label.setToolTip("Please install exiftool (https://exiftool.org) or Pillow for EXIF support.")
 
     def update_preview(self):
-        # Wähle erste JPG-Datei, falls vorhanden, sonst erste Datei, sonst Dummy
-        preview_file = None
-        for f in self.files:
-            if os.path.splitext(f)[1].lower() in [".jpg", ".jpeg"]:
-                preview_file = f
-                break
+        # Choose first JPG file, else first file, else dummy
+        preview_file = next((f for f in self.files if os.path.splitext(f)[1].lower() in [".jpg", ".jpeg"]), None)
         if not preview_file and self.files:
             preview_file = self.files[0]
         if not preview_file:
@@ -328,12 +324,26 @@ class FileRenamerApp(QMainWindow):
         if not self.exif_method:
             self.preview_box.setText("[No EXIF support available]")
             return
+
+        # EXIF cache: only extract if file changed
+        cache_key = (preview_file, self.exif_method, self.exiftool_path)
         if os.path.exists(preview_file):
-            try:
-                date_taken, camera_model, lens_model = extract_exif_fields(preview_file, self.exif_method, self.exiftool_path)
-            except Exception as e:
-                self.preview_box.setText(f"[EXIF error: {e}]")
-                return
+            if self._preview_exif_file != cache_key:
+                try:
+                    exif_data = extract_exif_fields(preview_file, self.exif_method, self.exiftool_path)
+                except Exception as e:
+                    self.preview_box.setText(f"[EXIF error: {e}]")
+                    return
+                self._preview_exif_cache = {
+                    'date': exif_data[0],
+                    'camera': exif_data[1],
+                    'lens': exif_data[2],
+                }
+                self._preview_exif_file = cache_key
+            date_taken = self._preview_exif_cache.get('date')
+            camera_model = self._preview_exif_cache.get('camera')
+            lens_model = self._preview_exif_cache.get('lens')
+
         import re
         if not date_taken:
             m = re.search(r'(20\d{2})(\d{2})(\d{2})', os.path.basename(preview_file))
@@ -351,10 +361,7 @@ class FileRenamerApp(QMainWindow):
         month = date_taken[4:6]
         day = date_taken[6:8]
         num = 1
-        if devider == "None":
-            sep = ""
-        else:
-            sep = devider
+        sep = "" if devider == "None" else devider
         name_parts = [year, month, day, f"{num:02d}"]
         if camera_prefix:
             name_parts.append(camera_prefix)
