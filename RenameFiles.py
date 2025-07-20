@@ -1,11 +1,23 @@
 import os
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox, QCheckBox, QDialog, QPlainTextEdit, QHBoxLayout, QStyle, QToolTip, QComboBox
+    QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox, QCheckBox, QDialog, QPlainTextEdit, QHBoxLayout, QStyle, QToolTip, QComboBox, QStatusBar
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon
-from PIL import Image
-from PIL.ExifTags import TAGS
+from PyQt6.QtGui import QIcon, QTextCursor
+import shutil
+
+try:
+    import exiftool
+    EXIFTOOL_AVAILABLE = True
+except ImportError:
+    EXIFTOOL_AVAILABLE = False
+
+try:
+    from PIL import Image
+    from PIL.ExifTags import TAGS
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 IMAGE_EXTENSIONS = [
     '.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.gif',
@@ -15,48 +27,78 @@ IMAGE_EXTENSIONS = [
 def is_image_file(filename):
     return os.path.splitext(filename)[1].lower() in IMAGE_EXTENSIONS
 
-def extract_date_taken(image_path):
-    try:
-        image = Image.open(image_path)
-        exif_data = image._getexif()
-        if exif_data:
-            for tag, value in exif_data.items():
-                decoded_tag = TAGS.get(tag, tag)
-                if decoded_tag == "DateTimeOriginal":
-                    return value.split(" ")[0].replace(":", "")
-        return None
-    except Exception as e:
-        print(f"Error extracting date: {e}")
-        return None
+def is_exiftool_installed():
+    exe = shutil.which("exiftool")
+    if exe:
+        return exe
+    # Prüfe im aktuellen Verzeichnis
+    local = os.path.join(os.getcwd(), "exiftool.exe")
+    if os.path.exists(local):
+        return local
+    # Prüfe benutzerdefinierten Pfad (hier Desktop-Beispiel)
+    custom = r"C:\\Users\\yshub\\Desktop\\exiftool-13.32_64\\exiftool.exe"
+    if os.path.exists(custom):
+        return custom
+    return None
 
-def extract_camera_model(image_path):
-    try:
-        image = Image.open(image_path)
-        exif_data = image._getexif()
-        if exif_data:
-            for tag, value in exif_data.items():
-                decoded_tag = TAGS.get(tag, tag)
-                if decoded_tag == "Model":
-                    return str(value).replace(" ", "-")
-        return None
-    except Exception:
-        return None
+# Dynamische EXIF-Auslese
 
-def extract_lens_model(image_path):
-    try:
-        image = Image.open(image_path)
-        exif_data = image._getexif()
-        if exif_data:
-            for tag, value in exif_data.items():
-                decoded_tag = TAGS.get(tag, tag)
-                if decoded_tag == "LensModel":
-                    return str(value).replace(" ", "-")
-        return None
-    except Exception:
-        return None
+def extract_exif_fields(image_path, method, exiftool_path=None):
+    if method == "exiftool":
+        try:
+            if exiftool_path:
+                with exiftool.ExifToolHelper(executable=exiftool_path) as et:
+                    meta = et.get_metadata([image_path])[0]
+            else:
+                with exiftool.ExifToolHelper() as et:
+                    meta = et.get_metadata([image_path])[0]
+            date = meta.get('EXIF:DateTimeOriginal')
+            if date:
+                date = date.split(' ')[0].replace(':', '')
+            camera = meta.get('EXIF:Model')
+            if camera:
+                camera = str(camera).replace(' ', '-')
+            lens = meta.get('EXIF:LensModel')
+            if lens:
+                lens = str(lens).replace(' ', '-')
+            return date, camera, lens
+        except Exception:
+            return None, None, None
+    elif method == "pillow":
+        try:
+            image = Image.open(image_path)
+            exif_data = image._getexif()
+            date = None
+            camera = None
+            lens = None
+            if exif_data:
+                for tag, value in exif_data.items():
+                    decoded_tag = TAGS.get(tag, tag)
+                    if decoded_tag == "DateTimeOriginal" and not date:
+                        date = value.split(" ")[0].replace(":", "")
+                    if decoded_tag == "Model" and not camera:
+                        camera = str(value).replace(" ", "-")
+                    if decoded_tag == "LensModel" and not lens:
+                        lens = str(value).replace(" ", "-")
+            return date, camera, lens
+        except Exception:
+            return None, None, None
+    else:
+        return None, None, None
 
-def rename_files(files, camera_prefix, additional, use_camera, use_lens):
-    # Gruppiere nach Basename (ohne Endung), damit gleiche Bilder mit verschiedenen Endungen gleich behandelt werden
+def extract_date_taken(image_path, method):
+    date, _, _ = extract_exif_fields(image_path, method)
+    return date
+
+def extract_camera_model(image_path, method):
+    _, camera, _ = extract_exif_fields(image_path, method)
+    return camera
+
+def extract_lens_model(image_path, method):
+    _, _, lens = extract_exif_fields(image_path, method)
+    return lens
+
+def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_method):
     from collections import defaultdict
     import re
     grouped = defaultdict(list)
@@ -67,17 +109,16 @@ def rename_files(files, camera_prefix, additional, use_camera, use_lens):
     renamed_files = []
     date_counter = {}
     for group_files in grouped.values():
-        # Finde das Bild mit EXIF-Datum, falls möglich
         date_taken = None
         camera_model = None
         lens_model = None
         for file in group_files:
             if use_camera and not camera_model:
-                camera_model = extract_camera_model(file)
+                camera_model = extract_camera_model(file, exif_method)
             if use_lens and not lens_model:
-                lens_model = extract_lens_model(file)
+                lens_model = extract_lens_model(file, exif_method)
             if not date_taken:
-                date_taken = extract_date_taken(file)
+                date_taken = extract_date_taken(file, exif_method)
             if date_taken and (not use_camera or camera_model) and (not use_lens or lens_model):
                 break
         if not date_taken:
@@ -126,10 +167,8 @@ class FileRenamerApp(QMainWindow):
         super().__init__()
         self.setWindowTitle("File Renamer")
         self.setGeometry(100, 100, 600, 400)
-
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
-
         self.layout = QVBoxLayout(self.central_widget)
 
         # Camera Prefix with info icon
@@ -210,7 +249,30 @@ class FileRenamerApp(QMainWindow):
         self.layout.addWidget(self.rename_button)
 
         self.files = []
+        # Bestimme EXIF-Methode
+        self.exiftool_path = is_exiftool_installed()
+        if EXIFTOOL_AVAILABLE and self.exiftool_path:
+            self.exif_method = "exiftool"
+        elif PIL_AVAILABLE:
+            self.exif_method = "pillow"
+        else:
+            self.exif_method = None
+        # Statusbar für Info unten rechts
+        self.status = QStatusBar()
+        self.setStatusBar(self.status)
+        self.update_exif_status()
         self.update_preview()
+
+    def update_exif_status(self):
+        debug = ""
+        if self.exif_method == "exiftool":
+            debug = f" | exiftool path: {self.exiftool_path}"
+            msg = "EXIF method: exiftool (recommended) | To make use of the great exiftool, go to https://exiftool.org to download it, place exiftool.exe in your program folder or PATH, then restart." + debug
+        elif self.exif_method == "pillow":
+            msg = "EXIF method: Pillow (limited RAW support) | To make use of the great exiftool, go to https://exiftool.org to download it, place exiftool.exe in your program folder or PATH, then restart."
+        else:
+            msg = "No EXIF support available. Please install exiftool or Pillow."
+        self.status.showMessage(msg)
 
     def update_preview(self):
         # Wähle erste JPG-Datei, falls vorhanden, sonst erste Datei, sonst Dummy
@@ -229,31 +291,21 @@ class FileRenamerApp(QMainWindow):
         use_camera = self.checkbox_camera.isChecked()
         use_lens = self.checkbox_lens.isChecked()
         devider = self.devider_combo.currentText()
-        # EXIF aus echter Datei, falls möglich
         date_taken = None
         camera_model = None
         lens_model = None
         ext = os.path.splitext(preview_file)[1] if preview_file else ".ARW"
+        if not self.exif_method:
+            self.preview_box.setText("[No EXIF support available]")
+            return
         if os.path.exists(preview_file):
             try:
-                from PIL import Image
-                from PIL.ExifTags import TAGS
-                image = Image.open(preview_file)
-                exif_data = image._getexif()
-                if exif_data:
-                    for tag, value in exif_data.items():
-                        decoded_tag = TAGS.get(tag, tag)
-                        if decoded_tag == "DateTimeOriginal" and not date_taken:
-                            date_taken = value.split(" ")[0].replace(":", "")
-                        if decoded_tag == "Model" and not camera_model:
-                            camera_model = str(value).replace(" ", "-")
-                        if decoded_tag == "LensModel" and not lens_model:
-                            lens_model = str(value).replace(" ", "-")
-            except Exception:
-                pass
-        # Fallbacks
+                date_taken, camera_model, lens_model = extract_exif_fields(preview_file, self.exif_method, self.exiftool_path)
+            except Exception as e:
+                self.preview_box.setText(f"[EXIF error: {e}]")
+                return
+        import re
         if not date_taken:
-            import re
             m = re.search(r'(20\d{2})(\d{2})(\d{2})', os.path.basename(preview_file))
             if m:
                 date_taken = f"{m.group(1)}{m.group(2)}{m.group(3)}"
@@ -298,18 +350,37 @@ class FileRenamerApp(QMainWindow):
         return super().eventFilter(obj, event)
 
     def show_exif_info(self, file):
+        if not self.exif_method:
+            self.show_exif_dialog(file, "No EXIF support available.")
+            return
         try:
-            image = Image.open(file)
-            exif_data = image._getexif()
-            if not exif_data:
-                self.show_exif_dialog(file, "No EXIF data found.")
-                return
-            info = []
-            for tag, value in exif_data.items():
-                decoded_tag = TAGS.get(tag, tag)
-                info.append(f"{decoded_tag}: {value}")
-            info_str = "\n".join(info)
-            self.show_exif_dialog(file, info_str)
+            if self.exif_method == "exiftool":
+                if self.exiftool_path:
+                    with exiftool.ExifToolHelper(executable=self.exiftool_path) as et:
+                        meta = et.get_metadata([file])[0]
+                else:
+                    with exiftool.ExifToolHelper() as et:
+                        meta = et.get_metadata([file])[0]
+                if not meta:
+                    self.show_exif_dialog(file, "No EXIF data found.")
+                    return
+                info = []
+                for k, v in meta.items():
+                    info.append(f"{k}: {v}")
+                info_str = "\n".join(info)
+                self.show_exif_dialog(file, info_str)
+            elif self.exif_method == "pillow":
+                image = Image.open(file)
+                exif_data = image._getexif()
+                if not exif_data:
+                    self.show_exif_dialog(file, "No EXIF data found.")
+                    return
+                info = []
+                for tag, value in exif_data.items():
+                    decoded_tag = TAGS.get(tag, tag)
+                    info.append(f"{decoded_tag}: {value}")
+                info_str = "\n".join(info)
+                self.show_exif_dialog(file, info_str)
         except Exception as e:
             self.show_exif_dialog(file, f"Error reading EXIF: {e}")
 
@@ -387,7 +458,7 @@ class FileRenamerApp(QMainWindow):
             QMessageBox.warning(self, "Warning", "No image files found for renaming.")
             return
         try:
-            rename_files(image_files, camera_prefix, additional, use_camera, use_lens)
+            rename_files(image_files, camera_prefix, additional, use_camera, use_lens, self.exif_method)
             QMessageBox.information(self, "Done", "Files have been renamed.")
             self.file_list.clear()
             self.files = []
