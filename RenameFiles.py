@@ -1,8 +1,9 @@
 import os
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox, QCheckBox
+    QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox, QCheckBox, QDialog, QPlainTextEdit, QHBoxLayout, QStyle, QToolTip
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QIcon
 from PIL import Image
 from PIL.ExifTags import TAGS
 
@@ -131,24 +132,43 @@ class FileRenamerApp(QMainWindow):
 
         self.layout = QVBoxLayout(self.central_widget)
 
-        self.label = QLabel("Kamera Präfix:")
-        self.layout.addWidget(self.label)
+        # Camera Prefix with info icon
+        camera_layout = QVBoxLayout()
+        camera_label = QLabel("Camera Prefix:")
+        camera_info = QLabel()
+        camera_info.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16))
+        camera_info.setToolTip("Short camera code, e.g. A7R3 or D850. Optional.")
+        camera_row = QHBoxLayout()
+        camera_row.addWidget(camera_label)
+        camera_row.addWidget(camera_info)
+        camera_row.addStretch()
+        self.layout.addLayout(camera_row)
         self.camera_prefix_entry = QLineEdit()
         self.layout.addWidget(self.camera_prefix_entry)
 
-        self.label_additional = QLabel("Weitere:")
-        self.layout.addWidget(self.label_additional)
+        # Additional with info icon
+        additional_label = QLabel("Additional:")
+        additional_info = QLabel()
+        additional_info.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16))
+        additional_info.setToolTip("Any additional info, e.g. location or event. Optional.")
+        additional_row = QHBoxLayout()
+        additional_row.addWidget(additional_label)
+        additional_row.addWidget(additional_info)
+        additional_row.addStretch()
+        self.layout.addLayout(additional_row)
         self.additional_entry = QLineEdit()
         self.layout.addWidget(self.additional_entry)
 
-        self.checkbox_camera = QCheckBox("Kameramodell in Dateiname")
+        self.checkbox_camera = QCheckBox("Include camera model in filename")
         self.layout.addWidget(self.checkbox_camera)
-        self.checkbox_lens = QCheckBox("Objektiv in Dateiname")
+        self.checkbox_lens = QCheckBox("Include lens in filename")
         self.layout.addWidget(self.checkbox_lens)
 
         self.file_list = QListWidget()
         self.layout.addWidget(self.file_list)
         self.file_list.itemDoubleClicked.connect(self.show_selected_exif)
+        self.file_list.setToolTip("Double click for EXIF")
+        self.file_list.installEventFilter(self)
 
         self.select_files_button = QPushButton("Select Files")
         self.select_files_button.clicked.connect(self.select_files)
@@ -166,30 +186,47 @@ class FileRenamerApp(QMainWindow):
 
         self.files = []
 
+    def eventFilter(self, obj, event):
+        if obj == self.file_list and event.type() == event.Type.ToolTip:
+            item = self.file_list.itemAt(event.pos())
+            if item:
+                QToolTip.showText(event.globalPos(), "Double click for EXIF", self.file_list)
+                return True
+        return super().eventFilter(obj, event)
+
     def show_exif_info(self, file):
         try:
             image = Image.open(file)
             exif_data = image._getexif()
             if not exif_data:
-                QMessageBox.information(self, "EXIF Info", f"Keine EXIF-Daten gefunden für {file}.")
+                self.show_exif_dialog(file, "No EXIF data found.")
                 return
             info = []
             for tag, value in exif_data.items():
                 decoded_tag = TAGS.get(tag, tag)
                 info.append(f"{decoded_tag}: {value}")
             info_str = "\n".join(info)
-            QMessageBox.information(self, "EXIF Info", f"{file}\n\n{info_str}")
+            self.show_exif_dialog(file, info_str)
         except Exception as e:
-            QMessageBox.information(self, "EXIF Info", f"{file}\nFehler beim Auslesen: {e}")
+            self.show_exif_dialog(file, f"Error reading EXIF: {e}")
+
+    def show_exif_dialog(self, file, info_str):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"EXIF Info: {os.path.basename(file)}")
+        layout = QVBoxLayout(dialog)
+        text_edit = QPlainTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setPlainText(info_str)
+        layout.addWidget(text_edit)
+        dialog.resize(500, 400)
+        dialog.exec()
 
     def add_files_to_list(self, files):
-        # Verhindere doppelte Einträge
+        # Prevent duplicates
         for file in files:
             if file not in self.files:
                 self.files.append(file)
                 self.file_list.addItem(file)
-
-        # Entferne EXIF-Anzeige beim Einladen
 
     def show_selected_exif(self, item):
         file = item.text()
@@ -226,36 +263,33 @@ class FileRenamerApp(QMainWindow):
 
     def rename_files_action(self):
         if not self.files:
-            QMessageBox.warning(self, "Warnung", "Keine Dateien zum Umbenennen ausgewählt.")
+            QMessageBox.warning(self, "Warning", "No files selected for renaming.")
             return
         camera_prefix = self.camera_prefix_entry.text().strip()
         additional = self.additional_entry.text().strip()
         use_camera = self.checkbox_camera.isChecked()
         use_lens = self.checkbox_lens.isChecked()
-        # Kamerakürzel darf leer bleiben, keine Warnung mehr
-        # Prüfe, ob alle Dateien Bilddateien sind
         non_images = [f for f in self.files if not is_image_file(f)]
         if non_images:
             reply = QMessageBox.question(
                 self,
-                "Nicht-Bilddateien gefunden",
-                "Die eingeladenen Dateien sind keine Bilder. Weiterhin umbenennen?",
+                "Non-image files found",
+                "Some selected files are not images. Continue renaming?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply == QMessageBox.StandardButton.No:
                 return
-        # Nur Bilddateien umbenennen
         image_files = [f for f in self.files if is_image_file(f)]
         if not image_files:
-            QMessageBox.warning(self, "Warnung", "Keine Bilddateien zum Umbenennen gefunden.")
+            QMessageBox.warning(self, "Warning", "No image files found for renaming.")
             return
         try:
             rename_files(image_files, camera_prefix, additional, use_camera, use_lens)
-            QMessageBox.information(self, "Fertig", "Dateien wurden umbenannt.")
+            QMessageBox.information(self, "Done", "Files have been renamed.")
             self.file_list.clear()
             self.files = []
         except Exception as e:
-            QMessageBox.critical(self, "Fehler", f"Fehler beim Umbenennen: {e}")
+            QMessageBox.critical(self, "Error", f"Error while renaming: {e}")
 
 if __name__ == "__main__":
     app = QApplication([])
