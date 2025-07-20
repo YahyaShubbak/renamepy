@@ -1,6 +1,6 @@
 import os
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox, QCheckBox, QDialog, QPlainTextEdit, QHBoxLayout, QStyle, QToolTip
+    QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox, QCheckBox, QDialog, QPlainTextEdit, QHBoxLayout, QStyle, QToolTip, QComboBox
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon
@@ -145,6 +145,7 @@ class FileRenamerApp(QMainWindow):
         self.layout.addLayout(camera_row)
         self.camera_prefix_entry = QLineEdit()
         self.layout.addWidget(self.camera_prefix_entry)
+        self.camera_prefix_entry.textChanged.connect(self.update_preview)
 
         # Additional with info icon
         additional_label = QLabel("Additional:")
@@ -158,11 +159,35 @@ class FileRenamerApp(QMainWindow):
         self.layout.addLayout(additional_row)
         self.additional_entry = QLineEdit()
         self.layout.addWidget(self.additional_entry)
+        self.additional_entry.textChanged.connect(self.update_preview)
+
+        # Devider selection
+        devider_row = QHBoxLayout()
+        devider_label = QLabel("Devider:")
+        devider_info = QLabel()
+        devider_info.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16))
+        devider_info.setToolTip("Choose how to separate date and info in filename.")
+        devider_row.addWidget(devider_label)
+        devider_row.addWidget(devider_info)
+        devider_row.addStretch()
+        self.layout.addLayout(devider_row)
+        self.devider_combo = QComboBox()
+        self.devider_combo.addItems(["None", "_", "-"])
+        self.layout.addWidget(self.devider_combo)
+        self.devider_combo.currentIndexChanged.connect(self.update_preview)
 
         self.checkbox_camera = QCheckBox("Include camera model in filename")
         self.layout.addWidget(self.checkbox_camera)
+        self.checkbox_camera.stateChanged.connect(self.update_preview)
         self.checkbox_lens = QCheckBox("Include lens in filename")
         self.layout.addWidget(self.checkbox_lens)
+        self.checkbox_lens.stateChanged.connect(self.update_preview)
+
+        self.preview_label = QLabel("Preview:")
+        self.layout.addWidget(self.preview_label)
+        self.preview_box = QLineEdit()
+        self.preview_box.setReadOnly(True)
+        self.layout.addWidget(self.preview_box)
 
         self.file_list = QListWidget()
         self.layout.addWidget(self.file_list)
@@ -185,6 +210,84 @@ class FileRenamerApp(QMainWindow):
         self.layout.addWidget(self.rename_button)
 
         self.files = []
+        self.update_preview()
+
+    def update_preview(self):
+        # Wähle erste JPG-Datei, falls vorhanden, sonst erste Datei, sonst Dummy
+        preview_file = None
+        for f in self.files:
+            if os.path.splitext(f)[1].lower() in [".jpg", ".jpeg"]:
+                preview_file = f
+                break
+        if not preview_file and self.files:
+            preview_file = self.files[0]
+        if not preview_file:
+            preview_file = "20250725_DSC0001.ARW"
+
+        camera_prefix = self.camera_prefix_entry.text().strip()
+        additional = self.additional_entry.text().strip()
+        use_camera = self.checkbox_camera.isChecked()
+        use_lens = self.checkbox_lens.isChecked()
+        devider = self.devider_combo.currentText()
+        # EXIF aus echter Datei, falls möglich
+        date_taken = None
+        camera_model = None
+        lens_model = None
+        ext = os.path.splitext(preview_file)[1] if preview_file else ".ARW"
+        if os.path.exists(preview_file):
+            try:
+                from PIL import Image
+                from PIL.ExifTags import TAGS
+                image = Image.open(preview_file)
+                exif_data = image._getexif()
+                if exif_data:
+                    for tag, value in exif_data.items():
+                        decoded_tag = TAGS.get(tag, tag)
+                        if decoded_tag == "DateTimeOriginal" and not date_taken:
+                            date_taken = value.split(" ")[0].replace(":", "")
+                        if decoded_tag == "Model" and not camera_model:
+                            camera_model = str(value).replace(" ", "-")
+                        if decoded_tag == "LensModel" and not lens_model:
+                            lens_model = str(value).replace(" ", "-")
+            except Exception:
+                pass
+        # Fallbacks
+        if not date_taken:
+            import re
+            m = re.search(r'(20\d{2})(\d{2})(\d{2})', os.path.basename(preview_file))
+            if m:
+                date_taken = f"{m.group(1)}{m.group(2)}{m.group(3)}"
+        if not date_taken:
+            if os.path.exists(preview_file):
+                mtime = os.path.getmtime(preview_file)
+                import datetime
+                dt = datetime.datetime.fromtimestamp(mtime)
+                date_taken = dt.strftime('%Y%m%d')
+            else:
+                date_taken = "20250725"
+        year = date_taken[:4]
+        month = date_taken[4:6]
+        day = date_taken[6:8]
+        num = 1
+        if devider == "None":
+            sep = ""
+        else:
+            sep = devider
+        name_parts = [year, month, day, f"{num:02d}"]
+        if camera_prefix:
+            name_parts.append(camera_prefix)
+        if additional:
+            name_parts.append(additional)
+        if use_camera and camera_model:
+            name_parts.append(camera_model)
+        elif use_camera:
+            name_parts.append("A7R3")
+        if use_lens and lens_model:
+            name_parts.append(lens_model)
+        elif use_lens:
+            name_parts.append("FE24-70")
+        preview = sep.join(name_parts) + ext
+        self.preview_box.setText(preview)
 
     def eventFilter(self, obj, event):
         if obj == self.file_list and event.type() == event.Type.ToolTip:
