@@ -203,22 +203,152 @@ def extract_image_number(image_path, method, exiftool_path=None):
         return None
 
 
-def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_method, devider="_", exiftool_path=None):
+def get_file_timestamp(image_path, method, exiftool_path=None):
     """
-    Batch rename files based on EXIF data and user options.
-    Groups files by base name, extracts EXIF only once per group, and applies a running counter per date.
-    Returns a list of new file paths.
+    Extracts the file timestamp from an image using the specified method.
+    Returns the timestamp as a string or None if not found.
+    """
+    if method == "exiftool":
+        try:
+            # Use exiftool with or without explicit path
+            if exiftool_path and os.path.exists(exiftool_path):
+                with exiftool.ExifToolHelper(executable=exiftool_path) as et:
+                    meta = et.get_metadata([image_path])[0]
+            else:
+                # Try to use system exiftool or let exiftool package find it
+                with exiftool.ExifToolHelper() as et:
+                    meta = et.get_metadata([image_path])[0]
+            
+            # Try different possible timestamp fields
+            possible_fields = [
+                'EXIF:DateTimeOriginal',
+                'EXIF:CreateDate', 
+                'File:FileModifyDate',
+                'File:FileCreateDate',
+                'EXIF:DateTime'
+            ]
+            
+            for field in possible_fields:
+                if field in meta and meta[field] is not None:
+                    return str(meta[field])
+            
+            return None
+            
+        except Exception as e:
+            print(f"ExifTool error for timestamp in {image_path}: {e}")
+            return None
+    elif method == "pillow":
+        try:
+            image = Image.open(image_path)
+            exif_data = image._getexif()
+            if exif_data:
+                for tag, value in exif_data.items():
+                    decoded_tag = TAGS.get(tag, tag)
+                    if decoded_tag in ["DateTimeOriginal", "DateTime"]:
+                        return str(value)
+            return None
+        except Exception as e:
+            print(f"Pillow error for timestamp in {image_path}: {e}")
+            return None
+    else:
+        return None
+
+def group_files_with_failsafe(files, exif_method, exiftool_path=None):
+    """
+    Groups files by basename first, then tries to group orphaned files by timestamp.
+    Returns a list of file groups (each group is a list of files that belong together).
     """
     from collections import defaultdict
     import re
-    grouped = defaultdict(list)
+    from datetime import datetime
+    
+    # Step 1: Group by basename (normal case)
+    basename_groups = defaultdict(list)
     for file in files:
         base = os.path.splitext(os.path.basename(file))[0]
-        grouped[base].append(file)
+        basename_groups[base].append(file)
+    
+    # Step 2: Find orphaned files (groups with only one file)
+    final_groups = []
+    orphaned_files = []
+    
+    for base, file_list in basename_groups.items():
+        if len(file_list) > 1:
+            # Multiple files with same basename - they belong together
+            final_groups.append(file_list)
+        else:
+            # Single file - potential orphan
+            orphaned_files.append(file_list[0])
+    
+    # Step 3: Try to match orphaned files by timestamp
+    if len(orphaned_files) > 1 and exif_method:
+        print(f"Found {len(orphaned_files)} orphaned files, trying timestamp matching...")
+        
+        # Extract timestamps for orphaned files
+        file_timestamps = {}
+        for file in orphaned_files:
+            timestamp = get_file_timestamp(file, exif_method, exiftool_path)
+            if timestamp:
+                # Parse timestamp to compare (remove timezone info for comparison)
+                try:
+                    # Handle different timestamp formats
+                    clean_timestamp = timestamp.split('+')[0].split('-')[0]  # Remove timezone
+                    parsed_time = datetime.strptime(clean_timestamp, '%Y:%m:%d %H:%M:%S')
+                    file_timestamps[file] = parsed_time
+                except:
+                    try:
+                        # Try alternative format
+                        parsed_time = datetime.strptime(clean_timestamp, '%Y-%m-%d %H:%M:%S')
+                        file_timestamps[file] = parsed_time
+                    except:
+                        print(f"Could not parse timestamp for {file}: {timestamp}")
+        
+        # Group files with timestamps within 2 seconds of each other
+        used_files = set()
+        for file1 in orphaned_files:
+            if file1 in used_files or file1 not in file_timestamps:
+                continue
+                
+            group = [file1]
+            used_files.add(file1)
+            
+            for file2 in orphaned_files:
+                if file2 in used_files or file2 not in file_timestamps:
+                    continue
+                
+                # Check if timestamps are within 2 seconds
+                time_diff = abs((file_timestamps[file1] - file_timestamps[file2]).total_seconds())
+                if time_diff <= 2:
+                    group.append(file2)
+                    used_files.add(file2)
+            
+            final_groups.append(group)
+        
+        # Add remaining orphaned files as individual groups
+        for file in orphaned_files:
+            if file not in used_files:
+                final_groups.append([file])
+    else:
+        # No timestamp matching possible, add orphans as individual groups
+        for file in orphaned_files:
+            final_groups.append([file])
+    
+    return final_groups
+
+def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_method, devider="_", exiftool_path=None):
+    """
+    Batch rename files based on EXIF data and user options.
+    Groups files by base name with failsafe timestamp matching, extracts EXIF only once per group, and applies a running counter per date.
+    Returns a list of new file paths.
+    """
+    import re
+    
+    # Use improved grouping with failsafe
+    file_groups = group_files_with_failsafe(files, exif_method, exiftool_path)
 
     renamed_files = []
     date_counter = {}
-    for group_files in grouped.values():
+    for group_files in file_groups:
         date_taken = None
         camera_model = None
         lens_model = None
