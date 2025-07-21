@@ -1,10 +1,12 @@
 import os
+import shutil
+import re
+import datetime
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox, QCheckBox, QDialog, QPlainTextEdit, QHBoxLayout, QStyle, QToolTip, QComboBox, QStatusBar
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon, QTextCursor
-import shutil
 
 try:
     import exiftool
@@ -31,17 +33,37 @@ def is_image_file(filename):
     return os.path.splitext(filename)[1].lower() in IMAGE_EXTENSIONS
 
 def is_exiftool_installed():
+    """
+    Check for exiftool installation in multiple locations.
+    Returns the absolute path to exiftool.exe if found, None otherwise.
+    """
+    # Test 1: System PATH
     exe = shutil.which("exiftool")
     if exe:
         return exe
-    # Check in current directory
+    
+    # Test 2: Current directory
     local = os.path.join(os.getcwd(), "exiftool.exe")
     if os.path.exists(local):
         return local
-    # Prüfe benutzerdefinierten Pfad (hier Desktop-Beispiel)
-    custom = r"C:\\Users\\yshub\\Desktop\\exiftool-13.32_64\\exiftool.exe"
+    
+    # Test 3: exiftool-13.32_64 subdirectory (relative to script)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    custom = os.path.join(script_dir, "exiftool-13.32_64", "exiftool.exe")
     if os.path.exists(custom):
         return custom
+    
+    # Test 4: Direct check in common locations
+    possible_paths = [
+        os.path.join(script_dir, "exiftool.exe"),
+        os.path.join(script_dir, "exiftool", "exiftool.exe"),
+        "C:\\exiftool\\exiftool.exe"
+    ]
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            return path
+    
     return None
 
 # Dynamische EXIF-Auslese
@@ -53,23 +75,34 @@ def extract_exif_fields(image_path, method, exiftool_path=None):
     """
     if method == "exiftool":
         try:
-            if exiftool_path:
+            # Use exiftool with or without explicit path
+            if exiftool_path and os.path.exists(exiftool_path):
                 with exiftool.ExifToolHelper(executable=exiftool_path) as et:
                     meta = et.get_metadata([image_path])[0]
             else:
+                # Try to use system exiftool or let exiftool package find it
                 with exiftool.ExifToolHelper() as et:
                     meta = et.get_metadata([image_path])[0]
+            
+            # Extract date
             date = meta.get('EXIF:DateTimeOriginal')
             if date:
                 date = date.split(' ')[0].replace(':', '')
+            
+            # Extract camera model
             camera = meta.get('EXIF:Model')
             if camera:
                 camera = str(camera).replace(' ', '-')
+            
+            # Extract lens model
             lens = meta.get('EXIF:LensModel')
             if lens:
                 lens = str(lens).replace(' ', '-')
+            
             return date, camera, lens
-        except Exception:
+            
+        except Exception as e:
+            print(f"ExifTool error for {image_path}: {e}")
             return None, None, None
     elif method == "pillow":
         try:
@@ -88,34 +121,89 @@ def extract_exif_fields(image_path, method, exiftool_path=None):
                     if decoded_tag == "LensModel" and not lens:
                         lens = str(value).replace(" ", "-")
             return date, camera, lens
-        except Exception:
+        except Exception as e:
+            print(f"Pillow error for {image_path}: {e}")
             return None, None, None
     else:
         return None, None, None
 
-def extract_date_taken(image_path, method):
+def extract_date_taken(image_path, method, exiftool_path=None):
     """
     Extracts only the date from an image using the specified method.
     """
-    date, _, _ = extract_exif_fields(image_path, method)
+    date, _, _ = extract_exif_fields(image_path, method, exiftool_path)
     return date
 
-def extract_camera_model(image_path, method):
+def extract_camera_model(image_path, method, exiftool_path=None):
     """
     Extracts only the camera model from an image using the specified method.
     """
-    _, camera, _ = extract_exif_fields(image_path, method)
+    _, camera, _ = extract_exif_fields(image_path, method, exiftool_path)
     return camera
 
-def extract_lens_model(image_path, method):
+def extract_lens_model(image_path, method, exiftool_path=None):
     """
     Extracts only the lens model from an image using the specified method.
     """
-    _, _, lens = extract_exif_fields(image_path, method)
+    _, _, lens = extract_exif_fields(image_path, method, exiftool_path)
     return lens
 
+def extract_image_number(image_path, method, exiftool_path=None):
+    """
+    Extracts the image number/shutter count from an image using the specified method.
+    Returns the image number as a string or None if not found.
+    """
+    if method == "exiftool":
+        try:
+            # Use exiftool with or without explicit path
+            if exiftool_path and os.path.exists(exiftool_path):
+                with exiftool.ExifToolHelper(executable=exiftool_path) as et:
+                    meta = et.get_metadata([image_path])[0]
+            else:
+                # Try to use system exiftool or let exiftool package find it
+                with exiftool.ExifToolHelper() as et:
+                    meta = et.get_metadata([image_path])[0]
+            
+            # Try different possible fields for image number/shutter count
+            possible_fields = [
+                'EXIF:ImageNumber',
+                'EXIF:ShutterCount', 
+                'MakerNotes:ShutterCount',
+                'MakerNotes:ImageNumber',
+                'Canon:ImageNumber',
+                'Nikon:ShutterCount',
+                'Sony:ShotNumberSincePowerUp',
+                'Sony:ImageNumber',
+                'File:FileNumber'
+            ]
+            
+            for field in possible_fields:
+                if field in meta and meta[field] is not None:
+                    return str(meta[field])
+            
+            return None
+            
+        except Exception as e:
+            print(f"ExifTool error for image number in {image_path}: {e}")
+            return None
+    elif method == "pillow":
+        try:
+            image = Image.open(image_path)
+            exif_data = image._getexif()
+            if exif_data:
+                for tag, value in exif_data.items():
+                    decoded_tag = TAGS.get(tag, tag)
+                    if decoded_tag in ["ImageNumber", "ShutterCount"]:
+                        return str(value)
+            return None
+        except Exception as e:
+            print(f"Pillow error for image number in {image_path}: {e}")
+            return None
+    else:
+        return None
 
-def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_method):
+
+def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_method, devider="_", exiftool_path=None):
     """
     Batch rename files based on EXIF data and user options.
     Groups files by base name, extracts EXIF only once per group, and applies a running counter per date.
@@ -136,11 +224,11 @@ def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_me
         lens_model = None
         for file in group_files:
             if use_camera and not camera_model:
-                camera_model = extract_camera_model(file, exif_method)
+                camera_model = extract_camera_model(file, exif_method, exiftool_path)
             if use_lens and not lens_model:
-                lens_model = extract_lens_model(file, exif_method)
+                lens_model = extract_lens_model(file, exif_method, exiftool_path)
             if not date_taken:
-                date_taken = extract_date_taken(file, exif_method)
+                date_taken = extract_date_taken(file, exif_method, exiftool_path)
             if date_taken and (not use_camera or camera_model) and (not use_lens or lens_model):
                 break
         if not date_taken:
@@ -153,7 +241,6 @@ def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_me
             # Fallback: use file modification date
             file = group_files[0]
             mtime = os.path.getmtime(file)
-            import datetime
             dt = datetime.datetime.fromtimestamp(mtime)
             date_taken = dt.strftime('%Y%m%d')
         # Running counter per date
@@ -176,7 +263,8 @@ def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_me
                 name_parts.append(camera_model)
             if use_lens and lens_model:
                 name_parts.append(lens_model)
-            new_name = "_".join(name_parts) + ext
+            sep = "" if devider == "None" else devider
+            new_name = sep.join(name_parts) + ext
             new_path = os.path.join(os.path.dirname(file), new_name)
             os.rename(file, new_path)
             renamed_files.append(new_path)
@@ -234,11 +322,26 @@ class FileRenamerApp(QMainWindow):
         self.layout.addWidget(self.devider_combo)
         self.devider_combo.currentIndexChanged.connect(self.update_preview)
 
+        # Camera checkbox with model display
+        camera_checkbox_layout = QHBoxLayout()
         self.checkbox_camera = QCheckBox("Include camera model in filename")
-        self.layout.addWidget(self.checkbox_camera)
+        self.camera_model_label = QLabel("(detecting...)")
+        self.camera_model_label.setStyleSheet("color: gray; font-style: italic;")
+        camera_checkbox_layout.addWidget(self.checkbox_camera)
+        camera_checkbox_layout.addWidget(self.camera_model_label)
+        camera_checkbox_layout.addStretch()
+        self.layout.addLayout(camera_checkbox_layout)
         self.checkbox_camera.stateChanged.connect(self.update_preview)
+        
+        # Lens checkbox with model display
+        lens_checkbox_layout = QHBoxLayout()
         self.checkbox_lens = QCheckBox("Include lens in filename")
-        self.layout.addWidget(self.checkbox_lens)
+        self.lens_model_label = QLabel("(detecting...)")
+        self.lens_model_label.setStyleSheet("color: gray; font-style: italic;")
+        lens_checkbox_layout.addWidget(self.checkbox_lens)
+        lens_checkbox_layout.addWidget(self.lens_model_label)
+        lens_checkbox_layout.addStretch()
+        self.layout.addLayout(lens_checkbox_layout)
         self.checkbox_lens.stateChanged.connect(self.update_preview)
 
         self.preview_label = QLabel("Preview:")
@@ -250,7 +353,8 @@ class FileRenamerApp(QMainWindow):
         self.file_list = QListWidget()
         self.layout.addWidget(self.file_list)
         self.file_list.itemDoubleClicked.connect(self.show_selected_exif)
-        self.file_list.setToolTip("Double click for EXIF")
+        self.file_list.itemClicked.connect(self.show_image_info)
+        self.file_list.setToolTip("Click for image info, double click for EXIF")
         self.file_list.installEventFilter(self)
 
         self.select_files_button = QPushButton("Select Files")
@@ -261,6 +365,10 @@ class FileRenamerApp(QMainWindow):
         self.select_folder_button.clicked.connect(self.select_folder)
         self.layout.addWidget(self.select_folder_button)
 
+        self.clear_list_button = QPushButton("Clear List")
+        self.clear_list_button.clicked.connect(self.clear_file_list)
+        self.layout.addWidget(self.clear_list_button)
+
         self.setAcceptDrops(True)
 
         self.rename_button = QPushButton("Rename")
@@ -269,12 +377,14 @@ class FileRenamerApp(QMainWindow):
 
         self.files = []
         self.exiftool_path = is_exiftool_installed()
+        
         if EXIFTOOL_AVAILABLE and self.exiftool_path:
             self.exif_method = "exiftool"
         elif PIL_AVAILABLE:
             self.exif_method = "pillow"
         else:
             self.exif_method = None
+        
         # Statusbar für Info unten rechts
         self.status = QStatusBar()
         self.setStatusBar(self.status)
@@ -287,19 +397,80 @@ class FileRenamerApp(QMainWindow):
         # EXIF cache for preview file
         self._preview_exif_cache = {}
         self._preview_exif_file = None
+        
+        # Update camera and lens labels initially
+        self.update_camera_lens_labels()
+
+    def update_camera_lens_labels(self):
+        """Update the camera and lens model labels based on the first selected file"""
+        if not self.files or not self.exif_method:
+            self.camera_model_label.setText("(no files selected)")
+            self.lens_model_label.setText("(no files selected)")
+            return
+        
+        # Use first image file for detection
+        first_image = next((f for f in self.files if is_image_file(f)), None)
+        if not first_image:
+            self.camera_model_label.setText("(no image files)")
+            self.lens_model_label.setText("(no image files)")
+            return
+        
+        try:
+            date, camera, lens = extract_exif_fields(first_image, self.exif_method, self.exiftool_path)
+            
+            if camera:
+                self.camera_model_label.setText(f"({camera})")
+                self.camera_model_label.setStyleSheet("color: green; font-style: italic;")
+            else:
+                self.camera_model_label.setText("(not detected)")
+                self.camera_model_label.setStyleSheet("color: orange; font-style: italic;")
+            
+            if lens:
+                self.lens_model_label.setText(f"({lens})")
+                self.lens_model_label.setStyleSheet("color: green; font-style: italic;")
+            else:
+                self.lens_model_label.setText("(not detected)")
+                self.lens_model_label.setStyleSheet("color: orange; font-style: italic;")
+                
+        except Exception as e:
+            self.camera_model_label.setText("(error)")
+            self.lens_model_label.setText("(error)")
+            self.camera_model_label.setStyleSheet("color: red; font-style: italic;")
+            self.lens_model_label.setStyleSheet("color: red; font-style: italic;")
+
+    def show_image_info(self, item):
+        """Show image information when a file is clicked (single click)"""
+        file_path = item.text()
+        if not is_image_file(file_path) or not self.exif_method:
+            return
+        
+        try:
+            # Extract image number
+            image_number = extract_image_number(file_path, self.exif_method, self.exiftool_path)
+            
+            if image_number:
+                # Update status bar with image number
+                self.status.showMessage(f"Image Number/Shutter Count: {image_number}", 5000)  # Show for 5 seconds
+            else:
+                self.status.showMessage("Image number not found in EXIF data", 3000)
+                
+        except Exception as e:
+            self.status.showMessage(f"Error reading image number: {e}", 3000)
 
     def update_exif_status(self):
         if self.exif_method == "exiftool":
-            self.exif_status_label.setText("EXIF method: exiftool (recommended)")
-            self.exif_status_label.clear()  # Kein Icon
-            self.exif_status_label.setToolTip("")
+            self.exif_status_label.setText(f"EXIF method: exiftool v13.32 (recommended) ✓")
+            self.exif_status_label.setStyleSheet("color: green;")
+            self.exif_status_label.setToolTip(f"Using ExifTool at: {self.exiftool_path}")
         elif self.exif_method == "pillow":
-            self.exif_status_label.setText("EXIF method: Pillow")
+            self.exif_status_label.setText("EXIF method: Pillow ⚠")
+            self.exif_status_label.setStyleSheet("color: orange;")
             info_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16)
             self.exif_status_label.setPixmap(info_icon)
             self.exif_status_label.setToolTip("To make use of the great exiftool, go to https://exiftool.org to download it, place exiftool.exe in your program folder or PATH, then restart. RAW support is limited with Pillow.")
         else:
-            self.exif_status_label.setText("No EXIF support available")
+            self.exif_status_label.setText("No EXIF support available ❌")
+            self.exif_status_label.setStyleSheet("color: red;")
             info_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16)
             self.exif_status_label.setPixmap(info_icon)
             self.exif_status_label.setToolTip("Please install exiftool (https://exiftool.org) or Pillow for EXIF support.")
@@ -382,7 +553,7 @@ class FileRenamerApp(QMainWindow):
         if obj == self.file_list and event.type() == event.Type.ToolTip:
             item = self.file_list.itemAt(event.pos())
             if item:
-                QToolTip.showText(event.globalPos(), "Double click for EXIF", self.file_list)
+                QToolTip.showText(event.globalPos(), "Click for image info, double click for EXIF", self.file_list)
                 return True
         return super().eventFilter(obj, event)
 
@@ -433,11 +604,28 @@ class FileRenamerApp(QMainWindow):
         dialog.exec()
 
     def add_files_to_list(self, files):
+        # Clear existing files when adding new ones
+        if files and self.files:
+            self.clear_file_list()
+        
         # Prevent duplicates
         for file in files:
             if file not in self.files:
                 self.files.append(file)
                 self.file_list.addItem(file)
+        
+        # Update preview and camera/lens labels when files are added
+        self.update_preview()
+        self.update_camera_lens_labels()
+
+    def clear_file_list(self):
+        """Clear the file list and reset the GUI"""
+        self.files.clear()
+        self.file_list.clear()
+        self._preview_exif_cache = {}
+        self._preview_exif_file = None
+        self.update_preview()
+        self.update_camera_lens_labels()
 
     def show_selected_exif(self, item):
         file = item.text()
@@ -480,6 +668,7 @@ class FileRenamerApp(QMainWindow):
         additional = self.additional_entry.text().strip()
         use_camera = self.checkbox_camera.isChecked()
         use_lens = self.checkbox_lens.isChecked()
+        devider = self.devider_combo.currentText()
         non_images = [f for f in self.files if not is_image_file(f)]
         if non_images:
             reply = QMessageBox.question(
@@ -495,10 +684,29 @@ class FileRenamerApp(QMainWindow):
             QMessageBox.warning(self, "Warning", "No image files found for renaming.")
             return
         try:
-            rename_files(image_files, camera_prefix, additional, use_camera, use_lens, self.exif_method)
-            QMessageBox.information(self, "Done", "Files have been renamed.")
+            renamed_files = rename_files(image_files, camera_prefix, additional, use_camera, use_lens, self.exif_method, devider, self.exiftool_path)
+            
+            # Update the file list with the new file names
+            # First, collect non-image files that weren't renamed
+            original_non_images = [f for f in self.files if not is_image_file(f)]
+            
+            # Clear and rebuild the file list
+            self.files.clear()
             self.file_list.clear()
-            self.files = []
+            
+            # Add renamed image files
+            for renamed_file in renamed_files:
+                self.files.append(renamed_file)
+                self.file_list.addItem(renamed_file)
+            
+            # Add back any non-image files (they weren't renamed)
+            for non_image in original_non_images:
+                self.files.append(non_image)
+                self.file_list.addItem(non_image)
+            
+            QMessageBox.information(self, "Done", f"Files have been renamed. {len(renamed_files)} files processed.")
+            # Update preview to reflect new file names
+            self.update_preview()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error while renaming: {e}")
 
