@@ -2,6 +2,7 @@ import os
 import shutil
 import re
 import datetime
+import time
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox, QCheckBox, QDialog, QPlainTextEdit, QHBoxLayout, QStyle, QToolTip, QComboBox, QStatusBar
 )
@@ -223,6 +224,23 @@ def is_image_file(filename):
     Returns True if the file is an image or RAW file based on its extension.
     """
     return os.path.splitext(filename)[1].lower() in IMAGE_EXTENSIONS
+
+def scan_directory_recursive(directory):
+    """
+    Recursively scan directory for image files in all subdirectories.
+    Returns a list of all image file paths found.
+    """
+    image_files = []
+    try:
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                if is_image_file(file):
+                    full_path = os.path.join(root, file)
+                    image_files.append(full_path)
+    except Exception as e:
+        print(f"Error scanning directory {directory}: {e}")
+    
+    return image_files
 
 def is_exiftool_installed():
     """
@@ -1237,13 +1255,27 @@ class FileRenamerApp(QMainWindow):
     def dropEvent(self, event):
         if event.mimeData().hasUrls():
             files = []
+            total_dirs = sum(1 for url in event.mimeData().urls() if os.path.isdir(url.toLocalFile()))
+            
+            if total_dirs > 0:
+                self.status.showMessage("Scanning dropped folders for images...")
+                QApplication.processEvents()  # Update UI
+            
             for url in event.mimeData().urls():
                 path = url.toLocalFile()
                 if os.path.isdir(path):
-                    files.extend([os.path.join(path, f) for f in os.listdir(path) if is_image_file(f)])
+                    # Recursively scan subdirectories
+                    dir_files = scan_directory_recursive(path)
+                    files.extend(dir_files)
                 elif is_image_file(path):
                     files.append(path)
-            self.add_files_to_list(files)
+            
+            if files:
+                if total_dirs > 0:
+                    self.status.showMessage(f"Found {len(files)} images in dropped folder(s)", 3000)
+                self.add_files_to_list(files)
+            elif total_dirs > 0:
+                self.status.showMessage("No images found in dropped folder(s)", 3000)
 
     def select_files(self):
         files, _ = QFileDialog.getOpenFileNames(self, "Select Files", "", "Image Files (*.jpg *.jpeg *.png *.arw *.cr2 *.nef *.dng *.tif *.tiff *.bmp *.gif)")
@@ -1253,8 +1285,23 @@ class FileRenamerApp(QMainWindow):
     def select_folder(self):
         folder = QFileDialog.getExistingDirectory(self, "Select Folder")
         if folder:
-            files = [os.path.join(folder, f) for f in os.listdir(folder) if is_image_file(f)]
-            self.add_files_to_list(files)
+            # Show progress while scanning
+            self.status.showMessage("Scanning folder and subfolders for images...")
+            QApplication.processEvents()  # Update UI
+            
+            # Recursively scan all subdirectories
+            files = scan_directory_recursive(folder)
+            
+            if files:
+                self.status.showMessage(f"Found {len(files)} images in folder hierarchy", 3000)
+                self.add_files_to_list(files)
+            else:
+                self.status.showMessage("No image files found in folder hierarchy", 3000)
+                QMessageBox.information(
+                    self, 
+                    "No Images Found", 
+                    f"No image files were found in:\n{folder}\n\nSupported formats: JPG, PNG, RAW files (CR2, NEF, ARW, etc.)"
+                )
 
     def rename_files_action(self):
         if not self.files:
