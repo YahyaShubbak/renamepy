@@ -4,10 +4,10 @@ import re
 import datetime
 import time
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox, QCheckBox, QDialog, QPlainTextEdit, QHBoxLayout, QStyle, QToolTip, QComboBox, QStatusBar
+    QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox, QCheckBox, QDialog, QPlainTextEdit, QHBoxLayout, QStyle, QToolTip, QComboBox, QStatusBar, QListWidgetItem
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QIcon, QTextCursor
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMimeData
+from PyQt6.QtGui import QIcon, QTextCursor, QDrag, QPainter, QFont
 
 try:
     import exiftool
@@ -30,6 +30,231 @@ def clear_global_exif_cache():
     """Clear the global EXIF cache for fresh processing"""
     global _exif_cache
     _exif_cache.clear()
+
+def get_filename_components_static(date_taken, camera_prefix, additional, camera_model, lens_model, use_camera, use_lens, num, custom_order):
+    """
+    Static version of get_filename_components for use in worker threads.
+    Build filename components according to the selected order.
+    Sequential number is always added at the end.
+    """
+    year = date_taken[:4]
+    month = date_taken[4:6]
+    day = date_taken[6:8]
+    
+    # Define all possible components
+    components = {
+        "Date": f"{year}-{month}-{day}",
+        "Prefix": camera_prefix if camera_prefix else None,
+        "Additional": additional if additional else None,
+        "Camera": camera_model if (use_camera and camera_model) else None,
+        "Lens": lens_model if (use_lens and lens_model) else None
+    }
+    
+    # Build ordered list based on custom order
+    ordered_parts = []
+    for component_name in custom_order:
+        component_value = components.get(component_name)
+        if component_value:  # Only add non-empty components
+            ordered_parts.append(component_value)
+    
+    # Always add sequential number at the end
+    ordered_parts.append(f"{num:03d}")
+    
+    return ordered_parts
+
+class InteractivePreviewWidget(QListWidget):
+    """
+    Interactive preview widget that allows drag & drop reordering of filename components.
+    The sequential number is always shown at the end and cannot be moved.
+    """
+    order_changed = pyqtSignal(list)  # Signal emitted when order changes
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.setMaximumHeight(80)
+        self.setMinimumHeight(60)
+        self.setFlow(QListWidget.Flow.LeftToRight)
+        self.setWrapping(False)
+        self.setSpacing(2)
+        
+        # Style the widget
+        self.setStyleSheet("""
+            QListWidget {
+                border: 2px solid #cccccc;
+                border-radius: 5px;
+                background-color: #f9f9f9;
+                padding: 5px;
+            }
+            QListWidget::item {
+                background-color: #e6f3ff;
+                border: 1px solid #b3d9ff;
+                border-radius: 3px;
+                padding: 4px 8px;
+                margin: 2px;
+                font-weight: bold;
+            }
+            QListWidget::item:selected {
+                background-color: #cce7ff;
+                border: 2px solid #66c2ff;
+            }
+            QListWidget::item:hover {
+                background-color: #d9ecff;
+            }
+        """)
+        
+        # Connect signals
+        self.itemChanged.connect(self._on_item_changed)
+        
+        # Store separator
+        self.separator = "-"
+        
+        # Initialize with empty state
+        self.components = []
+        self.fixed_number = "001"
+        
+    def set_separator(self, separator):
+        """Set the separator character"""
+        self.separator = "" if separator == "None" else separator
+        self.update_display()
+    
+    def set_components(self, components, number="001"):
+        """Set the filename components to display"""
+        self.components = components.copy()
+        self.fixed_number = number
+        self.update_display()
+    
+    def update_display(self):
+        """Update the visual display of components"""
+        self.clear()
+        
+        # Add components and separators in the correct order
+        for i, component in enumerate(self.components):
+            # Add the component
+            item = QListWidgetItem(component)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsDragEnabled)
+            item.setData(Qt.ItemDataRole.UserRole, "component")
+            self.addItem(item)
+            
+            # Add separator after each component (except the last one)
+            if self.separator and i < len(self.components) - 1:
+                sep_item = QListWidgetItem(self.separator)
+                sep_item.setFlags(Qt.ItemFlag.NoItemFlags)  # Not selectable or draggable
+                sep_item.setData(Qt.ItemDataRole.UserRole, "separator")
+                sep_item.setBackground(Qt.GlobalColor.lightGray)
+                self.addItem(sep_item)
+        
+        # Add final separator before number (only if we have components)
+        if self.separator and self.components:
+            sep_item = QListWidgetItem(self.separator)
+            sep_item.setFlags(Qt.ItemFlag.NoItemFlags)
+            sep_item.setData(Qt.ItemDataRole.UserRole, "separator")
+            sep_item.setBackground(Qt.GlobalColor.lightGray)
+            self.addItem(sep_item)
+        
+        # Add fixed number at the end (not draggable)
+        number_item = QListWidgetItem(self.fixed_number)
+        number_item.setFlags(Qt.ItemFlag.NoItemFlags)  # Not selectable or draggable
+        number_item.setData(Qt.ItemDataRole.UserRole, "number")
+        number_item.setBackground(Qt.GlobalColor.yellow)
+        font = QFont()
+        font.setBold(True)
+        number_item.setFont(font)
+        self.addItem(number_item)
+    
+    def get_component_order(self):
+        """Get the current order of components (excluding separators and number)"""
+        order = []
+        for i in range(self.count()):
+            item = self.item(i)
+            if item.data(Qt.ItemDataRole.UserRole) == "component":
+                order.append(item.text())
+        return order
+    
+    def dropEvent(self, event):
+        """Handle drop events to reorder components"""
+        if event.source() == self:
+            # Get the dragged item
+            dragged_items = self.selectedItems()
+            if not dragged_items:
+                return
+            
+            dragged_item = dragged_items[0]
+            
+            # Only allow moving component items, not separators or numbers
+            if dragged_item.data(Qt.ItemDataRole.UserRole) != "component":
+                event.ignore()
+                return
+            
+            # Get drop position
+            drop_item = self.itemAt(event.position().toPoint())
+            
+            # If dropping on separator or number, find nearest valid position
+            if drop_item and drop_item.data(Qt.ItemDataRole.UserRole) != "component":
+                # Find the nearest component position
+                drop_row = self.row(drop_item)
+                # Look for previous component
+                for i in range(drop_row - 1, -1, -1):
+                    if self.item(i).data(Qt.ItemDataRole.UserRole) == "component":
+                        drop_item = self.item(i)
+                        break
+                else:
+                    # Look for next component
+                    for i in range(drop_row + 1, self.count()):
+                        if self.item(i).data(Qt.ItemDataRole.UserRole) == "component":
+                            drop_item = self.item(i)
+                            break
+            
+            # Perform the reorder in components list
+            dragged_text = dragged_item.text()
+            if dragged_text in self.components:
+                old_index = self.components.index(dragged_text)
+                
+                # Determine target position BEFORE modifying the list
+                target_index = len(self.components) - 1  # Default: move to end
+                
+                if drop_item and drop_item.data(Qt.ItemDataRole.UserRole) == "component":
+                    drop_text = drop_item.text()
+                    if drop_text in self.components:
+                        drop_index = self.components.index(drop_text)
+                        
+                        # Insert AFTER the drop target (more intuitive)
+                        target_index = drop_index + 1
+                        
+                        # If we're moving from before to after, adjust the target index
+                        if old_index < drop_index:
+                            target_index = drop_index  # No need to add 1 since we'll remove one before
+                        
+                        # Ensure we don't go beyond the list
+                        target_index = min(target_index, len(self.components) - 1)
+                
+                # Remove the dragged item
+                self.components.pop(old_index)
+                
+                # Insert at the target position
+                self.components.insert(target_index, dragged_text)
+                
+                # Update display and emit signal
+                self.update_display()
+                self.order_changed.emit(self.get_component_order())
+        
+        event.accept()
+    
+    def _on_item_changed(self, item):
+        """Handle item changes"""
+        pass  # We don't allow editing items directly
+    
+    def get_preview_text(self):
+        """Get the complete preview text as it would appear in filename"""
+        if not self.components:
+            return f"{self.fixed_number}.ARW"
+        
+        if self.separator:
+            return self.separator.join(self.components + [self.fixed_number]) + ".ARW"
+        else:
+            return "".join(self.components + [self.fixed_number]) + ".ARW"
 
 def get_cached_exif_data(file_path, method, exiftool_path=None):
     """
@@ -64,7 +289,7 @@ class RenameWorkerThread(QThread):
     error = pyqtSignal(str)
     
     def __init__(self, files, camera_prefix, additional, use_camera, use_lens, 
-                 exif_method, devider, exiftool_path):
+                 exif_method, devider, exiftool_path, custom_order):
         super().__init__()
         self.files = files
         self.camera_prefix = camera_prefix
@@ -74,6 +299,7 @@ class RenameWorkerThread(QThread):
         self.exif_method = exif_method
         self.devider = devider
         self.exiftool_path = exiftool_path
+        self.custom_order = custom_order
     
     def run(self):
         """Run the rename operation in background thread"""
@@ -179,15 +405,13 @@ class RenameWorkerThread(QThread):
             for file in accessible_files:
                 try:
                     ext = os.path.splitext(file)[1]
-                    name_parts = [year, month, day, f"{num:02d}"]
-                    if self.camera_prefix:
-                        name_parts.append(self.camera_prefix)
-                    if self.additional:
-                        name_parts.append(self.additional)
-                    if self.use_camera and camera_model:
-                        name_parts.append(camera_model)
-                    if self.use_lens and lens_model:
-                        name_parts.append(lens_model)
+                    
+                    # Use get_filename_components_static for ordered naming
+                    name_parts = get_filename_components_static(
+                        date_taken, self.camera_prefix, self.additional, 
+                        camera_model, lens_model, self.use_camera, self.use_lens, 
+                        num, self.custom_order
+                    )
                     
                     sep = "" if self.devider == "None" else self.devider
                     new_name = sep.join(name_parts) + ext
@@ -700,13 +924,17 @@ def verify_group_consistency(group, exif_method, exiftool_path=None):
     
     return True
 
-def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_method, devider="_", exiftool_path=None):
+def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_method, devider="_", exiftool_path=None, custom_order=None):
     """
     Batch rename files based on EXIF data and user options.
     Groups files by base name with failsafe timestamp matching, extracts EXIF only once per group, and applies a running counter per date.
     Returns a list of new file paths and any errors encountered.
     """
     import re
+    
+    # Default order if not provided
+    if custom_order is None:
+        custom_order = ["Date", "Prefix", "Additional", "Camera", "Lens"]
     
     # Use improved grouping with failsafe
     file_groups = group_files_with_failsafe(files, exif_method, exiftool_path)
@@ -777,15 +1005,13 @@ def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_me
         for file in accessible_files:
             try:
                 ext = os.path.splitext(file)[1]
-                name_parts = [year, month, day, f"{num:02d}"]
-                if camera_prefix:
-                    name_parts.append(camera_prefix)
-                if additional:
-                    name_parts.append(additional)
-                if use_camera and camera_model:
-                    name_parts.append(camera_model)
-                if use_lens and lens_model:
-                    name_parts.append(lens_model)
+                
+                # Use get_filename_components_static for ordered naming
+                name_parts = get_filename_components_static(
+                    date_taken, camera_prefix, additional, 
+                    camera_model, lens_model, use_camera, use_lens, 
+                    num, custom_order
+                )
                 
                 sep = "" if devider == "None" else devider
                 new_name = sep.join(name_parts) + ext
@@ -836,6 +1062,15 @@ class FileRenamerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("File Renamer")
+        
+        # Set application icon using custom icon.ico file
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+        else:
+            # Fallback to standard icon if icon.ico is not found
+            self.setWindowIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView))
+        
         self.setGeometry(100, 100, 600, 400)
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -883,8 +1118,25 @@ class FileRenamerApp(QMainWindow):
         self.layout.addLayout(devider_row)
         self.devider_combo = QComboBox()
         self.devider_combo.addItems(["None", "_", "-"])
+        self.devider_combo.setCurrentText("-")  # Set default to dash for better readability
         self.layout.addWidget(self.devider_combo)
         self.devider_combo.currentIndexChanged.connect(self.update_preview)
+        self.devider_combo.currentIndexChanged.connect(self.on_devider_changed)
+
+        # Interactive Preview section
+        preview_row = QHBoxLayout()
+        preview_label = QLabel("Interactive Preview:")
+        preview_info = QLabel()
+        preview_info.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16))
+        preview_info.setToolTip("Drag components to reorder them. Sequential number always stays at the end.")
+        preview_row.addWidget(preview_label)
+        preview_row.addWidget(preview_info)
+        preview_row.addStretch()
+        self.layout.addLayout(preview_row)
+        
+        self.interactive_preview = InteractivePreviewWidget()
+        self.interactive_preview.order_changed.connect(self.on_preview_order_changed)
+        self.layout.addWidget(self.interactive_preview)
 
         # Camera checkbox with model display
         camera_checkbox_layout = QHBoxLayout()
@@ -907,12 +1159,6 @@ class FileRenamerApp(QMainWindow):
         lens_checkbox_layout.addStretch()
         self.layout.addLayout(lens_checkbox_layout)
         self.checkbox_lens.stateChanged.connect(self.update_preview)
-
-        self.preview_label = QLabel("Preview:")
-        self.layout.addWidget(self.preview_label)
-        self.preview_box = QLineEdit()
-        self.preview_box.setReadOnly(True)
-        self.layout.addWidget(self.preview_box)
 
         self.file_list = QListWidget()
         self.layout.addWidget(self.file_list)
@@ -955,6 +1201,10 @@ class FileRenamerApp(QMainWindow):
         # Label für Methode und ggf. Info-Icon
         self.exif_status_label = QLabel()
         self.status.addPermanentWidget(self.exif_status_label)
+        
+        # Initialize custom ordering BEFORE calling update_preview
+        self.custom_order = ["Date", "Prefix", "Additional", "Camera", "Lens"]  # Number always at end
+        
         self.update_exif_status()
         self.update_preview()
 
@@ -965,8 +1215,50 @@ class FileRenamerApp(QMainWindow):
         # Update camera and lens labels initially
         self.update_camera_lens_labels()
 
+    def on_preview_order_changed(self, new_order):
+        """Handle changes from the interactive preview widget"""
+        # Map display names back to internal names
+        display_to_internal = {
+            "2025-07-21": "Date",
+            "A7R3": "Prefix", 
+            "Sarah30": "Additional",
+            "ILCE-7RM3": "Camera",
+            "FE24-70": "Lens"
+        }
+        
+        # Convert display order to internal order
+        internal_order = []
+        for display_name in new_order:
+            # Try exact match first
+            if display_name in display_to_internal:
+                internal_order.append(display_to_internal[display_name])
+            else:
+                # Try to guess based on content
+                if re.match(r'\d{4}-\d{2}-\d{2}', display_name):
+                    internal_order.append("Date")
+                elif display_name in ["A7R3", "D850"]:  # Common prefixes
+                    internal_order.append("Prefix")
+                elif display_name in ["ILCE-7RM3", "D850"]:  # Camera models
+                    internal_order.append("Camera")
+                elif "FE" in display_name or "mm" in display_name:  # Lens patterns
+                    internal_order.append("Lens")
+                else:
+                    internal_order.append("Additional")  # Default fallback
+        
+        # Add missing components that weren't in the display
+        all_components = ["Date", "Prefix", "Additional", "Camera", "Lens"]
+        for component in all_components:
+            if component not in internal_order:
+                internal_order.append(component)
+        
+        self.custom_order = internal_order
+
+    def on_devider_changed(self):
+        """Handle devider combo box changes"""
+        devider = self.devider_combo.currentText()
+        self.interactive_preview.set_separator(devider)
+
     def validate_and_update_preview(self):
-        """Validate input fields and update preview"""
         # Get current text
         camera_text = self.camera_prefix_entry.text()
         additional_text = self.additional_entry.text()
@@ -1067,6 +1359,14 @@ class FileRenamerApp(QMainWindow):
             self.exif_status_label.setToolTip("Please install exiftool (https://exiftool.org) or Pillow for EXIF support.")
 
     def update_preview(self):
+        """Update the interactive preview widget with current settings"""
+        # Get current settings
+        camera_prefix = self.camera_prefix_entry.text().strip()
+        additional = self.additional_entry.text().strip()
+        use_camera = self.checkbox_camera.isChecked()
+        use_lens = self.checkbox_lens.isChecked()
+        devider = self.devider_combo.currentText()
+        
         # Choose first JPG file, else first file, else dummy
         preview_file = next((f for f in self.files if os.path.splitext(f)[1].lower() in [".jpg", ".jpeg"]), None)
         if not preview_file and self.files:
@@ -1074,71 +1374,81 @@ class FileRenamerApp(QMainWindow):
         if not preview_file:
             preview_file = "20250725_DSC0001.ARW"
 
-        camera_prefix = self.camera_prefix_entry.text().strip()
-        additional = self.additional_entry.text().strip()
-        use_camera = self.checkbox_camera.isChecked()
-        use_lens = self.checkbox_lens.isChecked()
-        devider = self.devider_combo.currentText()
         date_taken = None
         camera_model = None
         lens_model = None
-        ext = os.path.splitext(preview_file)[1] if preview_file else ".ARW"
+        
         if not self.exif_method:
-            self.preview_box.setText("[No EXIF support available]")
-            return
-
-        # EXIF cache: only extract if file changed
-        cache_key = (preview_file, self.exif_method, self.exiftool_path)
-        if os.path.exists(preview_file):
-            if self._preview_exif_file != cache_key:
-                try:
-                    exif_data = extract_exif_fields(preview_file, self.exif_method, self.exiftool_path)
-                except Exception as e:
-                    self.preview_box.setText(f"[EXIF error: {e}]")
-                    return
-                self._preview_exif_cache = {
-                    'date': exif_data[0],
-                    'camera': exif_data[1],
-                    'lens': exif_data[2],
-                }
-                self._preview_exif_file = cache_key
-            date_taken = self._preview_exif_cache.get('date')
-            camera_model = self._preview_exif_cache.get('camera')
-            lens_model = self._preview_exif_cache.get('lens')
-
-        import re
-        if not date_taken:
-            m = re.search(r'(20\d{2})(\d{2})(\d{2})', os.path.basename(preview_file))
-            if m:
-                date_taken = f"{m.group(1)}{m.group(2)}{m.group(3)}"
-        if not date_taken:
+            # No EXIF support - use fallback values
+            date_taken = "20250725"
+            camera_model = "A7R3" if use_camera else None
+            lens_model = "FE24-70" if use_lens else None
+        else:
+            # EXIF cache: only extract if file changed
+            cache_key = (preview_file, self.exif_method, self.exiftool_path)
             if os.path.exists(preview_file):
-                mtime = os.path.getmtime(preview_file)
-                import datetime
-                dt = datetime.datetime.fromtimestamp(mtime)
-                date_taken = dt.strftime('%Y%m%d')
-            else:
-                date_taken = "20250725"
+                if self._preview_exif_file != cache_key:
+                    try:
+                        exif_data = extract_exif_fields(preview_file, self.exif_method, self.exiftool_path)
+                        self._preview_exif_cache = {
+                            'date': exif_data[0],
+                            'camera': exif_data[1],
+                            'lens': exif_data[2],
+                        }
+                        self._preview_exif_file = cache_key
+                    except Exception as e:
+                        # Fallback on error
+                        self._preview_exif_cache = {'date': None, 'camera': None, 'lens': None}
+                
+                date_taken = self._preview_exif_cache.get('date')
+                camera_model = self._preview_exif_cache.get('camera')
+                lens_model = self._preview_exif_cache.get('lens')
+            
+            # Fallback date extraction
+            if not date_taken:
+                m = re.search(r'(20\d{2})(\d{2})(\d{2})', os.path.basename(preview_file))
+                if m:
+                    date_taken = f"{m.group(1)}{m.group(2)}{m.group(3)}"
+            
+            if not date_taken:
+                if os.path.exists(preview_file):
+                    mtime = os.path.getmtime(preview_file)
+                    dt = datetime.datetime.fromtimestamp(mtime)
+                    date_taken = dt.strftime('%Y%m%d')
+                else:
+                    date_taken = "20250725"
+            
+            # Use fallback values for preview if not detected
+            if use_camera and not camera_model:
+                camera_model = "A7R3"
+            if use_lens and not lens_model:
+                lens_model = "FE24-70"
+        
+        # Format date for display
         year = date_taken[:4]
         month = date_taken[4:6]
         day = date_taken[6:8]
-        num = 1
-        sep = "" if devider == "None" else devider
-        name_parts = [year, month, day, f"{num:02d}"]
-        if camera_prefix:
-            name_parts.append(camera_prefix)
-        if additional:
-            name_parts.append(additional)
-        if use_camera and camera_model:
-            name_parts.append(camera_model)
-        elif use_camera:
-            name_parts.append("A7R3")
-        if use_lens and lens_model:
-            name_parts.append(lens_model)
-        elif use_lens:
-            name_parts.append("FE24-70")
-        preview = sep.join(name_parts) + ext
-        self.preview_box.setText(preview)
+        formatted_date = f"{year}-{month}-{day}"
+        
+        # Build component list for display - only include active components
+        display_components = []
+        component_mapping = {
+            "Date": formatted_date,  # Date is always included
+            "Prefix": camera_prefix if camera_prefix else None,  # Only if text entered
+            "Additional": additional if additional else None,  # Only if text entered
+            "Camera": camera_model if (use_camera and camera_model) else None,  # Only if checkbox checked AND value exists
+            "Lens": lens_model if (use_lens and lens_model) else None  # Only if checkbox checked AND value exists
+        }
+        
+        # Add components in current order, but only if they have values and are active
+        for component_name in self.custom_order:
+            value = component_mapping.get(component_name)
+            if value:  # Only add non-empty and active components
+                display_components.append(value)
+        
+        # Update the interactive preview
+        self.interactive_preview.set_separator(devider)
+        self.interactive_preview.set_components(display_components, "001")
 
     def eventFilter(self, obj, event):
         if obj == self.file_list and event.type() == event.Type.ToolTip:
@@ -1337,7 +1647,7 @@ class FileRenamerApp(QMainWindow):
         # Start worker thread for background processing
         self.worker = RenameWorkerThread(
             image_files, camera_prefix, additional, use_camera, use_lens, 
-            self.exif_method, devider, self.exiftool_path
+            self.exif_method, devider, self.exiftool_path, self.custom_order
         )
         self.worker.progress_update.connect(self.update_status)
         self.worker.finished.connect(self.on_rename_finished)
