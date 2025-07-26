@@ -1,10 +1,4 @@
-#TODO datum format auswählbar
-#TODO Datum auswählbar, Dark theme light theme
-#BUG drag and drop auf feld soll switchen
-#BUG unnamed file wenn leerzeichen bei camera präfix und additional 
-#TODO devider anders gestalten
-#TODO in drag and drop box einen Infotext "Drag and drop folder/file"
-#TODO Select folder und selctz file als menüband oben
+#TODO devider anders gestalten, drag and drop nicht sehr intuitiv
 #TODO Infobutton clickabel nicht nur hoverbale
 #TODO info für click on image besser
 import os
@@ -13,9 +7,9 @@ import re
 import datetime
 import time
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox, QCheckBox, QDialog, QPlainTextEdit, QHBoxLayout, QStyle, QToolTip, QComboBox, QStatusBar, QListWidgetItem
+    QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox, QCheckBox, QDialog, QPlainTextEdit, QHBoxLayout, QStyle, QToolTip, QComboBox, QStatusBar, QListWidgetItem, QStyledItemDelegate
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMimeData
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMimeData, QSize
 from PyQt6.QtGui import QIcon, QTextCursor, QDrag, QPainter, QFont
 
 try:
@@ -40,7 +34,7 @@ def clear_global_exif_cache():
     global _exif_cache
     _exif_cache.clear()
 
-def get_filename_components_static(date_taken, camera_prefix, additional, camera_model, lens_model, use_camera, use_lens, num, custom_order):
+def get_filename_components_static(date_taken, camera_prefix, additional, camera_model, lens_model, use_camera, use_lens, num, custom_order, date_format="YYYY-MM-DD", use_date=True):
     """
     Static version of get_filename_components for use in worker threads.
     Build filename components according to the selected order.
@@ -50,9 +44,29 @@ def get_filename_components_static(date_taken, camera_prefix, additional, camera
     month = date_taken[4:6]
     day = date_taken[6:8]
     
+    # Format date according to selected format
+    formatted_date = None
+    if use_date and date_taken:
+        if date_format == "YYYY-MM-DD":
+            formatted_date = f"{year}-{month}-{day}"
+        elif date_format == "YYYY_MM_DD":
+            formatted_date = f"{year}_{month}_{day}"
+        elif date_format == "DD-MM-YYYY":
+            formatted_date = f"{day}-{month}-{year}"
+        elif date_format == "DD_MM_YYYY":
+            formatted_date = f"{day}_{month}_{year}"
+        elif date_format == "YYYYMMDD":
+            formatted_date = f"{year}{month}{day}"
+        elif date_format == "MM-DD-YYYY":
+            formatted_date = f"{month}-{day}-{year}"
+        elif date_format == "MM_DD_YYYY":
+            formatted_date = f"{month}_{day}_{year}"
+        else:
+            formatted_date = f"{year}-{month}-{day}"  # Default fallback
+    
     # Define all possible components
     components = {
-        "Date": f"{year}-{month}-{day}",
+        "Date": formatted_date if (use_date and formatted_date) else None,
         "Prefix": camera_prefix if camera_prefix else None,
         "Additional": additional if additional else None,
         "Camera": camera_model if (use_camera and camera_model) else None,
@@ -71,6 +85,41 @@ def get_filename_components_static(date_taken, camera_prefix, additional, camera
     
     return ordered_parts
 
+class CustomItemDelegate(QStyledItemDelegate):
+    """Custom item delegate to handle separator styling"""
+    
+    def paint(self, painter, option, index):
+        # Check if this is a separator item
+        item_data = index.data(Qt.ItemDataRole.UserRole)
+        if item_data == "separator":
+            # Custom painting for separators - no background, just text
+            painter.save()
+            
+            # Get the text to paint
+            text = index.data(Qt.ItemDataRole.DisplayRole)
+            
+            # Set font - kleiner für kompaktere Darstellung
+            font = QFont("Arial", 12, QFont.Weight.Bold)  # Reduziert von 16 auf 12
+            painter.setFont(font)
+            
+            # Set text color
+            from PyQt6.QtGui import QColor
+            painter.setPen(QColor(0, 0, 0))  # Black text
+            
+            # Calculate text position (centered)
+            rect = option.rect
+            text_rect = painter.fontMetrics().boundingRect(text)
+            x = rect.x() + (rect.width() - text_rect.width()) // 2
+            y = rect.y() + (rect.height() + text_rect.height()) // 2
+            
+            # Draw the text
+            painter.drawText(x, y, text)
+            
+            painter.restore()
+        else:
+            # Use default painting for other items
+            super().paint(painter, option, index)
+
 class InteractivePreviewWidget(QListWidget):
     """
     Interactive preview widget that allows drag & drop reordering of filename components.
@@ -83,36 +132,51 @@ class InteractivePreviewWidget(QListWidget):
         self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-        self.setMaximumHeight(80)
-        self.setMinimumHeight(60)
+        self.setMaximumHeight(80)  # Höherer Bereich für bessere Sichtbarkeit
+        self.setMinimumHeight(65)  # Höherer Bereich für bessere Sichtbarkeit
         self.setFlow(QListWidget.Flow.LeftToRight)
         self.setWrapping(False)
-        self.setSpacing(2)
+        self.setSpacing(2)  # Zurück auf 2px für besseren Abstand zwischen Items
         
-        # Style the widget
+        # Set custom item delegate for separator handling
+        self.setItemDelegate(CustomItemDelegate(self))
+        
+        # Style the widget - kompaktere Version
         self.setStyleSheet("""
             QListWidget {
                 border: 2px solid #cccccc;
-                border-radius: 5px;
+                border-radius: 6px;
                 background-color: #f9f9f9;
-                padding: 5px;
+                padding: 8px;  /* Zurück auf 8px damit Items vollständig sichtbar sind */
+                font-size: 11px;  /* Reduziert von 12px */
             }
             QListWidget::item {
                 background-color: #e6f3ff;
                 border: 1px solid #b3d9ff;
-                border-radius: 3px;
-                padding: 4px 8px;
-                margin: 2px;
+                border-radius: 2px;  /* Kleinerer border-radius */
+                padding: 0px 1px;  /* Minimales Padding */
+                margin: 0px;  /* Kein Margin */
                 font-weight: bold;
+                min-width: 10px;  /* Noch kleinere min-width */
+                text-align: center;
+                font-size: 7px;  /* Kleinere Schrift für kompaktere Items */
             }
             QListWidget::item:selected {
                 background-color: #cce7ff;
-                border: 2px solid #66c2ff;
+                border: 2px solid #0078d4;
             }
             QListWidget::item:hover {
                 background-color: #d9ecff;
+                border: 1px solid #66c2ff;
             }
+            /* Separatoren erhalten keine Box-Styling */
         """)
+        
+        # Add drag & drop visual feedback
+        self.setAcceptDrops(True)
+        self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+        self.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         
         # Connect signals
         self.itemChanged.connect(self._on_item_changed)
@@ -139,12 +203,24 @@ class InteractivePreviewWidget(QListWidget):
         """Update the visual display of components"""
         self.clear()
         
+        # If no components, show helpful placeholder
+        if not self.components:
+            placeholder_item = QListWidgetItem("Drop files or enter text above to see preview")
+            placeholder_item.setFlags(Qt.ItemFlag.NoItemFlags)
+            placeholder_item.setData(Qt.ItemDataRole.UserRole, "placeholder")
+            placeholder_item.setForeground(Qt.GlobalColor.gray)
+            placeholder_item.setFont(QFont("Arial", 10, QFont.Weight.Normal))
+            placeholder_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.addItem(placeholder_item)
+            return
+        
         # Add components and separators in the correct order
         for i, component in enumerate(self.components):
             # Add the component
             item = QListWidgetItem(component)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsDragEnabled)
             item.setData(Qt.ItemDataRole.UserRole, "component")
+            item.setToolTip("Drag to swap position with another component")
             self.addItem(item)
             
             # Add separator after each component (except the last one)
@@ -152,7 +228,8 @@ class InteractivePreviewWidget(QListWidget):
                 sep_item = QListWidgetItem(self.separator)
                 sep_item.setFlags(Qt.ItemFlag.NoItemFlags)  # Not selectable or draggable
                 sep_item.setData(Qt.ItemDataRole.UserRole, "separator")
-                sep_item.setBackground(Qt.GlobalColor.lightGray)
+                # Separator-Größe angepasst an neue Widget-Höhe
+                sep_item.setSizeHint(QSize(12, 60))  # Höhe angepasst an neue Widget-Höhe
                 self.addItem(sep_item)
         
         # Add final separator before number (only if we have components)
@@ -160,7 +237,9 @@ class InteractivePreviewWidget(QListWidget):
             sep_item = QListWidgetItem(self.separator)
             sep_item.setFlags(Qt.ItemFlag.NoItemFlags)
             sep_item.setData(Qt.ItemDataRole.UserRole, "separator")
-            sep_item.setBackground(Qt.GlobalColor.lightGray)
+            sep_item.setToolTip("Separator character")
+            # Separator-Größe angepasst an neue Widget-Höhe
+            sep_item.setSizeHint(QSize(12, 60))  # Höhe angepasst an neue Widget-Höhe
             self.addItem(sep_item)
         
         # Add fixed number at the end (not draggable)
@@ -168,7 +247,9 @@ class InteractivePreviewWidget(QListWidget):
         number_item.setFlags(Qt.ItemFlag.NoItemFlags)  # Not selectable or draggable
         number_item.setData(Qt.ItemDataRole.UserRole, "number")
         number_item.setBackground(Qt.GlobalColor.yellow)
-        font = QFont()
+        number_item.setToolTip("Sequential number (fixed position)")
+        # Normale Schrift für die Nummer - besser lesbar
+        font = QFont("Arial", 7)  # Reduziert für kompaktere Darstellung
         font.setBold(True)
         number_item.setFont(font)
         self.addItem(number_item)
@@ -183,7 +264,7 @@ class InteractivePreviewWidget(QListWidget):
         return order
     
     def dropEvent(self, event):
-        """Handle drop events to reorder components"""
+        """Handle drop events to swap positions of components"""
         if event.source() == self:
             # Get the dragged item
             dragged_items = self.selectedItems()
@@ -200,7 +281,22 @@ class InteractivePreviewWidget(QListWidget):
             # Get drop position
             drop_item = self.itemAt(event.position().toPoint())
             
-            # If dropping on separator or number, find nearest valid position
+            # Special case: if dropping on number or empty space, move to last position
+            if not drop_item or drop_item.data(Qt.ItemDataRole.UserRole) == "number":
+                dragged_text = dragged_item.text()
+                if dragged_text in self.components:
+                    # Move component to last position
+                    dragged_index = self.components.index(dragged_text)
+                    component = self.components.pop(dragged_index)
+                    self.components.append(component)
+                    
+                    # Update display and emit signal
+                    self.update_display()
+                    self.order_changed.emit(self.get_component_order())
+                event.accept()
+                return
+            
+            # If dropping on separator, find nearest valid component position
             if drop_item and drop_item.data(Qt.ItemDataRole.UserRole) != "component":
                 # Find the nearest component position
                 drop_row = self.row(drop_item)
@@ -215,39 +311,34 @@ class InteractivePreviewWidget(QListWidget):
                         if self.item(i).data(Qt.ItemDataRole.UserRole) == "component":
                             drop_item = self.item(i)
                             break
+                    else:
+                        # No components found, move to last position
+                        dragged_text = dragged_item.text()
+                        if dragged_text in self.components:
+                            dragged_index = self.components.index(dragged_text)
+                            component = self.components.pop(dragged_index)
+                            self.components.append(component)
+                            
+                            self.update_display()
+                            self.order_changed.emit(self.get_component_order())
+                        event.accept()
+                        return
             
-            # Perform the reorder in components list
+            # Perform position swap in components list
             dragged_text = dragged_item.text()
-            if dragged_text in self.components:
-                old_index = self.components.index(dragged_text)
-                
-                # Determine target position BEFORE modifying the list
-                target_index = len(self.components) - 1  # Default: move to end
-                
-                if drop_item and drop_item.data(Qt.ItemDataRole.UserRole) == "component":
-                    drop_text = drop_item.text()
-                    if drop_text in self.components:
-                        drop_index = self.components.index(drop_text)
-                        
-                        # Insert AFTER the drop target (more intuitive)
-                        target_index = drop_index + 1
-                        
-                        # If we're moving from before to after, adjust the target index
-                        if old_index < drop_index:
-                            target_index = drop_index  # No need to add 1 since we'll remove one before
-                        
-                        # Ensure we don't go beyond the list
-                        target_index = min(target_index, len(self.components) - 1)
-                
-                # Remove the dragged item
-                self.components.pop(old_index)
-                
-                # Insert at the target position
-                self.components.insert(target_index, dragged_text)
-                
-                # Update display and emit signal
-                self.update_display()
-                self.order_changed.emit(self.get_component_order())
+            if dragged_text in self.components and drop_item and drop_item.data(Qt.ItemDataRole.UserRole) == "component":
+                drop_text = drop_item.text()
+                if drop_text in self.components and dragged_text != drop_text:
+                    # Find indices of both components
+                    dragged_index = self.components.index(dragged_text)
+                    drop_index = self.components.index(drop_text)
+                    
+                    # Swap the positions
+                    self.components[dragged_index], self.components[drop_index] = self.components[drop_index], self.components[dragged_index]
+                    
+                    # Update display and emit signal
+                    self.update_display()
+                    self.order_changed.emit(self.get_component_order())
         
         event.accept()
     
@@ -298,7 +389,7 @@ class RenameWorkerThread(QThread):
     error = pyqtSignal(str)
     
     def __init__(self, files, camera_prefix, additional, use_camera, use_lens, 
-                 exif_method, devider, exiftool_path, custom_order):
+                 exif_method, devider, exiftool_path, custom_order, date_format="YYYY-MM-DD", use_date=True):
         super().__init__()
         self.files = files
         self.camera_prefix = camera_prefix
@@ -309,6 +400,8 @@ class RenameWorkerThread(QThread):
         self.devider = devider
         self.exiftool_path = exiftool_path
         self.custom_order = custom_order
+        self.date_format = date_format
+        self.use_date = use_date
     
     def run(self):
         """Run the rename operation in background thread"""
@@ -419,12 +512,12 @@ class RenameWorkerThread(QThread):
                     name_parts = get_filename_components_static(
                         date_taken, self.camera_prefix, self.additional, 
                         camera_model, lens_model, self.use_camera, self.use_lens, 
-                        num, self.custom_order
+                        num, self.custom_order, self.date_format, self.use_date
                     )
                     
                     sep = "" if self.devider == "None" else self.devider
                     new_name = sep.join(name_parts) + ext
-                    new_name = sanitize_filename(new_name)
+                    new_name = sanitize_final_filename(new_name)
                     new_path = get_safe_target_path(file, new_name)
                     
                     if not validate_path_length(new_path):
@@ -710,6 +803,10 @@ def sanitize_filename(filename):
     """
     Sanitize filename by removing/replacing invalid characters and ensuring compatibility.
     """
+    # First check if filename is only whitespace - return empty string instead of 'unnamed_file'
+    if not filename or filename.isspace():
+        return ""
+    
     # Remove/replace invalid characters for Windows/Unix
     invalid_chars = '<>:"/\\|?*'
     for char in invalid_chars:
@@ -727,9 +824,10 @@ def sanitize_filename(filename):
     filename = re.sub(r'\s+', ' ', filename)  # Collapse multiple spaces
     filename = filename.strip()  # Remove leading/trailing spaces again
     
-    # Ensure filename is not empty
+    # Only use 'unnamed_file' for actual file names, not for components
+    # Return empty string if sanitization resulted in empty content
     if not filename or filename == '_':
-        filename = 'unnamed_file'
+        return ""
     
     # Limit length to prevent filesystem issues (keep extension)
     if len(filename) > 200:
@@ -737,6 +835,20 @@ def sanitize_filename(filename):
         filename = base[:200-len(ext)] + ext
     
     return filename
+
+def sanitize_final_filename(filename):
+    """
+    Sanitize a complete filename, ensuring it's not empty for file operations.
+    This is different from sanitize_filename which is used for components.
+    """
+    # First use the regular sanitization
+    sanitized = sanitize_filename(filename)
+    
+    # If the result is empty, use a fallback name
+    if not sanitized:
+        return "unnamed_file"
+    
+    return sanitized
 
 def check_file_access(file_path):
     """
@@ -1026,7 +1138,7 @@ def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_me
                 new_name = sep.join(name_parts) + ext
                 
                 # Sanitize filename
-                new_name = sanitize_filename(new_name)
+                new_name = sanitize_final_filename(new_name)
                 
                 # Get safe target path (handles conflicts)
                 new_path = get_safe_target_path(file, new_name)
@@ -1085,12 +1197,118 @@ class FileRenamerApp(QMainWindow):
         self.setCentralWidget(self.central_widget)
         self.layout = QVBoxLayout(self.central_widget)
 
-        # Camera Prefix with info icon
+        # Theme Switch - ganz oben
+        theme_row = QHBoxLayout()
+        theme_label = QLabel("Theme:")
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["System", "Light", "Dark"])
+        self.theme_combo.setCurrentText("System")
+        self.theme_combo.currentTextChanged.connect(self.on_theme_changed)
+        theme_row.addWidget(theme_label)
+        theme_row.addWidget(self.theme_combo)
+        theme_row.addStretch()
+        self.layout.addLayout(theme_row)
+
+        # File Selection Menu Bar
+        file_menu_row = QHBoxLayout()
+        file_menu_row.setSpacing(10)
+        
+        # File selection buttons styled as menu bar
+        self.select_files_menu_button = QPushButton("📄 Select Files")
+        self.select_files_menu_button.setStyleSheet("""
+            QPushButton {
+                background-color: #0078d4;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-weight: bold;
+                min-width: 120px;
+            }
+            QPushButton:hover {
+                background-color: #106ebe;
+            }
+            QPushButton:pressed {
+                background-color: #005a9e;
+            }
+        """)
+        self.select_files_menu_button.clicked.connect(self.select_files)
+        
+        self.select_folder_menu_button = QPushButton("📁 Select Folder")
+        self.select_folder_menu_button.setStyleSheet("""
+            QPushButton {
+                background-color: #107c10;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-weight: bold;
+                min-width: 120px;
+            }
+            QPushButton:hover {
+                background-color: #0e6e0e;
+            }
+            QPushButton:pressed {
+                background-color: #0c5a0c;
+            }
+        """)
+        self.select_folder_menu_button.clicked.connect(self.select_folder)
+        
+        self.clear_files_menu_button = QPushButton("🗑️ Clear Files")
+        self.clear_files_menu_button.setStyleSheet("""
+            QPushButton {
+                background-color: #d83b01;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-weight: bold;
+                min-width: 120px;
+            }
+            QPushButton:hover {
+                background-color: #c73401;
+            }
+            QPushButton:pressed {
+                background-color: #a72d01;
+            }
+        """)
+        self.clear_files_menu_button.clicked.connect(self.clear_file_list)
+        
+        file_menu_row.addWidget(self.select_files_menu_button)
+        file_menu_row.addWidget(self.select_folder_menu_button)
+        file_menu_row.addWidget(self.clear_files_menu_button)
+        file_menu_row.addStretch()
+        self.layout.addLayout(file_menu_row)
+
+        # Date options
+        date_options_row = QHBoxLayout()
+        self.checkbox_date = QCheckBox("Include date in filename")
+        self.checkbox_date.setChecked(True)  # Default: aktiviert
+        self.checkbox_date.stateChanged.connect(self.update_preview)
+        
+        date_format_label = QLabel("Date Format:")
+        self.date_format_combo = QComboBox()
+        self.date_format_combo.addItems([
+            "YYYY-MM-DD", "YYYY_MM_DD", "DD-MM-YYYY", "DD_MM_YYYY", 
+            "YYYYMMDD", "MM-DD-YYYY", "MM_DD_YYYY"
+        ])
+        self.date_format_combo.setCurrentText("YYYY-MM-DD")  # Default
+        self.date_format_combo.currentTextChanged.connect(self.update_preview)
+        
+        date_options_row.addWidget(self.checkbox_date)
+        date_options_row.addWidget(date_format_label)
+        date_options_row.addWidget(self.date_format_combo)
+        date_options_row.addStretch()
+        self.layout.addLayout(date_options_row)
+
+        # Camera Prefix with clickable info icon
         camera_layout = QVBoxLayout()
         camera_label = QLabel("Camera Prefix:")
         camera_info = QLabel()
         camera_info.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16))
-        camera_info.setToolTip("Short camera code, e.g. A7R3 or D850. Optional.")
+        camera_info.setToolTip("Click for detailed info about camera prefix")
+        camera_info.setCursor(Qt.CursorShape.PointingHandCursor)
+        camera_info.mousePressEvent = lambda event: self.show_camera_prefix_info()
         camera_row = QHBoxLayout()
         camera_row.addWidget(camera_label)
         camera_row.addWidget(camera_info)
@@ -1100,11 +1318,13 @@ class FileRenamerApp(QMainWindow):
         self.camera_prefix_entry.setPlaceholderText("e.g. A7R3, D850")
         self.camera_prefix_entry.textChanged.connect(self.validate_and_update_preview)
         self.layout.addWidget(self.camera_prefix_entry)
-        # Additional with info icon
+        # Additional with clickable info icon
         additional_label = QLabel("Additional:")
         additional_info = QLabel()
         additional_info.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16))
-        additional_info.setToolTip("Any additional info, e.g. location or event. Optional.")
+        additional_info.setToolTip("Click for detailed info about additional field")
+        additional_info.setCursor(Qt.CursorShape.PointingHandCursor)
+        additional_info.mousePressEvent = lambda event: self.show_additional_info()
         additional_row = QHBoxLayout()
         additional_row.addWidget(additional_label)
         additional_row.addWidget(additional_info)
@@ -1115,12 +1335,14 @@ class FileRenamerApp(QMainWindow):
         self.additional_entry.textChanged.connect(self.validate_and_update_preview)
         self.layout.addWidget(self.additional_entry)
 
-        # Devider selection
+        # Devider selection with clickable info icon
         devider_row = QHBoxLayout()
         devider_label = QLabel("Devider:")
         devider_info = QLabel()
         devider_info.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16))
-        devider_info.setToolTip("Choose how to separate date and info in filename.")
+        devider_info.setToolTip("Click for detailed info about separators")
+        devider_info.setCursor(Qt.CursorShape.PointingHandCursor)
+        devider_info.mousePressEvent = lambda event: self.show_devider_info()
         devider_row.addWidget(devider_label)
         devider_row.addWidget(devider_info)
         devider_row.addStretch()
@@ -1132,12 +1354,14 @@ class FileRenamerApp(QMainWindow):
         self.devider_combo.currentIndexChanged.connect(self.update_preview)
         self.devider_combo.currentIndexChanged.connect(self.on_devider_changed)
 
-        # Interactive Preview section
+        # Interactive Preview section with clickable info icon
         preview_row = QHBoxLayout()
         preview_label = QLabel("Interactive Preview:")
         preview_info = QLabel()
         preview_info.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16))
-        preview_info.setToolTip("Drag components to reorder them. Sequential number always stays at the end.")
+        preview_info.setToolTip("Click for detailed info about interactive preview")
+        preview_info.setCursor(Qt.CursorShape.PointingHandCursor)
+        preview_info.mousePressEvent = lambda event: self.show_preview_info()
         preview_row.addWidget(preview_label)
         preview_row.addWidget(preview_info)
         preview_row.addStretch()
@@ -1169,24 +1393,58 @@ class FileRenamerApp(QMainWindow):
         self.layout.addLayout(lens_checkbox_layout)
         self.checkbox_lens.stateChanged.connect(self.update_preview)
 
+        # Drag & Drop File List with dashed border and info text
         self.file_list = QListWidget()
+        self.file_list.setStyleSheet("""
+            QListWidget {
+                border: 2px dashed #cccccc;
+                border-radius: 8px;
+                background-color: #fafafa;
+                padding: 20px;
+                min-height: 120px;
+            }
+            QListWidget::item {
+                padding: 4px;
+                border-bottom: 1px solid #eeeeee;
+                background-color: white;
+                border-radius: 3px;
+                margin: 1px;
+            }
+            QListWidget::item:selected {
+                background-color: #0078d4;
+                color: white;
+            }
+            QListWidget::item:hover {
+                background-color: #f0f6ff;
+            }
+        """)
+        
+        # Add placeholder text when empty
+        self.update_file_list_placeholder()
+        
         self.layout.addWidget(self.file_list)
         self.file_list.itemDoubleClicked.connect(self.show_selected_exif)
         self.file_list.itemClicked.connect(self.show_image_info)
-        self.file_list.setToolTip("Click for image info, double click for EXIF")
+        
+        # Enhanced info for image clicking with visual indicator
+        file_list_info = QLabel("💡 Tip: Single click = Image info in status bar | Double click = Full EXIF data dialog")
+        file_list_info.setStyleSheet("""
+            QLabel {
+                background-color: #e8f4f8;
+                border: 1px solid #0078d4;
+                border-radius: 4px;
+                padding: 6px;
+                color: #0078d4;
+                font-size: 11px;
+                font-weight: bold;
+            }
+        """)
+        file_list_info.setWordWrap(True)
+        file_list_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.layout.addWidget(file_list_info)
+        
+        self.file_list.setToolTip("Single click: Image info | Double click: Full EXIF data")
         self.file_list.installEventFilter(self)
-
-        self.select_files_button = QPushButton("Select Files")
-        self.select_files_button.clicked.connect(self.select_files)
-        self.layout.addWidget(self.select_files_button)
-
-        self.select_folder_button = QPushButton("Select Folder")
-        self.select_folder_button.clicked.connect(self.select_folder)
-        self.layout.addWidget(self.select_folder_button)
-
-        self.clear_list_button = QPushButton("Clear List")
-        self.clear_list_button.clicked.connect(self.clear_file_list)
-        self.layout.addWidget(self.clear_list_button)
 
         self.setAcceptDrops(True)
 
@@ -1216,6 +1474,7 @@ class FileRenamerApp(QMainWindow):
         
         self.update_exif_status()
         self.update_preview()
+        self.update_file_list_placeholder()  # Add initial placeholder
 
         # EXIF cache for preview file
         self._preview_exif_cache = {}
@@ -1262,6 +1521,87 @@ class FileRenamerApp(QMainWindow):
         
         self.custom_order = internal_order
 
+    def on_theme_changed(self, theme_name):
+        """Handle theme changes"""
+        app = QApplication.instance()
+        if theme_name == "Dark":
+            # Dark theme stylesheet
+            dark_style = """
+            QMainWindow {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QWidget {
+                background-color: #2b2b2b;
+                color: #ffffff;
+            }
+            QLineEdit {
+                background-color: #3c3c3c;
+                border: 1px solid #5a5a5a;
+                border-radius: 3px;
+                padding: 5px;
+                color: #ffffff;
+            }
+            QLineEdit:focus {
+                border: 2px solid #0078d4;
+            }
+            QPushButton {
+                background-color: #404040;
+                border: 1px solid #5a5a5a;
+                border-radius: 3px;
+                padding: 8px;
+                color: #ffffff;
+            }
+            QPushButton:hover {
+                background-color: #4a4a4a;
+                border: 1px solid #0078d4;
+            }
+            QPushButton:pressed {
+                background-color: #0078d4;
+            }
+            QComboBox {
+                background-color: #3c3c3c;
+                border: 1px solid #5a5a5a;
+                border-radius: 3px;
+                padding: 5px;
+                color: #ffffff;
+            }
+            QComboBox::drop-down {
+                border: none;
+            }
+            QComboBox::down-arrow {
+                image: none;
+                border-left: 5px solid transparent;
+                border-right: 5px solid transparent;
+                border-top: 5px solid #ffffff;
+            }
+            QListWidget {
+                background-color: #3c3c3c;
+                border: 1px solid #5a5a5a;
+                color: #ffffff;
+            }
+            QListWidget::item:selected {
+                background-color: #0078d4;
+            }
+            QCheckBox {
+                color: #ffffff;
+            }
+            QLabel {
+                color: #ffffff;
+            }
+            QStatusBar {
+                background-color: #404040;
+                color: #ffffff;
+            }
+            """
+            app.setStyleSheet(dark_style)
+        elif theme_name == "Light":
+            # Light theme (default Qt)
+            app.setStyleSheet("")
+        else:  # System
+            # Let Qt detect system theme
+            app.setStyleSheet("")
+
     def on_devider_changed(self):
         """Handle devider combo box changes"""
         devider = self.devider_combo.currentText()
@@ -1292,6 +1632,28 @@ class FileRenamerApp(QMainWindow):
         
         # Update preview
         self.update_preview()
+
+    def update_file_list_placeholder(self):
+        """Update the file list with placeholder text when empty"""
+        if self.file_list.count() == 0:
+            # Add placeholder item when list is empty
+            placeholder = QListWidgetItem("📁 Drag and drop folders/files here or use buttons below")
+            placeholder.setFlags(Qt.ItemFlag.NoItemFlags)  # Not selectable
+            placeholder.setForeground(Qt.GlobalColor.gray)
+            placeholder.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            font = QFont()
+            font.setPointSize(12)
+            font.setItalic(True)
+            placeholder.setFont(font)
+            self.file_list.addItem(placeholder)
+            self.file_list.setStyleSheet(self.file_list.styleSheet() + """
+                QListWidget::item:first {
+                    border: none;
+                    background-color: transparent;
+                    text-align: center;
+                    padding: 40px;
+                }
+            """)
 
     def update_camera_lens_labels(self):
         """Update the camera and lens model labels based on the first selected file"""
@@ -1374,6 +1736,8 @@ class FileRenamerApp(QMainWindow):
         additional = self.additional_entry.text().strip()
         use_camera = self.checkbox_camera.isChecked()
         use_lens = self.checkbox_lens.isChecked()
+        use_date = self.checkbox_date.isChecked()
+        date_format = self.date_format_combo.currentText()
         devider = self.devider_combo.currentText()
         
         # Choose first JPG file, else first file, else dummy
@@ -1433,16 +1797,35 @@ class FileRenamerApp(QMainWindow):
             if use_lens and not lens_model:
                 lens_model = "FE24-70"
         
-        # Format date for display
-        year = date_taken[:4]
-        month = date_taken[4:6]
-        day = date_taken[6:8]
-        formatted_date = f"{year}-{month}-{day}"
+        # Format date for display using the selected format
+        if date_taken and use_date:
+            year = date_taken[:4]
+            month = date_taken[4:6]
+            day = date_taken[6:8]
+            
+            if date_format == "YYYY-MM-DD":
+                formatted_date = f"{year}-{month}-{day}"
+            elif date_format == "YYYY_MM_DD":
+                formatted_date = f"{year}_{month}_{day}"
+            elif date_format == "DD-MM-YYYY":
+                formatted_date = f"{day}-{month}-{year}"
+            elif date_format == "DD_MM_YYYY":
+                formatted_date = f"{day}_{month}_{year}"
+            elif date_format == "YYYYMMDD":
+                formatted_date = f"{year}{month}{day}"
+            elif date_format == "MM-DD-YYYY":
+                formatted_date = f"{month}-{day}-{year}"
+            elif date_format == "MM_DD_YYYY":
+                formatted_date = f"{month}_{day}_{year}"
+            else:
+                formatted_date = f"{year}-{month}-{day}"  # Default fallback
+        else:
+            formatted_date = None
         
         # Build component list for display - only include active components
         display_components = []
         component_mapping = {
-            "Date": formatted_date,  # Date is always included
+            "Date": formatted_date if use_date else None,  # Only if date checkbox is checked
             "Prefix": camera_prefix if camera_prefix else None,  # Only if text entered
             "Additional": additional if additional else None,  # Only if text entered
             "Camera": camera_model if (use_camera and camera_model) else None,  # Only if checkbox checked AND value exists
@@ -1463,7 +1846,9 @@ class FileRenamerApp(QMainWindow):
         if obj == self.file_list and event.type() == event.Type.ToolTip:
             item = self.file_list.itemAt(event.pos())
             if item:
-                QToolTip.showText(event.globalPos(), "Click for image info, double click for EXIF", self.file_list)
+                QToolTip.showText(event.globalPos(), 
+                    "💡 Single click: Quick image info in status bar\n🔍 Double click: Full EXIF data dialog", 
+                    self.file_list)
                 return True
         return super().eventFilter(obj, event)
 
@@ -1518,6 +1903,12 @@ class FileRenamerApp(QMainWindow):
         if files and self.files:
             self.clear_file_list()
         
+        # Remove placeholder if present
+        if self.file_list.count() == 1:
+            first_item = self.file_list.item(0)
+            if first_item and first_item.flags() == Qt.ItemFlag.NoItemFlags:
+                self.file_list.clear()
+        
         # Validate and add files
         added_count = 0
         inaccessible_files = []
@@ -1557,6 +1948,7 @@ class FileRenamerApp(QMainWindow):
         self.file_list.clear()
         self._preview_exif_cache = {}
         self._preview_exif_file = None
+        self.update_file_list_placeholder()  # Add placeholder back
         self.update_preview()
         self.update_camera_lens_labels()
 
@@ -1564,6 +1956,171 @@ class FileRenamerApp(QMainWindow):
         file = item.text()
         if is_image_file(file):
             self.show_exif_info(file)
+
+    def show_camera_prefix_info(self):
+        """Show detailed info about camera prefix when info icon is clicked"""
+        info_text = """Camera Prefix Information
+
+The Camera Prefix is a short code that identifies your camera model in the filename.
+
+Examples:
+• A7R3 (for Sony Alpha 7R III)
+• D850 (for Nikon D850) 
+• R5 (for Canon EOS R5)
+• GFX100S (for Fujifilm GFX 100S)
+
+Benefits:
+• Quickly identify which camera took the photo
+• Useful when using multiple cameras
+• Helps organize photos by equipment
+
+This field is optional - leave empty if you don't want camera info in filenames.
+
+The camera model can also be automatically detected from EXIF data if you enable the "Include camera model" checkbox below."""
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Camera Prefix Help")
+        layout = QVBoxLayout(dialog)
+        
+        text_edit = QPlainTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setPlainText(info_text)
+        text_edit.setFont(QFont("Arial", 10))
+        layout.addWidget(text_edit)
+        
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.close)
+        layout.addWidget(close_button)
+        
+        dialog.resize(500, 400)
+        dialog.exec()
+
+    def show_additional_info(self):
+        """Show detailed info about additional field when info icon is clicked"""
+        info_text = """Additional Information Field
+
+This field allows you to add extra context or information to your filenames.
+
+Examples:
+• vacation (for vacation photos)
+• wedding (for wedding photography)
+• portrait (for portrait sessions)
+• landscape (for landscape photography)
+• macro (for macro photography)
+• studio (for studio work)
+• event-name (for specific events)
+
+Benefits:
+• Add context to your photos
+• Organize by project or theme
+• Make files easier to find later
+
+This field is optional - leave empty if you don't need additional information in filenames.
+
+The text will be included in the filename according to your chosen order in the Interactive Preview below."""
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Additional Field Help")
+        layout = QVBoxLayout(dialog)
+        
+        text_edit = QPlainTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setPlainText(info_text)
+        text_edit.setFont(QFont("Arial", 10))
+        layout.addWidget(text_edit)
+        
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.close)
+        layout.addWidget(close_button)
+        
+        dialog.resize(500, 400)
+        dialog.exec()
+
+    def show_devider_info(self):
+        """Show detailed info about separators when info icon is clicked"""
+        info_text = """Separator (Devider) Information
+
+Separators are characters used to separate different parts of your filename.
+
+Available Options:
+• None: No separator (components joined directly)
+  Example: 2025-01-15A7R3vacation001.jpg
+
+• _ (Underscore): Uses underscore as separator
+  Example: 2025-01-15_A7R3_vacation_001.jpg
+
+• - (Dash/Hyphen): Uses dash as separator  
+  Example: 2025-01-15-A7R3-vacation-001.jpg
+
+Recommendations:
+• Dash (-): Most readable, works well with most systems
+• Underscore (_): Good compatibility, slightly less readable
+• None: Most compact but harder to read
+
+Note: Some characters like spaces, slashes, or special symbols are not allowed in filenames and will be automatically replaced with underscores for safety."""
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Separator Help")
+        layout = QVBoxLayout(dialog)
+        
+        text_edit = QPlainTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setPlainText(info_text)
+        text_edit.setFont(QFont("Arial", 10))
+        layout.addWidget(text_edit)
+        
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.close)
+        layout.addWidget(close_button)
+        
+        dialog.resize(500, 350)
+        dialog.exec()
+
+    def show_preview_info(self):
+        """Show detailed info about interactive preview when info icon is clicked"""
+        info_text = """Interactive Preview Help
+
+The Interactive Preview shows how your filenames will look and allows you to customize the order of components.
+
+Features:
+• Drag & Drop: Click and drag any blue component to reorder them
+• Live Preview: See filename changes in real-time
+• Sequential Number: Always appears at the end (cannot be moved)
+
+How to Use:
+1. Click and hold any blue component (Date, Prefix, Additional, etc.)
+2. Drag it to a new position
+3. Release to place it in the new order
+4. The preview updates immediately
+
+Components Shown:
+• Date: Based on EXIF or file date
+• Prefix: Your custom camera code
+• Additional: Extra information you entered
+• Camera: Detected camera model (if enabled)
+• Lens: Detected lens model (if enabled)
+• Number: Sequential number (always last)
+
+Only active components with values are shown in the preview.
+
+The yellow box shows the sequential number which always stays at the end."""
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Interactive Preview Help")
+        layout = QVBoxLayout(dialog)
+        
+        text_edit = QPlainTextEdit()
+        text_edit.setReadOnly(True)
+        text_edit.setPlainText(info_text)
+        text_edit.setFont(QFont("Arial", 10))
+        layout.addWidget(text_edit)
+        
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(dialog.close)
+        layout.addWidget(close_button)
+        
+        dialog.resize(550, 450)
+        dialog.exec()
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -1630,6 +2187,8 @@ class FileRenamerApp(QMainWindow):
         additional = self.additional_entry.text().strip()
         use_camera = self.checkbox_camera.isChecked()
         use_lens = self.checkbox_lens.isChecked()
+        use_date = self.checkbox_date.isChecked()
+        date_format = self.date_format_combo.currentText()
         devider = self.devider_combo.currentText()
         non_images = [f for f in self.files if not is_image_file(f)]
         if non_images:
@@ -1649,14 +2208,15 @@ class FileRenamerApp(QMainWindow):
         # Disable UI during processing
         self.rename_button.setEnabled(False)
         self.rename_button.setText("Processing...")
-        self.select_files_button.setEnabled(False)
-        self.select_folder_button.setEnabled(False)
-        self.clear_list_button.setEnabled(False)
+        self.select_files_menu_button.setEnabled(False)
+        self.select_folder_menu_button.setEnabled(False)
+        self.clear_files_menu_button.setEnabled(False)
         
         # Start worker thread for background processing
         self.worker = RenameWorkerThread(
             image_files, camera_prefix, additional, use_camera, use_lens, 
-            self.exif_method, devider, self.exiftool_path, self.custom_order
+            self.exif_method, devider, self.exiftool_path, self.custom_order,
+            date_format, use_date
         )
         self.worker.progress_update.connect(self.update_status)
         self.worker.finished.connect(self.on_rename_finished)
@@ -1724,9 +2284,9 @@ class FileRenamerApp(QMainWindow):
         # Re-enable UI
         self.rename_button.setEnabled(True)
         self.rename_button.setText("Rename")
-        self.select_files_button.setEnabled(True)
-        self.select_folder_button.setEnabled(True)
-        self.clear_list_button.setEnabled(True)
+        self.select_files_menu_button.setEnabled(True)
+        self.select_folder_menu_button.setEnabled(True)
+        self.clear_files_menu_button.setEnabled(True)
     
     def on_rename_error(self, error_message):
         """Handle critical error during rename operation"""
@@ -1736,9 +2296,9 @@ class FileRenamerApp(QMainWindow):
         # Re-enable UI
         self.rename_button.setEnabled(True)
         self.rename_button.setText("Rename")
-        self.select_files_button.setEnabled(True)
-        self.select_folder_button.setEnabled(True)
-        self.clear_list_button.setEnabled(True)
+        self.select_files_menu_button.setEnabled(True)
+        self.select_folder_menu_button.setEnabled(True)
+        self.clear_files_menu_button.setEnabled(True)
 
 if __name__ == "__main__":
     app = QApplication([])
