@@ -1,3 +1,12 @@
+#TODO datum format auswählbar
+#TODO Datum auswählbar, Dark theme light theme
+#BUG drag and drop auf feld soll switchen
+#BUG unnamed file wenn leerzeichen bei camera präfix und additional 
+#TODO devider anders gestalten
+#TODO in drag and drop box einen Infotext "Drag and drop folder/file"
+#TODO Select folder und selctz file als menüband oben
+#TODO Infobutton clickabel nicht nur hoverbale
+#TODO info für click on image besser
 import os
 import shutil
 import re
