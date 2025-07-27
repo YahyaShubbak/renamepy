@@ -1,6 +1,3 @@
-#TODO devider anders gestalten, drag and drop nicht sehr intuitiv
-#TODO Infobutton clickabel nicht nur hoverbale
-#TODO info für click on image besser
 import os
 import shutil
 import re
@@ -154,12 +151,12 @@ class InteractivePreviewWidget(QListWidget):
                 background-color: #e6f3ff;
                 border: 1px solid #b3d9ff;
                 border-radius: 2px;  /* Kleinerer border-radius */
-                padding: 0px 1px;  /* Minimales Padding */
+                padding: 1px 3px;  /* Etwas mehr Padding für bessere Proportionen */
                 margin: 0px;  /* Kein Margin */
                 font-weight: bold;
-                min-width: 10px;  /* Noch kleinere min-width */
                 text-align: center;
                 font-size: 7px;  /* Kleinere Schrift für kompaktere Items */
+                /* Keine feste min-width - lässt die Box sich an den Text anpassen */
             }
             QListWidget::item:selected {
                 background-color: #cce7ff;
@@ -221,6 +218,24 @@ class InteractivePreviewWidget(QListWidget):
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsDragEnabled)
             item.setData(Qt.ItemDataRole.UserRole, "component")
             item.setToolTip("Drag to swap position with another component")
+            
+            # Calculate optimal size for the component based on text
+            # Use QFont to measure the text size
+            font = QFont("Arial", 8)  # Same font as in CSS
+            font.setBold(True)
+            from PyQt6.QtGui import QFontMetrics
+            metrics = QFontMetrics(font)
+            text_width = metrics.horizontalAdvance(component)
+            text_height = metrics.height()
+            
+            # Add 10% padding around the text (3px horizontal, 1px vertical padding from CSS)
+            optimal_width = text_width + 17  # 3px padding on each side
+            optimal_height = text_height   # 1px padding top and bottom
+            
+            # Set the size hint to fit the text perfectly
+            item.setSizeHint(QSize(optimal_width, optimal_height))
+            item.setFont(font)  # Ensure consistent font
+            
             self.addItem(item)
             
             # Add separator after each component (except the last one)
@@ -228,8 +243,8 @@ class InteractivePreviewWidget(QListWidget):
                 sep_item = QListWidgetItem(self.separator)
                 sep_item.setFlags(Qt.ItemFlag.NoItemFlags)  # Not selectable or draggable
                 sep_item.setData(Qt.ItemDataRole.UserRole, "separator")
-                # Separator-Größe angepasst an neue Widget-Höhe
-                sep_item.setSizeHint(QSize(12, 60))  # Höhe angepasst an neue Widget-Höhe
+                # Separator should be just big enough for the separator character
+                sep_item.setSizeHint(QSize(8, 20))  # Kompakte Separator-Größe
                 self.addItem(sep_item)
         
         # Add final separator before number (only if we have components)
@@ -238,8 +253,8 @@ class InteractivePreviewWidget(QListWidget):
             sep_item.setFlags(Qt.ItemFlag.NoItemFlags)
             sep_item.setData(Qt.ItemDataRole.UserRole, "separator")
             sep_item.setToolTip("Separator character")
-            # Separator-Größe angepasst an neue Widget-Höhe
-            sep_item.setSizeHint(QSize(12, 60))  # Höhe angepasst an neue Widget-Höhe
+            # Kompakte Separator-Größe
+            sep_item.setSizeHint(QSize(8, 20))  # Kleinere, angemessene Separator-Größe
             self.addItem(sep_item)
         
         # Add fixed number at the end (not draggable)
@@ -248,10 +263,24 @@ class InteractivePreviewWidget(QListWidget):
         number_item.setData(Qt.ItemDataRole.UserRole, "number")
         number_item.setBackground(Qt.GlobalColor.yellow)
         number_item.setToolTip("Sequential number (fixed position)")
-        # Normale Schrift für die Nummer - besser lesbar
-        font = QFont("Arial", 7)  # Reduziert für kompaktere Darstellung
+        
+        # Calculate optimal size for the number based on text
+        font = QFont("Arial", 7)  # Same as components
         font.setBold(True)
         number_item.setFont(font)
+        
+        from PyQt6.QtGui import QFontMetrics
+        metrics = QFontMetrics(font)
+        text_width = metrics.horizontalAdvance(self.fixed_number)
+        text_height = metrics.height()
+        
+        # Add 10% padding around the text
+        optimal_width = text_width + 6  # 3px padding on each side
+        optimal_height = text_height + 2  # 1px padding top and bottom
+        
+        # Set the size hint to fit the text perfectly
+        number_item.setSizeHint(QSize(optimal_width, optimal_height))
+        
         self.addItem(number_item)
     
     def get_component_order(self):
