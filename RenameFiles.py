@@ -1427,7 +1427,7 @@ class FileRenamerApp(QMainWindow):
         self.file_list.itemClicked.connect(self.show_image_info)
         
         # Enhanced info for image clicking with visual indicator
-        file_list_info = QLabel("💡 Tip: Single click = Image info in status bar | Double click = Full EXIF data dialog")
+        file_list_info = QLabel("💡Single click = Image info in status bar | Double click = Full EXIF data dialog")
         file_list_info.setStyleSheet("""
             QLabel {
                 background-color: #e8f4f8;
