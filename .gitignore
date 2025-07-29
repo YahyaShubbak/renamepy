@@ -1,5 +1,6 @@
 # Python
 __pycache__/
+exiftool-13.32_64/
 *.py[cod]
 *$py.class
 *.so
