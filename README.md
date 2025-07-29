@@ -111,9 +111,9 @@ python RenameFiles.py
 
 **Option A: Download from Official Site (Recommended)**
 1. Go to [exiftool.org](https://exiftool.org) and download the Windows version
-2. Extract the archive (e.g., `exiftool-13.33_64.zip`)
-3. **Either:** Keep the original folder name (e.g., `exiftool-13.33_64`) and place it in the program directory
-4. **Or:** Copy `exiftool(-k).exe` to the program folder (no renaming required!)
+2. Extract the archive (e.g., `exiftool-13.33_64.zip`) into the program directory
+3. Keep the original folder name (e.g., `exiftool-13.33_64`) and place it in the program directory
+4. Renaming `exiftool(-k).exe` to `exiftool.exe` is not required
 5. The application automatically detects both `exiftool.exe` and `exiftool(-k).exe`
 
 **Option B: Package Manager Installation**
@@ -133,16 +133,6 @@ sudo apt-get install libimage-exiftool-perl
 2. Extract to any folder containing "exiftool" in the name
 3. **No renaming required** - keep `exiftool(-k).exe` as is!
 4. The application will automatically detect it!
-
-**Supported Folder Names:**
-- `exiftool-13.33_64` (original download name)
-- `exiftool-12.50_64` (older versions)
-- `exiftool` (renamed folder)
-- `my-exiftool-tools` (any name containing "exiftool")
-
-**Supported File Names:**
-- `exiftool.exe` (renamed version)
-- `exiftool(-k).exe` (original download name)
 
 ## 📖 Usage Guide
 
