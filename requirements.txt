@@ -1,0 +1,13 @@
+# Core dependencies
+PyQt6>=6.0.0
+
+# EXIF processing (recommended)
+PyExifTool>=0.5.5
+
+# Fallback image processing
+Pillow>=8.0.0
+
+# Optional: For future development
+# pytest>=6.0.0  # For testing
+# black>=22.0.0  # Code formatting
+# flake8>=4.0.0  # Linting

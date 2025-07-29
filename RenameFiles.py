@@ -2770,8 +2770,12 @@ The yellow box shows the sequential number which always stays at the end."""
         self.select_folder_menu_button.setEnabled(True)
         self.clear_files_menu_button.setEnabled(True)
 
-if __name__ == "__main__":
+def main():
+    """Main entry point for the application"""
     app = QApplication([])
     window = FileRenamerApp()
     window.show()
     app.exec()
+
+if __name__ == "__main__":
+    main()
