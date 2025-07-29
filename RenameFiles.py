@@ -10,7 +10,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMimeData, QSize
 from PyQt6.QtGui import QIcon, QTextCursor, QDrag, QPainter, QFont
 
 try:
-    import exiftool
+    import exiftool #### pip install PyExifTool
     EXIFTOOL_AVAILABLE = True
 except ImportError:
     EXIFTOOL_AVAILABLE = False
@@ -155,7 +155,7 @@ class InteractivePreviewWidget(QListWidget):
                 margin: 0px;  /* Kein Margin */
                 font-weight: bold;
                 text-align: center;
-                font-size: 7px;  /* Kleinere Schrift für kompaktere Items */
+                font-size: 8px;  /* Erhöht von 7px auf 8px für bessere Sichtbarkeit */
                 /* Keine feste min-width - lässt die Box sich an den Text anpassen */
             }
             QListWidget::item:selected {
@@ -264,8 +264,8 @@ class InteractivePreviewWidget(QListWidget):
         number_item.setBackground(Qt.GlobalColor.yellow)
         number_item.setToolTip("Sequential number (fixed position)")
         
-        # Calculate optimal size for the number based on text
-        font = QFont("Arial", 7)  # Same as components
+        # Calculate optimal size for the number based on text - use same font size as components
+        font = QFont("Arial", 8)  # Same as components
         font.setBold(True)
         number_item.setFont(font)
         
@@ -274,9 +274,9 @@ class InteractivePreviewWidget(QListWidget):
         text_width = metrics.horizontalAdvance(self.fixed_number)
         text_height = metrics.height()
         
-        # Add 10% padding around the text
-        optimal_width = text_width + 6  # 3px padding on each side
-        optimal_height = text_height + 2  # 1px padding top and bottom
+        # Add proper padding around the text (same as components)
+        optimal_width = text_width + 17  # 3px padding on each side + margin
+        optimal_height = text_height   # 1px padding top and bottom
         
         # Set the size hint to fit the text perfectly
         number_item.setSizeHint(QSize(optimal_width, optimal_height))
@@ -1455,17 +1455,17 @@ class FileRenamerApp(QMainWindow):
         self.file_list.itemDoubleClicked.connect(self.show_selected_exif)
         self.file_list.itemClicked.connect(self.show_image_info)
         
-        # Enhanced info for image clicking with visual indicator
+        # Enhanced info for image clicking with visual indicator - zurückhaltender gestaltet
         file_list_info = QLabel("💡Single click = Image info in status bar | Double click = Full EXIF data dialog")
         file_list_info.setStyleSheet("""
             QLabel {
-                background-color: #e8f4f8;
-                border: 1px solid #0078d4;
+                background-color: #f8f9fa;
+                border: 2px solid #dee2e6;
                 border-radius: 4px;
                 padding: 6px;
-                color: #0078d4;
+                color: #6c757d;
                 font-size: 11px;
-                font-weight: bold;
+                font-weight: normal;
             }
         """)
         file_list_info.setWordWrap(True)
@@ -1477,7 +1477,31 @@ class FileRenamerApp(QMainWindow):
 
         self.setAcceptDrops(True)
 
-        self.rename_button = QPushButton("Rename")
+        # Prominenter Rename Button
+        self.rename_button = QPushButton("🚀 Rename Files")
+        self.rename_button.setStyleSheet("""
+            QPushButton {
+                background-color: #28a745;
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-weight: bold;
+                font-size: 14px;
+                min-height: 20px;
+            }
+            QPushButton:hover {
+                background-color: #218838;
+                transform: translateY(-1px);
+            }
+            QPushButton:pressed {
+                background-color: #1e7e34;
+            }
+            QPushButton:disabled {
+                background-color: #6c757d;
+                color: #ffffff;
+            }
+        """)
         self.rename_button.clicked.connect(self.rename_files_action)
         self.layout.addWidget(self.rename_button)
 
@@ -1622,14 +1646,250 @@ class FileRenamerApp(QMainWindow):
                 background-color: #404040;
                 color: #ffffff;
             }
+            /* Interactive Preview Widget - Dark Theme */
+            InteractivePreviewWidget {
+                background-color: #3c3c3c;
+                border: 2px solid #5a5a5a;
+                color: #ffffff;
+            }
+            InteractivePreviewWidget::item {
+                background-color: #404040;
+                border: 1px solid #6a6a6a;
+                color: #ffffff;
+            }
+            InteractivePreviewWidget::item:selected {
+                background-color: #0078d4;
+                border: 2px solid #66c2ff;
+            }
+            InteractivePreviewWidget::item:hover {
+                background-color: #4a4a4a;
+                border: 1px solid #0078d4;
+            }
             """
             app.setStyleSheet(dark_style)
+            
+            # Apply dark theme to specific widgets with custom stylesheets
+            # Interactive Preview Widget
+            self.interactive_preview.setStyleSheet("""
+                QListWidget {
+                    border: 2px solid #5a5a5a;
+                    border-radius: 6px;
+                    background-color: #3c3c3c;
+                    padding: 8px;
+                    font-size: 11px;
+                    color: #ffffff;
+                }
+                QListWidget::item {
+                    background-color: #404040;
+                    border: 1px solid #6a6a6a;
+                    border-radius: 2px;
+                    padding: 1px 3px;
+                    margin: 0px;
+                    font-weight: bold;
+                    text-align: center;
+                    font-size: 8px;
+                    color: #ffffff;
+                }
+                QListWidget::item:selected {
+                    background-color: #0078d4;
+                    border: 2px solid #66c2ff;
+                }
+                QListWidget::item:hover {
+                    background-color: #4a4a4a;
+                    border: 1px solid #0078d4;
+                }
+            """)
+            
+            # Info label under file list
+            for child in self.findChildren(QLabel):
+                if "Single click" in child.text():
+                    child.setStyleSheet("""
+                        QLabel {
+                            background-color: #404040;
+                            border: 2px solid #5a5a5a;
+                            border-radius: 4px;
+                            padding: 6px;
+                            color: #cccccc;
+                            font-size: 11px;
+                            font-weight: normal;
+                        }
+                    """)
+                    break
+            
+            # File List Dark Theme
+            self.file_list.setStyleSheet("""
+                QListWidget {
+                    border: 2px dashed #5a5a5a;
+                    border-radius: 8px;
+                    background-color: #3c3c3c;
+                    padding: 20px;
+                    min-height: 120px;
+                    color: #ffffff;
+                }
+                QListWidget::item {
+                    padding: 4px;
+                    border-bottom: 1px solid #5a5a5a;
+                    background-color: #404040;
+                    border-radius: 3px;
+                    margin: 1px;
+                    color: #ffffff;
+                }
+                QListWidget::item:selected {
+                    background-color: #0078d4;
+                    color: white;
+                }
+                QListWidget::item:hover {
+                    background-color: #4a4a4a;
+                }
+            """)
         elif theme_name == "Light":
             # Light theme (default Qt)
             app.setStyleSheet("")
+            
+            # Restore original light theme styles for specific widgets
+            # Interactive Preview Widget
+            self.interactive_preview.setStyleSheet("""
+                QListWidget {
+                    border: 2px solid #cccccc;
+                    border-radius: 6px;
+                    background-color: #f9f9f9;
+                    padding: 8px;
+                    font-size: 11px;
+                }
+                QListWidget::item {
+                    background-color: #e6f3ff;
+                    border: 1px solid #b3d9ff;
+                    border-radius: 2px;
+                    padding: 1px 3px;
+                    margin: 0px;
+                    font-weight: bold;
+                    text-align: center;
+                    font-size: 8px;
+                }
+                QListWidget::item:selected {
+                    background-color: #cce7ff;
+                    border: 2px solid #0078d4;
+                }
+                QListWidget::item:hover {
+                    background-color: #d9ecff;
+                    border: 1px solid #66c2ff;
+                }
+            """)
+            
+            # Info label under file list
+            for child in self.findChildren(QLabel):
+                if "Single click" in child.text():
+                    child.setStyleSheet("""
+                        QLabel {
+                            background-color: #f8f9fa;
+                            border: 2px solid #dee2e6;
+                            border-radius: 4px;
+                            padding: 6px;
+                            color: #6c757d;
+                            font-size: 11px;
+                            font-weight: normal;
+                        }
+                    """)
+                    break
+            
+            # File List Light Theme
+            self.file_list.setStyleSheet("""
+                QListWidget {
+                    border: 2px dashed #cccccc;
+                    border-radius: 8px;
+                    background-color: #fafafa;
+                    padding: 20px;
+                    min-height: 120px;
+                }
+                QListWidget::item {
+                    padding: 4px;
+                    border-bottom: 1px solid #eeeeee;
+                    background-color: white;
+                    border-radius: 3px;
+                    margin: 1px;
+                }
+                QListWidget::item:selected {
+                    background-color: #0078d4;
+                    color: white;
+                }
+                QListWidget::item:hover {
+                    background-color: #f0f6ff;
+                }
+            """)
         else:  # System
             # Let Qt detect system theme
             app.setStyleSheet("")
+            
+            # Restore original styles for specific widgets
+            # Interactive Preview Widget
+            self.interactive_preview.setStyleSheet("""
+                QListWidget {
+                    border: 2px solid #cccccc;
+                    border-radius: 6px;
+                    background-color: #f9f9f9;
+                    padding: 8px;
+                    font-size: 11px;
+                }
+                QListWidget::item {
+                    background-color: #e6f3ff;
+                    border: 1px solid #b3d9ff;
+                    border-radius: 2px;
+                    padding: 1px 3px;
+                    margin: 0px;
+                    font-weight: bold;
+                    text-align: center;
+                    font-size: 8px;
+                }
+                QListWidget::item:selected {
+                    background-color: #cce7ff;
+                    border: 2px solid #0078d4;
+                }
+                QListWidget::item:hover {
+                    background-color: #d9ecff;
+                    border: 1px solid #66c2ff;
+                }
+            """)
+            
+            # Info label under file list
+            for child in self.findChildren(QLabel):
+                if "Single click" in child.text():
+                    child.setStyleSheet("""
+                        QLabel {
+                            background-color: #f8f9fa;
+                            border: 2px solid #dee2e6;
+                            border-radius: 4px;
+                            padding: 6px;
+                            color: #6c757d;
+                            font-size: 11px;
+                            font-weight: normal;
+                        }
+                    """)
+                    break
+            
+            # File List System Theme
+            self.file_list.setStyleSheet("""
+                QListWidget {
+                    border: 2px dashed #cccccc;
+                    border-radius: 8px;
+                    background-color: #fafafa;
+                    padding: 20px;
+                    min-height: 120px;
+                }
+                QListWidget::item {
+                    padding: 4px;
+                    border-bottom: 1px solid #eeeeee;
+                    background-color: white;
+                    border-radius: 3px;
+                    margin: 1px;
+                }
+                QListWidget::item:selected {
+                    background-color: #0078d4;
+                    color: white;
+                }
+                QListWidget::item:hover {
+                    background-color: #f0f6ff;
+                }
+            """)
 
     def on_devider_changed(self):
         """Handle devider combo box changes"""
@@ -1670,9 +1930,10 @@ class FileRenamerApp(QMainWindow):
             placeholder.setFlags(Qt.ItemFlag.NoItemFlags)  # Not selectable
             placeholder.setForeground(Qt.GlobalColor.gray)
             placeholder.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            
             font = QFont()
             font.setPointSize(12)
-            font.setItalic(True)
+            # font.setItalic(True)  # Make the whole text italic (simplest solution)
             placeholder.setFont(font)
             self.file_list.addItem(placeholder)
             self.file_list.setStyleSheet(self.file_list.styleSheet() + """
@@ -2236,7 +2497,7 @@ The yellow box shows the sequential number which always stays at the end."""
         
         # Disable UI during processing
         self.rename_button.setEnabled(False)
-        self.rename_button.setText("Processing...")
+        self.rename_button.setText("⏳ Processing...")
         self.select_files_menu_button.setEnabled(False)
         self.select_folder_menu_button.setEnabled(False)
         self.clear_files_menu_button.setEnabled(False)
@@ -2312,7 +2573,7 @@ The yellow box shows the sequential number which always stays at the end."""
         
         # Re-enable UI
         self.rename_button.setEnabled(True)
-        self.rename_button.setText("Rename")
+        self.rename_button.setText("🚀 Rename Files")
         self.select_files_menu_button.setEnabled(True)
         self.select_folder_menu_button.setEnabled(True)
         self.clear_files_menu_button.setEnabled(True)
@@ -2324,7 +2585,7 @@ The yellow box shows the sequential number which always stays at the end."""
         
         # Re-enable UI
         self.rename_button.setEnabled(True)
-        self.rename_button.setText("Rename")
+        self.rename_button.setText("🚀 Rename Files")
         self.select_files_menu_button.setEnabled(True)
         self.select_folder_menu_button.setEnabled(True)
         self.clear_files_menu_button.setEnabled(True)
