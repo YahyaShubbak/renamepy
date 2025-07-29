@@ -215,8 +215,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Issues**: [GitHub Issues](https://github.com/YahyaShubbak/renamepy/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/YahyaShubbak/renamepy/discussions)
-- **Email**: Create an issue for support requests
 
 ---
 
-**Made with ❤️ for photographers and digital content creators**
+**Made with ❤️ for photographers**
