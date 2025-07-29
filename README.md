@@ -11,7 +11,7 @@ A powerful and user-friendly PyQt6 application for batch renaming image files wi
 ### 🖼️ **Smart Image Processing**
 - **EXIF Data Extraction**: Automatic camera model, lens, and date detection
 - **RAW File Support**: Works with CR2, NEF, ARW, DNG, and more
-- **ExifTool Integration**: Professional-grade metadata extraction
+- **ExifTool Integration**: Professional-grade metadata extraction using the excellent https://exiftool.org/
 - **Fallback to Pillow**: Alternative EXIF reading when ExifTool unavailable
 
 ### 🎯 **Flexible Naming System**
