@@ -602,21 +602,29 @@ def is_exiftool_installed():
     Check for exiftool installation in multiple locations.
     Returns the absolute path to exiftool.exe if found, None otherwise.
     """
+    import glob
+    
     # Test 1: System PATH
     exe = shutil.which("exiftool")
     if exe:
+        print(f"ExifTool found in system PATH: {exe}")
         return exe
     
     # Test 2: Current directory
     local = os.path.join(os.getcwd(), "exiftool.exe")
     if os.path.exists(local):
+        print(f"ExifTool found in current directory: {local}")
         return local
     
-    # Test 3: exiftool-13.32_64 subdirectory (relative to script)
+    # Test 3: Any directory containing "exiftool" in name (relative to script)
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    custom = os.path.join(script_dir, "exiftool-13.32_64", "exiftool.exe")
-    if os.path.exists(custom):
-        return custom
+    
+    # Search for any folder containing "exiftool" in the name
+    exiftool_pattern = os.path.join(script_dir, "*exiftool*", "exiftool.exe")
+    exiftool_matches = glob.glob(exiftool_pattern)
+    if exiftool_matches:
+        print(f"ExifTool found in directory: {exiftool_matches[0]}")
+        return exiftool_matches[0]  # Return first match
     
     # Test 4: Direct check in common locations
     possible_paths = [
@@ -627,8 +635,10 @@ def is_exiftool_installed():
     
     for path in possible_paths:
         if os.path.exists(path):
+            print(f"ExifTool found at: {path}")
             return path
     
+    print("ExifTool not found in any location")
     return None
 
 # Dynamische EXIF-Auslese

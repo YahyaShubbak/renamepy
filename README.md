@@ -78,20 +78,21 @@ A powerful and user-friendly PyQt6 application for batch renaming image files wi
 - **Operating System**: Windows; macOS and Linux not tested yet, should work
 
 ### Python Dependencies
-```
-PyQt6>=6.0.0
-PyExifTool>=0.5.5  # Optional but recommended
-Pillow>=8.0.0      # Fallback EXIF reader
+```bash
+pip install PyQt6>=6.0.0        # Core GUI framework
+pip install PyExifTool>=0.5.5   # ExifTool Python wrapper (recommended)
+pip install Pillow>=8.0.0       # Fallback EXIF reader
 ```
 
-### Optional External Tools
-- **ExifTool**: Download from [exiftool.org](https://exiftool.org) for best performance
-  - Place `exiftool.exe` in program folder or system PATH
-  - Supports all RAW formats and advanced metadata
+### External Dependencies
+- **ExifTool**: Professional metadata extraction tool
+  - 📥 **Download**: Get latest from [exiftool.org](https://exiftool.org)
+  - 📦 **Package Managers**: Available via Chocolatey, Homebrew, apt-get
+  - 🔧 **Manual Setup**: Extract to program folder or system PATH
 
 ## 🚀 Installation
 
-### Option 1: Clone Repository
+### Option 1: Clone Repository (Recommended)
 ```bash
 git clone https://github.com/YahyaShubbak/renamepy.git
 cd renamepy
@@ -104,10 +105,38 @@ python RenameFiles.py
 2. Download latest version
 3. Extract and run `RenameFiles.py`
 
-### ExifTool Setup (Recommended)
+### ExifTool Setup (Required for EXIF Data)
+
+**Option A: Download from Official Site (Recommended)**
+1. Go to [exiftool.org](https://exiftool.org) and download the Windows version
+2. Extract the archive (e.g., `exiftool-13.33_64.zip`)
+3. **Either:** Keep the original folder name (e.g., `exiftool-13.33_64`) and place it in the program directory
+4. **Or:** Rename `exiftool(-k).exe` to `exiftool.exe` and place in:
+   - Program folder (next to `RenameFiles.py`)
+   - Anywhere in your system PATH
+
+**Option B: Package Manager Installation**
+```bash
+# Windows (Chocolatey)
+choco install exiftool
+
+# macOS (Homebrew)
+brew install exiftool
+
+# Linux (Ubuntu/Debian)
+sudo apt-get install libimage-exiftool-perl
+```
+
+**Option C: Portable Installation**
 1. Download ExifTool from [exiftool.org](https://exiftool.org)
-2. Extract `exiftool.exe` to the program folder
-3. Restart the application
+2. Extract to any folder containing "exiftool" in the name
+3. The application will automatically detect it!
+
+**Supported Folder Names:**
+- `exiftool-13.33_64` (original download name)
+- `exiftool-12.50_64` (older versions)
+- `exiftool` (renamed folder)
+- `my-exiftool-tools` (any name containing "exiftool")
 
 ## 📖 Usage Guide
 
@@ -164,7 +193,20 @@ Drag components in the Interactive Preview to customize order:
 A: Install PyExifTool or Pillow: `pip install PyExifTool Pillow`
 
 **Q: ExifTool not detected**
-A: Download from [exiftool.org](https://exiftool.org) and place in program folder
+A: The application automatically searches for ExifTool in this order:
+   1. System PATH
+   2. Program folder (next to RenameFiles.py)
+   3. Any subfolder containing "exiftool" in the name
+   4. Common installation locations
+   
+   If still not detected:
+   - Download ExifTool from [exiftool.org](https://exiftool.org)
+   - Extract to a folder in the program directory (keep original name like `exiftool-13.33_64`)
+   - Or rename `exiftool(-k).exe` to `exiftool.exe` and place in program folder
+   - Check file permissions (ExifTool must be executable)
+
+**Q: "ExifTool executable not found" error**
+A: Install PyExifTool wrapper: `pip install PyExifTool`
 
 **Q: Files not renaming**
 A: Check file permissions and ensure files aren't locked by other programs
