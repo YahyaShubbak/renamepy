@@ -69,9 +69,7 @@ A powerful and user-friendly PyQt6 application for batch renaming image files wi
 
 ### System Requirements
 - **Python**: 3.8 or higher
-- **Operating System**: Windows, macOS, or Linux
-- **Memory**: 512MB RAM minimum
-- **Storage**: 50MB free space
+- **Operating System**: Windows; macOS and Linux not tested yet, should work
 
 ### Python Dependencies
 ```
