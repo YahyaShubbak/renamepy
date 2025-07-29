@@ -2,7 +2,6 @@ import os
 import shutil
 import re
 import datetime
-import time
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox, QCheckBox, QDialog, QPlainTextEdit, QHBoxLayout, QStyle, QToolTip, QComboBox, QStatusBar, QListWidgetItem, QStyledItemDelegate
 )
@@ -1505,7 +1504,37 @@ class FileRenamerApp(QMainWindow):
         self.rename_button.clicked.connect(self.rename_files_action)
         self.layout.addWidget(self.rename_button)
 
+        # Undo Button - weniger prominent aber sichtbar
+        self.undo_button = QPushButton("↶ Restore Original Names")
+        self.undo_button.setStyleSheet("""
+            QPushButton {
+                background-color: #ffc107;
+                color: #212529;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-weight: bold;
+                font-size: 12px;
+                min-height: 16px;
+            }
+            QPushButton:hover {
+                background-color: #e0a800;
+            }
+            QPushButton:pressed {
+                background-color: #d39e00;
+            }
+            QPushButton:disabled {
+                background-color: #6c757d;
+                color: #ffffff;
+            }
+        """)
+        self.undo_button.clicked.connect(self.undo_rename_action)
+        self.undo_button.setEnabled(False)  # Initially disabled
+        self.undo_button.setToolTip("Restore all files to their original names (only available after renaming)")
+        self.layout.addWidget(self.undo_button)
+
         self.files = []
+        self.original_filenames = {}  # Track original filenames for undo
         self.exiftool_path = is_exiftool_installed()
         
         if EXIFTOOL_AVAILABLE and self.exiftool_path:
@@ -2212,6 +2241,8 @@ class FileRenamerApp(QMainWindow):
                 
                 self.files.append(file)
                 self.file_list.addItem(file)
+                # Track original filename for undo functionality
+                self.original_filenames[file] = file
                 added_count += 1
         
         # Show warning for inaccessible files
@@ -2236,6 +2267,8 @@ class FileRenamerApp(QMainWindow):
         """Clear the file list and reset the GUI"""
         self.files.clear()
         self.file_list.clear()
+        self.original_filenames.clear()  # Clear undo tracking
+        self.undo_button.setEnabled(False)  # Disable undo button
         self._preview_exif_cache = {}
         self._preview_exif_file = None
         self.update_file_list_placeholder()  # Add placeholder back
@@ -2523,6 +2556,24 @@ The yellow box shows the sequential number which always stays at the end."""
         # Update the file list with the new file names
         original_non_images = [f for f in self.files if not is_image_file(f)]
         
+        # Update original_filenames tracking for renamed files
+        # Create a mapping from old to new names
+        old_image_files = [f for f in self.files if is_image_file(f)]
+        rename_mapping = {}
+        
+        # Create mapping from old to new filenames
+        for i, renamed_file in enumerate(renamed_files):
+            if i < len(old_image_files):
+                old_file = old_image_files[i]
+                # Update the original tracking: if this file was already renamed before,
+                # keep the original filename, otherwise use the current name as original
+                if old_file in self.original_filenames:
+                    original_name = self.original_filenames[old_file]
+                    self.original_filenames[renamed_file] = original_name
+                    del self.original_filenames[old_file]
+                else:
+                    self.original_filenames[renamed_file] = old_file
+        
         # Clear and rebuild the file list
         self.files.clear()
         self.file_list.clear()
@@ -2536,6 +2587,10 @@ The yellow box shows the sequential number which always stays at the end."""
         for non_image in original_non_images:
             self.files.append(non_image)
             self.file_list.addItem(non_image)
+        
+        # Enable undo button if we have any rename tracking
+        if renamed_files and any(current != original for current, original in self.original_filenames.items()):
+            self.undo_button.setEnabled(True)
         
         # Show results
         if errors:
@@ -2577,6 +2632,131 @@ The yellow box shows the sequential number which always stays at the end."""
         self.select_files_menu_button.setEnabled(True)
         self.select_folder_menu_button.setEnabled(True)
         self.clear_files_menu_button.setEnabled(True)
+    
+    def undo_rename_action(self):
+        """Restore files to their original names"""
+        if not self.original_filenames:
+            QMessageBox.information(
+                self, 
+                "No Undo Available", 
+                "No rename operations to undo.\n\nThe undo function is only available when:\n"
+                "• Files have been renamed in this session\n"
+                "• The file list hasn't been cleared\n"
+                "• No new files have been loaded"
+            )
+            return
+        
+        # Check which files actually need to be undone (current name != original name)
+        files_to_undo = []
+        for current_file, original_file in self.original_filenames.items():
+            if current_file != original_file and current_file in self.files:
+                files_to_undo.append((current_file, original_file))
+        
+        if not files_to_undo:
+            QMessageBox.information(
+                self, 
+                "No Changes to Undo", 
+                "All files are already using their original names."
+            )
+            return
+        
+        # Confirm undo operation
+        reply = QMessageBox.question(
+            self,
+            "Confirm Undo",
+            f"Restore {len(files_to_undo)} files to their original names?\n\n"
+            "This will undo all rename operations performed in this session.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        # Disable UI during processing
+        self.undo_button.setEnabled(False)
+        self.undo_button.setText("⏳ Restoring...")
+        self.rename_button.setEnabled(False)
+        self.select_files_menu_button.setEnabled(False)
+        self.select_folder_menu_button.setEnabled(False)
+        self.clear_files_menu_button.setEnabled(False)
+        
+        # Perform undo operation
+        restored_files = []
+        errors = []
+        
+        for current_file, original_file in files_to_undo:
+            try:
+                if os.path.exists(current_file):
+                    # Check if target name already exists
+                    if os.path.exists(original_file) and original_file != current_file:
+                        errors.append(f"Cannot restore {os.path.basename(current_file)}: Target name already exists")
+                        continue
+                    
+                    os.rename(current_file, original_file)
+                    restored_files.append(original_file)
+                    
+                    # Update our file list
+                    if current_file in self.files:
+                        index = self.files.index(current_file)
+                        self.files[index] = original_file
+                        self.file_list.item(index).setText(original_file)
+                    
+                else:
+                    errors.append(f"File not found: {os.path.basename(current_file)}")
+                    
+            except Exception as e:
+                errors.append(f"Failed to restore {os.path.basename(current_file)}: {e}")
+        
+        # Update original_filenames tracking - reset to current state
+        new_original_filenames = {}
+        for file in self.files:
+            if is_image_file(file):
+                new_original_filenames[file] = file
+        self.original_filenames = new_original_filenames
+        
+        # Show results
+        if errors:
+            error_dialog = QDialog(self)
+            error_dialog.setWindowTitle("Undo Results")
+            error_layout = QVBoxLayout(error_dialog)
+            
+            if restored_files:
+                success_label = QLabel(f"Successfully restored: {len(restored_files)} files")
+                success_label.setStyleSheet("color: green; font-weight: bold;")
+                error_layout.addWidget(success_label)
+            
+            if errors:
+                error_label = QLabel(f"Errors encountered: {len(errors)}")
+                error_label.setStyleSheet("color: red; font-weight: bold;")
+                error_layout.addWidget(error_label)
+                
+                error_text = QPlainTextEdit()
+                error_text.setReadOnly(True)
+                error_text.setPlainText("\n".join(errors))
+                error_layout.addWidget(error_text)
+            
+            close_button = QPushButton("Close")
+            close_button.clicked.connect(error_dialog.accept)
+            error_layout.addWidget(close_button)
+            
+            error_dialog.resize(500, 300)
+            error_dialog.exec()
+        else:
+            QMessageBox.information(self, "Undo Complete", f"Successfully restored {len(restored_files)} files to their original names.")
+        
+        # Update status and disable undo button
+        self.status.showMessage(f"Restored {len(restored_files)} files to original names", 5000)
+        self.undo_button.setEnabled(False)  # Disable since everything is back to original
+        
+        # Re-enable UI
+        self.undo_button.setText("↶ Restore Original Names")
+        self.rename_button.setEnabled(True)
+        self.select_files_menu_button.setEnabled(True)
+        self.select_folder_menu_button.setEnabled(True)
+        self.clear_files_menu_button.setEnabled(True)
+        
+        # Update preview
+        self.update_preview()
     
     def on_rename_error(self, error_message):
         """Handle critical error during rename operation"""
