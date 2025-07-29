@@ -600,7 +600,7 @@ def scan_directory_recursive(directory):
 def is_exiftool_installed():
     """
     Check for exiftool installation in multiple locations.
-    Returns the absolute path to exiftool.exe if found, None otherwise.
+    Returns the absolute path to exiftool.exe or exiftool(-k).exe if found, None otherwise.
     """
     import glob
     
@@ -610,27 +610,32 @@ def is_exiftool_installed():
         print(f"ExifTool found in system PATH: {exe}")
         return exe
     
-    # Test 2: Current directory
-    local = os.path.join(os.getcwd(), "exiftool.exe")
-    if os.path.exists(local):
-        print(f"ExifTool found in current directory: {local}")
-        return local
+    # Test 2: Current directory (both renamed and original filename)
+    for filename in ["exiftool.exe", "exiftool(-k).exe"]:
+        local = os.path.join(os.getcwd(), filename)
+        if os.path.exists(local):
+            print(f"ExifTool found in current directory: {local}")
+            return local
     
     # Test 3: Any directory containing "exiftool" in name (relative to script)
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # Search for any folder containing "exiftool" in the name
-    exiftool_pattern = os.path.join(script_dir, "*exiftool*", "exiftool.exe")
-    exiftool_matches = glob.glob(exiftool_pattern)
-    if exiftool_matches:
-        print(f"ExifTool found in directory: {exiftool_matches[0]}")
-        return exiftool_matches[0]  # Return first match
+    # Search for both exiftool.exe and exiftool(-k).exe in any exiftool folder
+    for filename in ["exiftool.exe", "exiftool(-k).exe"]:
+        exiftool_pattern = os.path.join(script_dir, "*exiftool*", filename)
+        exiftool_matches = glob.glob(exiftool_pattern)
+        if exiftool_matches:
+            print(f"ExifTool found in directory: {exiftool_matches[0]}")
+            return exiftool_matches[0]  # Return first match
     
-    # Test 4: Direct check in common locations
+    # Test 4: Direct check in common locations (both filenames)
     possible_paths = [
         os.path.join(script_dir, "exiftool.exe"),
+        os.path.join(script_dir, "exiftool(-k).exe"),
         os.path.join(script_dir, "exiftool", "exiftool.exe"),
-        "C:\\exiftool\\exiftool.exe"
+        os.path.join(script_dir, "exiftool", "exiftool(-k).exe"),
+        "C:\\exiftool\\exiftool.exe",
+        "C:\\exiftool\\exiftool(-k).exe"
     ]
     
     for path in possible_paths:
@@ -1502,7 +1507,6 @@ class FileRenamerApp(QMainWindow):
             }
             QPushButton:hover {
                 background-color: #218838;
-                transform: translateY(-1px);
             }
             QPushButton:pressed {
                 background-color: #1e7e34;

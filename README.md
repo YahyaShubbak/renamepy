@@ -107,13 +107,14 @@ python RenameFiles.py
 
 ### ExifTool Setup (Required for EXIF Data)
 
+> 💡 **No Renaming Required!** The application automatically detects both `exiftool.exe` and `exiftool(-k).exe`
+
 **Option A: Download from Official Site (Recommended)**
 1. Go to [exiftool.org](https://exiftool.org) and download the Windows version
 2. Extract the archive (e.g., `exiftool-13.33_64.zip`)
 3. **Either:** Keep the original folder name (e.g., `exiftool-13.33_64`) and place it in the program directory
-4. **Or:** Rename `exiftool(-k).exe` to `exiftool.exe` and place in:
-   - Program folder (next to `RenameFiles.py`)
-   - Anywhere in your system PATH
+4. **Or:** Copy `exiftool(-k).exe` to the program folder (no renaming required!)
+5. The application automatically detects both `exiftool.exe` and `exiftool(-k).exe`
 
 **Option B: Package Manager Installation**
 ```bash
@@ -130,13 +131,18 @@ sudo apt-get install libimage-exiftool-perl
 **Option C: Portable Installation**
 1. Download ExifTool from [exiftool.org](https://exiftool.org)
 2. Extract to any folder containing "exiftool" in the name
-3. The application will automatically detect it!
+3. **No renaming required** - keep `exiftool(-k).exe` as is!
+4. The application will automatically detect it!
 
 **Supported Folder Names:**
 - `exiftool-13.33_64` (original download name)
 - `exiftool-12.50_64` (older versions)
 - `exiftool` (renamed folder)
 - `my-exiftool-tools` (any name containing "exiftool")
+
+**Supported File Names:**
+- `exiftool.exe` (renamed version)
+- `exiftool(-k).exe` (original download name)
 
 ## 📖 Usage Guide
 
@@ -199,10 +205,14 @@ A: The application automatically searches for ExifTool in this order:
    3. Any subfolder containing "exiftool" in the name
    4. Common installation locations
    
+   The application looks for both file names:
+   - `exiftool.exe` (renamed version)
+   - `exiftool(-k).exe` (original download name)
+   
    If still not detected:
    - Download ExifTool from [exiftool.org](https://exiftool.org)
    - Extract to a folder in the program directory (keep original name like `exiftool-13.33_64`)
-   - Or rename `exiftool(-k).exe` to `exiftool.exe` and place in program folder
+   - **No need to rename** `exiftool(-k).exe` - the app finds it automatically!
    - Check file permissions (ExifTool must be executable)
 
 **Q: "ExifTool executable not found" error**
