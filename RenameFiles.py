@@ -3,10 +3,11 @@ import shutil
 import re
 import datetime
 import time
+import webbrowser
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox, QCheckBox, QDialog, QPlainTextEdit, QHBoxLayout, QStyle, QToolTip, QComboBox, QStatusBar, QListWidgetItem, QStyledItemDelegate
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMimeData, QSize
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QMimeData, QSize, QSettings
 from PyQt6.QtGui import QIcon, QTextCursor, QDrag, QPainter, QFont
 
 try:
@@ -81,6 +82,127 @@ def get_filename_components_static(date_taken, camera_prefix, additional, camera
     ordered_parts.append(f"{num:03d}")
     
     return ordered_parts
+
+class ExifToolWarningDialog(QDialog):
+    """Warning dialog shown when ExifTool is not installed"""
+    
+    def __init__(self, parent=None, current_method=None):
+        super().__init__(parent)
+        self.setWindowTitle("ExifTool Not Found - Installation Recommended")
+        self.setModal(True)
+        self.resize(600, 450)
+        
+        layout = QVBoxLayout(self)
+        
+        # Header with warning icon
+        header_layout = QHBoxLayout()
+        warning_icon = QLabel()
+        warning_icon.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning).pixmap(48, 48))
+        
+        header_text = QLabel("ExifTool Not Found")
+        header_text.setStyleSheet("font-size: 18px; font-weight: bold; color: #d83b01;")
+        
+        header_layout.addWidget(warning_icon)
+        header_layout.addWidget(header_text)
+        header_layout.addStretch()
+        layout.addLayout(header_layout)
+        
+        # Dynamic fallback text based on current method
+        if current_method == "pillow":
+            fallback_text = "<b>Current fallback:</b> Using Pillow (limited RAW support, may miss some metadata)"
+            continue_button_text = "Continue with Pillow"
+        else:
+            fallback_text = "<b>Current status:</b> No EXIF support available (basic file operations only)"
+            continue_button_text = "Continue without EXIF"
+        
+        # Main explanation text
+        info_text = QLabel(f"""
+<b>What is ExifTool?</b><br>
+ExifTool is a powerful library for reading and writing metadata in image and video files. It provides the most comprehensive and reliable EXIF/metadata extraction available.
+
+<b>Why ExifTool is recommended:</b><br>
+• <b>Complete RAW support:</b> Works with all camera RAW formats (ARW, CR2, NEF, DNG, etc.)<br>
+• <b>Video metadata:</b> Extracts date, camera, and technical data from videos<br>
+• <b>More metadata:</b> Extracts camera, lens, and date information more reliably<br>
+• <b>Professional grade:</b> Used by photographers and software worldwide<br>
+• <b>Always up-to-date:</b> Supports the latest camera models<br>
+
+{fallback_text}
+
+<b>CRITICAL: How to install ExifTool correctly:</b><br>
+1. Download from: <a href="https://exiftool.org/install.html">https://exiftool.org/install.html</a><br>
+2. <b>Extract the COMPLETE ZIP archive</b> to your program folder<br>
+3. <b>Do NOT copy just the exiftool.exe file!</b> The complete folder with all dependencies is required<br>
+4. Required folder structure:<br>
+   &nbsp;&nbsp;&nbsp;📁 exiftool-13.32_64/<br>
+   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;⚙️ exiftool.exe<br>
+   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;⚙️ perl.exe<br>
+   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;⚙️ perl532.dll<br>
+   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;📁 lib/ (with Perl modules)<br>
+   &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;📁 exiftool_files/<br>
+5. Restart this application<br>
+
+<b style="color: #d83b01;">⚠️ WARNING:</b> Copying only the exiftool.exe file will cause the application to crash!<br>
+<i>You can continue using the application now, but ExifTool is strongly recommended for best results.</i>
+        """)
+        info_text.setWordWrap(True)
+        info_text.setOpenExternalLinks(True)
+        info_text.setStyleSheet("font-size: 11px; line-height: 1.4;")
+        
+        layout.addWidget(info_text)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        self.dont_show_again = QCheckBox("Don't show this warning again")
+        button_layout.addWidget(self.dont_show_again)
+        button_layout.addStretch()
+        
+        install_button = QPushButton("Open Download Page")
+        install_button.setStyleSheet("""
+            QPushButton {
+                background-color: #0078d4;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #106ebe;
+            }
+        """)
+        install_button.clicked.connect(self.open_download_page)
+        
+        continue_button = QPushButton(continue_button_text)
+        continue_button.setStyleSheet("""
+            QPushButton {
+                background-color: #6c757d;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #5a6268;
+            }
+        """)
+        continue_button.clicked.connect(self.accept)
+        
+        button_layout.addWidget(install_button)
+        button_layout.addWidget(continue_button)
+        layout.addLayout(button_layout)
+    
+    def open_download_page(self):
+        """Open the ExifTool download page in default browser"""
+        import webbrowser
+        webbrowser.open("https://exiftool.org/install.html")
+        self.accept()
+    
+    def should_show_again(self):
+        """Return False if user checked 'don't show again'"""
+        return not self.dont_show_again.isChecked()
 
 class CustomItemDelegate(QStyledItemDelegate):
     """Custom item delegate to handle separator styling"""
@@ -460,7 +582,7 @@ class RenameWorkerThread(QThread):
         file_groups = []
         basename_groups = defaultdict(list)
         for file in self.files:
-            if is_image_file(file):
+            if is_media_file(file):
                 base = os.path.splitext(os.path.basename(file))[0]
                 basename_groups[base].append(file)
         
@@ -478,17 +600,47 @@ class RenameWorkerThread(QThread):
         
         self.progress_update.emit(f"Processing {len(file_groups)} file groups...")
         
+        # If date is not included in filename, sort groups chronologically for consistent numbering
+        if not self.use_date:
+            def get_earliest_timestamp(group):
+                """Get the earliest timestamp from a group of files for sorting"""
+                earliest = None
+                for file in group:
+                    try:
+                        # Try EXIF date first
+                        date_taken, _, _ = get_cached_exif_data(file, self.exif_method, self.exiftool_path)
+                        if date_taken:
+                            timestamp = datetime.datetime.strptime(date_taken, '%Y%m%d')
+                            if earliest is None or timestamp < earliest:
+                                earliest = timestamp
+                        else:
+                            # Fallback to file modification time
+                            mtime = os.path.getmtime(file)
+                            timestamp = datetime.datetime.fromtimestamp(mtime)
+                            if earliest is None or timestamp < earliest:
+                                earliest = timestamp
+                    except:
+                        # Fallback to file modification time
+                        mtime = os.path.getmtime(file)
+                        timestamp = datetime.datetime.fromtimestamp(mtime)
+                        if earliest is None or timestamp < earliest:
+                            earliest = timestamp
+                return earliest or datetime.datetime.now()
+            
+            # Sort file groups by earliest timestamp
+            file_groups.sort(key=get_earliest_timestamp)
+        
         # Step 2: Process each group with cached EXIF reads
         renamed_files = []
         errors = []
         date_counter = {}
         
         for i, group_files in enumerate(file_groups):
-            if i % 10 == 0:  # Update progress every 10 groups
+            if i % 50 == 0:  # Update progress every 50 groups (reduced from 10 for better performance)
                 self.progress_update.emit(f"Processing group {i+1}/{len(file_groups)}")
             
-            # Check file access
-            accessible_files = [f for f in group_files if check_file_access(f)]
+            # Check file access (fast check only)
+            accessible_files = [f for f in group_files if os.path.exists(f)]
             if not accessible_files:
                 continue
             
@@ -522,12 +674,23 @@ class RenameWorkerThread(QThread):
                 dt = datetime.datetime.fromtimestamp(mtime)
                 date_taken = dt.strftime('%Y%m%d')
             
-            # Counter logic
-            if date_taken not in date_counter:
-                date_counter[date_taken] = 1
+            # Counter logic - depends on whether date is included in filename
+            if self.use_date:
+                # When date is included: counter per date (existing behavior)
+                if date_taken not in date_counter:
+                    date_counter[date_taken] = 1
+                else:
+                    date_counter[date_taken] += 1
+                num = date_counter[date_taken]
             else:
-                date_counter[date_taken] += 1
-            num = date_counter[date_taken]
+                # When date is NOT included: continuous counter across all files
+                # Use a single counter key for all files
+                global_key = "all_files"
+                if global_key not in date_counter:
+                    date_counter[global_key] = 1
+                else:
+                    date_counter[global_key] += 1
+                num = date_counter[global_key]
             year = date_taken[:4]
             month = date_taken[4:6]
             day = date_taken[6:8]
@@ -574,76 +737,196 @@ IMAGE_EXTENSIONS = [
     '.cr2', '.nef', '.arw', '.orf', '.rw2', '.dng', '.raw', '.sr2', '.pef', '.raf', '.3fr', '.erf', '.kdc', '.mos', '.nrw', '.srw', '.x3f'
 ]
 
+VIDEO_EXTENSIONS = [
+    '.mp4', '.mov', '.avi', '.mkv', '.m4v', '.3gp', '.wmv', '.flv', '.webm', '.mpg', '.mpeg', '.m2v', '.mts', '.m2ts', '.ts', '.vob', '.asf', '.rm', '.rmvb', '.f4v', '.ogv'
+]
+
+# Combined list for media files (images + videos)
+MEDIA_EXTENSIONS = IMAGE_EXTENSIONS + VIDEO_EXTENSIONS
+
 def is_image_file(filename):
     """
     Returns True if the file is an image or RAW file based on its extension.
     """
     return os.path.splitext(filename)[1].lower() in IMAGE_EXTENSIONS
 
+def is_video_file(filename):
+    """
+    Returns True if the file is a video file based on its extension.
+    """
+    return os.path.splitext(filename)[1].lower() in VIDEO_EXTENSIONS
+
+def is_media_file(filename):
+    """
+    Returns True if the file is a media file (image, RAW, or video) based on its extension.
+    """
+    return os.path.splitext(filename)[1].lower() in MEDIA_EXTENSIONS
+
 def scan_directory_recursive(directory):
     """
-    Recursively scan directory for image files in all subdirectories.
-    Returns a list of all image file paths found.
+    Recursively scan directory for media files (images and videos) in all subdirectories.
+    Returns a list of all media file paths found.
     """
-    image_files = []
+    media_files = []
     try:
         for root, dirs, files in os.walk(directory):
             for file in files:
-                if is_image_file(file):
+                if is_media_file(file):
                     full_path = os.path.join(root, file)
-                    image_files.append(full_path)
+                    media_files.append(full_path)
     except Exception as e:
         print(f"Error scanning directory {directory}: {e}")
     
-    return image_files
+    return media_files
 
 def is_exiftool_installed():
     """
     Check for exiftool installation in multiple locations.
-    Returns the absolute path to exiftool.exe or exiftool(-k).exe if found, None otherwise.
+    Returns the absolute path to exiftool.exe or exiftool(-k).exe if found with all dependencies, None otherwise.
+    
+    IMPORTANT: ExifTool requires the complete installation folder with all Perl dependencies,
+    not just the exiftool.exe file alone!
     """
     import glob
+    
+    def validate_exiftool_installation(exe_path):
+        """
+        Validate that ExifTool installation is complete with all required dependencies.
+        Returns True if all required files are present, False otherwise.
+        
+        Supports two installation structures:
+        1. Standard: perl.exe and lib/ in same directory as exiftool.exe
+        2. Windows: perl.exe and lib/ in exiftool_files/ subdirectory
+        """
+        if not os.path.exists(exe_path):
+            return False
+        
+        exe_dir = os.path.dirname(exe_path)
+        
+        # Required files for ExifTool to work properly
+        required_files = [
+            "perl.exe",           # Perl interpreter
+            "perl532.dll",        # Main Perl library
+        ]
+        
+        # Required directories
+        required_dirs = [
+            "lib",                # Perl modules directory
+        ]
+        
+        # Check two possible installation structures
+        search_dirs = [
+            exe_dir,                                    # Standard: files next to exe
+            os.path.join(exe_dir, "exiftool_files")     # Windows: files in subdirectory
+        ]
+        
+        for search_dir in search_dirs:
+            if not os.path.isdir(search_dir):
+                continue
+                
+            print(f"Checking ExifTool dependencies in: {search_dir}")
+            
+            # Check for required files in this directory
+            files_found = True
+            for req_file in required_files:
+                file_path = os.path.join(search_dir, req_file)
+                if not os.path.exists(file_path):
+                    print(f"  Missing {req_file} in {search_dir}")
+                    files_found = False
+                    break
+            
+            if not files_found:
+                continue
+                
+            # Check for required directories
+            dirs_found = True
+            for req_dir in required_dirs:
+                dir_path = os.path.join(search_dir, req_dir)
+                if not os.path.isdir(dir_path):
+                    print(f"  Missing directory {req_dir} in {search_dir}")
+                    dirs_found = False
+                    break
+            
+            if not dirs_found:
+                continue
+            
+            # Check if lib directory contains essential Perl modules
+            lib_dir = os.path.join(search_dir, "lib")
+            essential_modules = ["Image", "File", "Exporter"]  # Core modules needed
+            
+            modules_found = True
+            for module in essential_modules:
+                module_path = os.path.join(lib_dir, module)
+                if not (os.path.isdir(module_path) or os.path.exists(module_path + ".pm")):
+                    print(f"  Missing essential Perl module {module} in {lib_dir}")
+                    modules_found = False
+                    break
+            
+            if modules_found:
+                print(f"✅ ExifTool validation successful: Complete installation found at {search_dir}")
+                return True
+        
+        print(f"❌ ExifTool validation failed: Incomplete installation at {exe_path}")
+        print("   Required: perl.exe, perl532.dll, and lib/ directory with Perl modules")
+        return False
     
     # Test 1: System PATH
     exe = shutil.which("exiftool")
     if exe:
         print(f"ExifTool found in system PATH: {exe}")
-        return exe
+        if validate_exiftool_installation(exe):
+            return exe
+        else:
+            print("System PATH ExifTool installation is incomplete")
     
-    # Test 2: Current directory (both renamed and original filename)
-    for filename in ["exiftool.exe", "exiftool(-k).exe"]:
-        local = os.path.join(os.getcwd(), filename)
-        if os.path.exists(local):
-            print(f"ExifTool found in current directory: {local}")
-            return local
-    
-    # Test 3: Any directory containing "exiftool" in name (relative to script)
+    # Test 2: Any directory containing "exiftool" in name (relative to script) - PREFERRED METHOD
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
     # Search for both exiftool.exe and exiftool(-k).exe in any exiftool folder
     for filename in ["exiftool.exe", "exiftool(-k).exe"]:
         exiftool_pattern = os.path.join(script_dir, "*exiftool*", filename)
         exiftool_matches = glob.glob(exiftool_pattern)
-        if exiftool_matches:
-            print(f"ExifTool found in directory: {exiftool_matches[0]}")
-            return exiftool_matches[0]  # Return first match
+        for match in exiftool_matches:
+            print(f"Found potential ExifTool at: {match}")
+            if validate_exiftool_installation(match):
+                print(f"ExifTool validation passed: {match}")
+                return match
+            else:
+                print(f"ExifTool validation failed: Incomplete installation at {match}")
     
-    # Test 4: Direct check in common locations (both filenames)
-    possible_paths = [
-        os.path.join(script_dir, "exiftool.exe"),
-        os.path.join(script_dir, "exiftool(-k).exe"),
+    # Test 3: Subdirectory installations
+    subdirectory_paths = [
         os.path.join(script_dir, "exiftool", "exiftool.exe"),
         os.path.join(script_dir, "exiftool", "exiftool(-k).exe"),
         "C:\\exiftool\\exiftool.exe",
         "C:\\exiftool\\exiftool(-k).exe"
     ]
     
-    for path in possible_paths:
+    for path in subdirectory_paths:
         if os.path.exists(path):
-            print(f"ExifTool found at: {path}")
-            return path
+            print(f"Found potential ExifTool at: {path}")
+            if validate_exiftool_installation(path):
+                print(f"ExifTool validation passed: {path}")
+                return path
+            else:
+                print(f"ExifTool validation failed: Incomplete installation at {path}")
     
-    print("ExifTool not found in any location")
+    # Test 4: Current directory (last resort - NOT RECOMMENDED)
+    # This will likely fail validation as the exe alone is insufficient
+    for filename in ["exiftool.exe", "exiftool(-k).exe"]:
+        local = os.path.join(os.getcwd(), filename)
+        if os.path.exists(local):
+            print(f"Found ExifTool executable in current directory: {local}")
+            print("WARNING: ExifTool executable found in current directory, but this usually lacks required dependencies!")
+            if validate_exiftool_installation(local):
+                print(f"Surprisingly, ExifTool validation passed: {local}")
+                return local
+            else:
+                print(f"As expected, ExifTool validation failed: Missing dependencies for {local}")
+                print("Please extract the complete ExifTool ZIP archive to your program folder!")
+    
+    print("ExifTool not found or incomplete installation detected")
+    print("Please download and extract the complete ExifTool ZIP archive to your program folder")
     return None
 
 # Dynamische EXIF-Auslese
@@ -795,52 +1078,25 @@ def extract_image_number(image_path, method, exiftool_path=None):
 
 def get_file_timestamp(image_path, method, exiftool_path=None):
     """
-    Extracts the file timestamp from an image using the specified method.
+    Fast timestamp extraction using cached EXIF data.
     Returns the timestamp as a string or None if not found.
     """
-    if method == "exiftool":
+    # Use cached EXIF extraction for performance
+    date_taken, _, _ = get_cached_exif_data(image_path, method, exiftool_path)
+    if date_taken:
+        # Convert YYYYMMDD to timestamp format
         try:
-            # Use exiftool with or without explicit path
-            if exiftool_path and os.path.exists(exiftool_path):
-                with exiftool.ExifToolHelper(executable=exiftool_path) as et:
-                    meta = et.get_metadata([image_path])[0]
-            else:
-                # Try to use system exiftool or let exiftool package find it
-                with exiftool.ExifToolHelper() as et:
-                    meta = et.get_metadata([image_path])[0]
-            
-            # Try different possible timestamp fields
-            possible_fields = [
-                'EXIF:DateTimeOriginal',
-                'EXIF:CreateDate', 
-                'File:FileModifyDate',
-                'File:FileCreateDate',
-                'EXIF:DateTime'
-            ]
-            
-            for field in possible_fields:
-                if field in meta and meta[field] is not None:
-                    return str(meta[field])
-            
+            year, month, day = date_taken[:4], date_taken[4:6], date_taken[6:8]
+            return f"{year}:{month}:{day} 12:00:00"  # Default time
+        except:
             return None
-            
-        except Exception as e:
-            print(f"ExifTool error for timestamp in {image_path}: {e}")
-            return None
-    elif method == "pillow":
-        try:
-            image = Image.open(image_path)
-            exif_data = image._getexif()
-            if exif_data:
-                for tag, value in exif_data.items():
-                    decoded_tag = TAGS.get(tag, tag)
-                    if decoded_tag in ["DateTimeOriginal", "DateTime"]:
-                        return str(value)
-            return None
-        except Exception as e:
-            print(f"Pillow error for timestamp in {image_path}: {e}")
-            return None
-    else:
+    
+    # Fallback: use file modification time
+    try:
+        import time
+        mtime = os.path.getmtime(image_path)
+        return time.strftime('%Y:%m:%d %H:%M:%S', time.localtime(mtime))
+    except:
         return None
 
 def sanitize_filename(filename):
@@ -956,272 +1212,49 @@ def validate_path_length(file_path):
 
 def group_files_with_failsafe(files, exif_method, exiftool_path=None):
     """
-    Groups files by basename first, then tries to group orphaned files by timestamp.
+    Fast grouping by basename only - timestamp matching is too slow for large batches.
     Returns a list of file groups (each group is a list of files that belong together).
     """
     from collections import defaultdict
-    import re
-    from datetime import datetime
     
-    # Step 1: Group by basename (normal case)
+    # Group by basename only (fast)
     basename_groups = defaultdict(list)
     for file in files:
-        base = os.path.splitext(os.path.basename(file))[0]
-        basename_groups[base].append(file)
+        if is_media_file(file):
+            base = os.path.splitext(os.path.basename(file))[0]
+            basename_groups[base].append(file)
     
-    # Step 2: Find orphaned files (groups with only one file)
+    # Convert to list of groups
     final_groups = []
-    orphaned_files = []
-    
     for base, file_list in basename_groups.items():
-        if len(file_list) > 1:
-            # Multiple files with same basename - they belong together
-            final_groups.append(file_list)
-        else:
-            # Single file - potential orphan
-            orphaned_files.append(file_list[0])
-    
-    # Step 3: Try to match orphaned files by timestamp
-    if len(orphaned_files) > 1 and exif_method:
-        print(f"Found {len(orphaned_files)} orphaned files, trying timestamp matching...")
-        
-        # Extract timestamps for orphaned files
-        file_timestamps = {}
-        for file in orphaned_files:
-            timestamp = get_file_timestamp(file, exif_method, exiftool_path)
-            if timestamp:
-                # Parse timestamp to compare (remove timezone info for comparison)
-                try:
-                    # Handle different timestamp formats
-                    clean_timestamp = timestamp.split('+')[0].split('-')[0]  # Remove timezone
-                    parsed_time = datetime.strptime(clean_timestamp, '%Y:%m:%d %H:%M:%S')
-                    file_timestamps[file] = parsed_time
-                except:
-                    try:
-                        # Try alternative format
-                        parsed_time = datetime.strptime(clean_timestamp, '%Y-%m-%d %H:%M:%S')
-                        file_timestamps[file] = parsed_time
-                    except:
-                        print(f"Could not parse timestamp for {file}: {timestamp}")
-        
-        # Group files with timestamps within 2 seconds of each other
-        used_files = set()
-        for file1 in orphaned_files:
-            if file1 in used_files or file1 not in file_timestamps:
-                continue
-                
-            group = [file1]
-            used_files.add(file1)
-            
-            for file2 in orphaned_files:
-                if file2 in used_files or file2 not in file_timestamps:
-                    continue
-                
-                # Check if timestamps are within 2 seconds
-                time_diff = abs((file_timestamps[file1] - file_timestamps[file2]).total_seconds())
-                if time_diff <= 2:
-                    group.append(file2)
-                    used_files.add(file2)
-            
-            final_groups.append(group)
-        
-        # Add remaining orphaned files as individual groups
-        for file in orphaned_files:
-            if file not in used_files:
-                final_groups.append([file])
-    else:
-        # No timestamp matching possible, add orphans as individual groups
-        for file in orphaned_files:
-            final_groups.append([file])
+        final_groups.append(file_list)
     
     return final_groups
 
 def verify_group_consistency(group, exif_method, exiftool_path=None):
     """
-    Verify that grouped files have consistent EXIF data (same camera, similar timestamps).
-    Returns True if consistent, False if suspicious grouping detected.
+    Fast group consistency check - always returns True for performance.
+    Complex verification was causing performance issues with redundant EXIF reads.
     """
-    if len(group) < 2:
-        return True
-    
-    # Extract EXIF data from all files in group
-    exif_data = []
-    for file in group:
-        date, camera, lens = extract_exif_fields(file, exif_method, exiftool_path)
-        timestamp = get_file_timestamp(file, exif_method, exiftool_path)
-        exif_data.append({
-            'file': file,
-            'date': date,
-            'camera': camera,
-            'lens': lens,
-            'timestamp': timestamp
-        })
-    
-    # Check camera consistency
-    cameras = [data['camera'] for data in exif_data if data['camera']]
-    if len(set(cameras)) > 1:
-        print(f"Warning: Different cameras in group: {set(cameras)}")
-        print(f"Files: {[os.path.basename(data['file']) for data in exif_data]}")
-        return False
-    
-    # Check timestamp consistency (should be very close)
-    timestamps = []
-    for data in exif_data:
-        if data['timestamp']:
-            try:
-                from datetime import datetime
-                clean_timestamp = data['timestamp'].split('+')[0].split('-')[0]
-                parsed_time = datetime.strptime(clean_timestamp, '%Y:%m:%d %H:%M:%S')
-                timestamps.append(parsed_time)
-            except:
-                continue
-    
-    if len(timestamps) >= 2:
-        # Check if all timestamps are within 5 seconds of each other
-        min_time = min(timestamps)
-        max_time = max(timestamps)
-        time_diff = (max_time - min_time).total_seconds()
-        
-        if time_diff > 5:
-            print(f"Warning: Large time difference in group: {time_diff} seconds")
-            print(f"Files: {[os.path.basename(data['file']) for data in exif_data]}")
-            return False
-    
     return True
 
-def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_method, devider="_", exiftool_path=None, custom_order=None):
+def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_method, devider="_", exiftool_path=None, custom_order=None, date_format="YYYY-MM-DD", use_date=True):
     """
-    Batch rename files based on EXIF data and user options.
-    Groups files by base name with failsafe timestamp matching, extracts EXIF only once per group, and applies a running counter per date.
+    Optimized batch rename function using cached EXIF processing.
+    Simply delegates to the optimized_rename_files function for better performance.
+    
+    Counter behavior:
+    - When use_date=True: Counter resets per date (001, 002, 003... per day)
+    - When use_date=False: Counter runs continuously across all files (001, 002, 003... regardless of date)
+    
     Returns a list of new file paths and any errors encountered.
     """
-    import re
+    # Create a temporary worker thread instance to use its optimized function
+    worker = RenameWorkerThread(files, camera_prefix, additional, use_camera, use_lens, 
+                               exif_method, devider, exiftool_path, custom_order, date_format, use_date)
     
-    # Default order if not provided
-    if custom_order is None:
-        custom_order = ["Date", "Prefix", "Additional", "Camera", "Lens"]
-    
-    # Use improved grouping with failsafe
-    file_groups = group_files_with_failsafe(files, exif_method, exiftool_path)
-
-    renamed_files = []
-    errors = []
-    skipped_files = []
-    date_counter = {}
-    
-    for group_files in file_groups:
-        # Verify group consistency
-        if not verify_group_consistency(group_files, exif_method, exiftool_path):
-            print(f"Warning: Inconsistent group detected, but proceeding with rename...")
-        
-        # Check file access for all files in group
-        accessible_files = []
-        for file in group_files:
-            if not check_file_access(file):
-                error_msg = f"Cannot access file (locked/permission denied): {os.path.basename(file)}"
-                errors.append(error_msg)
-                print(error_msg)
-                skipped_files.append(file)
-            else:
-                accessible_files.append(file)
-        
-        if not accessible_files:
-            continue  # Skip this group entirely if no files are accessible
-        
-        # Extract EXIF data
-        date_taken = None
-        camera_model = None
-        lens_model = None
-        for file in accessible_files:
-            if use_camera and not camera_model:
-                camera_model = extract_camera_model(file, exif_method, exiftool_path)
-            if use_lens and not lens_model:
-                lens_model = extract_lens_model(file, exif_method, exiftool_path)
-            if not date_taken:
-                date_taken = extract_date_taken(file, exif_method, exiftool_path)
-            if date_taken and (not use_camera or camera_model) and (not use_lens or lens_model):
-                break
-        
-        # Fallback date extraction
-        if not date_taken:
-            for file in accessible_files:
-                m = re.search(r'(20\d{2})(\d{2})(\d{2})', os.path.basename(file))
-                if m:
-                    date_taken = f"{m.group(1)}{m.group(2)}{m.group(3)}"
-                    break
-        if not date_taken:
-            # Fallback: use file modification date
-            file = accessible_files[0]
-            mtime = os.path.getmtime(file)
-            dt = datetime.datetime.fromtimestamp(mtime)
-            date_taken = dt.strftime('%Y%m%d')
-        
-        # Running counter per date
-        if date_taken not in date_counter:
-            date_counter[date_taken] = 1
-        else:
-            date_counter[date_taken] += 1
-        num = date_counter[date_taken]
-        year = date_taken[:4]
-        month = date_taken[4:6]
-        day = date_taken[6:8]
-        
-        # Rename each accessible file in the group
-        for file in accessible_files:
-            try:
-                ext = os.path.splitext(file)[1]
-                
-                # Use get_filename_components_static for ordered naming
-                name_parts = get_filename_components_static(
-                    date_taken, camera_prefix, additional, 
-                    camera_model, lens_model, use_camera, use_lens, 
-                    num, custom_order
-                )
-                
-                sep = "" if devider == "None" else devider
-                new_name = sep.join(name_parts) + ext
-                
-                # Sanitize filename
-                new_name = sanitize_final_filename(new_name)
-                
-                # Get safe target path (handles conflicts)
-                new_path = get_safe_target_path(file, new_name)
-                
-                # Validate path length
-                if not validate_path_length(new_path):
-                    # Shorten filename if path too long
-                    directory = os.path.dirname(file)
-                    base, ext = os.path.splitext(new_name)
-                    max_name_len = 200 - len(directory)
-                    if max_name_len > 10:  # Ensure minimum filename length
-                        shortened_base = base[:max_name_len - len(ext)]
-                        new_name = shortened_base + ext
-                        new_path = os.path.join(directory, new_name)
-                    else:
-                        error_msg = f"Path too long, cannot shorten further: {file}"
-                        errors.append(error_msg)
-                        print(error_msg)
-                        continue
-                
-                # Perform the rename
-                os.rename(file, new_path)
-                renamed_files.append(new_path)
-                print(f"Renamed: {os.path.basename(file)} → {os.path.basename(new_path)}")
-                
-            except Exception as e:
-                error_msg = f"Failed to rename {os.path.basename(file)}: {e}"
-                errors.append(error_msg)
-                print(error_msg)
-                skipped_files.append(file)
-    
-    # Print summary
-    print(f"\nRename Summary:")
-    print(f"Successfully renamed: {len(renamed_files)} files")
-    if errors:
-        print(f"Errors encountered: {len(errors)}")
-        print(f"Skipped files: {len(skipped_files)}")
-    
-    return renamed_files, errors
+    # Use the optimized rename function directly
+    return worker.optimized_rename_files()
 
 class FileRenamerApp(QMainWindow):
     def __init__(self):
@@ -1258,7 +1291,7 @@ class FileRenamerApp(QMainWindow):
         file_menu_row.setSpacing(10)
         
         # File selection buttons styled as menu bar
-        self.select_files_menu_button = QPushButton("📄 Select Files")
+        self.select_files_menu_button = QPushButton("📄 Select Media Files")
         self.select_files_menu_button.setStyleSheet("""
             QPushButton {
                 background-color: #0078d4;
@@ -1468,10 +1501,10 @@ class FileRenamerApp(QMainWindow):
         
         self.layout.addWidget(self.file_list)
         self.file_list.itemDoubleClicked.connect(self.show_selected_exif)
-        self.file_list.itemClicked.connect(self.show_image_info)
+        self.file_list.itemClicked.connect(self.show_media_info)
         
-        # Enhanced info for image clicking with visual indicator - zurückhaltender gestaltet
-        file_list_info = QLabel("💡Single click = Image info in status bar | Double click = Full EXIF data dialog")
+        # Enhanced info for media clicking with visual indicator
+        file_list_info = QLabel("💡Single click = Media info in status bar | Double click = Full metadata dialog")
         file_list_info.setStyleSheet("""
             QLabel {
                 background-color: #f8f9fa;
@@ -1487,7 +1520,7 @@ class FileRenamerApp(QMainWindow):
         file_list_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.layout.addWidget(file_list_info)
         
-        self.file_list.setToolTip("Single click: Image info | Double click: Full EXIF data")
+        self.file_list.setToolTip("Single click: Media info | Double click: Full metadata")
         self.file_list.installEventFilter(self)
 
         self.setAcceptDrops(True)
@@ -1579,6 +1612,10 @@ class FileRenamerApp(QMainWindow):
         
         # Update camera and lens labels initially
         self.update_camera_lens_labels()
+        
+        # Show ExifTool warning if needed (after UI is fully initialized)
+        QApplication.processEvents()  # Ensure UI is rendered first
+        self.check_and_show_exiftool_warning()
 
     def on_preview_order_changed(self, new_order):
         """Handle changes from the interactive preview widget"""
@@ -1970,7 +2007,7 @@ class FileRenamerApp(QMainWindow):
         """Update the file list with placeholder text when empty"""
         if self.file_list.count() == 0:
             # Add placeholder item when list is empty
-            placeholder = QListWidgetItem("📁 Drag and drop folders/files here or use buttons below")
+            placeholder = QListWidgetItem("📁 Drag and drop folders/files here or use buttons below\n📸 Supports images (JPG, RAW) and videos (MP4, MOV, etc.)")
             placeholder.setFlags(Qt.ItemFlag.NoItemFlags)  # Not selectable
             placeholder.setForeground(Qt.GlobalColor.gray)
             placeholder.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1996,15 +2033,20 @@ class FileRenamerApp(QMainWindow):
             self.lens_model_label.setText("(no files selected)")
             return
         
-        # Use first image file for detection
-        first_image = next((f for f in self.files if is_image_file(f)), None)
-        if not first_image:
-            self.camera_model_label.setText("(no image files)")
-            self.lens_model_label.setText("(no image files)")
+        # Use first media file for detection (prioritize images, then videos)
+        first_media = next((f for f in self.files if is_image_file(f)), None)
+        if not first_media:
+            first_media = next((f for f in self.files if is_video_file(f)), None)
+        if not first_media:
+            first_media = next((f for f in self.files if is_media_file(f)), None)
+        
+        if not first_media:
+            self.camera_model_label.setText("(no media files)")
+            self.lens_model_label.setText("(no media files)")
             return
         
         try:
-            date, camera, lens = extract_exif_fields(first_image, self.exif_method, self.exiftool_path)
+            date, camera, lens = extract_exif_fields(first_media, self.exif_method, self.exiftool_path)
             
             if camera:
                 self.camera_model_label.setText(f"({camera})")
@@ -2026,42 +2068,88 @@ class FileRenamerApp(QMainWindow):
             self.camera_model_label.setStyleSheet("color: red; font-style: italic;")
             self.lens_model_label.setStyleSheet("color: red; font-style: italic;")
 
-    def show_image_info(self, item):
-        """Show image information when a file is clicked (single click)"""
+    def show_media_info(self, item):
+        """Show media information when a file is clicked (single click)"""
         file_path = item.text()
-        if not is_image_file(file_path) or not self.exif_method:
+        if not is_media_file(file_path) or not self.exif_method:
             return
         
         try:
-            # Extract image number
-            image_number = extract_image_number(file_path, self.exif_method, self.exiftool_path)
-            
-            if image_number:
-                # Update status bar with image number
-                self.status.showMessage(f"Image Number/Shutter Count: {image_number}", 5000)  # Show for 5 seconds
+            if is_video_file(file_path):
+                # For videos, try to extract frame count or duration info
+                if self.exif_method == "exiftool":
+                    if self.exiftool_path and os.path.exists(self.exiftool_path):
+                        with exiftool.ExifToolHelper(executable=self.exiftool_path) as et:
+                            meta = et.get_metadata([file_path])[0]
+                    else:
+                        with exiftool.ExifToolHelper() as et:
+                            meta = et.get_metadata([file_path])[0]
+                    
+                    # Try to get video duration or frame count
+                    duration = meta.get('QuickTime:Duration') or meta.get('File:Duration') or meta.get('H264:Duration')
+                    frame_count = meta.get('QuickTime:FrameCount') or meta.get('File:FrameCount')
+                    
+                    if duration:
+                        self.status.showMessage(f"Video Duration: {duration}", 5000)
+                    elif frame_count:
+                        self.status.showMessage(f"Video Frame Count: {frame_count}", 5000)
+                    else:
+                        self.status.showMessage("Video metadata available - double click for details", 3000)
+                else:
+                    self.status.showMessage("Video files require ExifTool for metadata extraction", 3000)
             else:
-                self.status.showMessage("Image number not found in EXIF data", 3000)
+                # For images, extract image number as before
+                image_number = extract_image_number(file_path, self.exif_method, self.exiftool_path)
+                
+                if image_number:
+                    self.status.showMessage(f"Image Number/Shutter Count: {image_number}", 5000)
+                else:
+                    self.status.showMessage("Image number not found in EXIF data", 3000)
                 
         except Exception as e:
-            self.status.showMessage(f"Error reading image number: {e}", 3000)
+            self.status.showMessage(f"Error reading media metadata: {e}", 3000)
 
     def update_exif_status(self):
         if self.exif_method == "exiftool":
-            self.exif_status_label.setText(f"EXIF method: exiftool v13.32 (recommended) ✓")
-            self.exif_status_label.setStyleSheet("color: green;")
+            self.exif_status_label.setText(f"EXIF method: ExifTool v13.32 (recommended) ✓")
+            self.exif_status_label.setStyleSheet("color: green; font-weight: bold;")
             self.exif_status_label.setToolTip(f"Using ExifTool at: {self.exiftool_path}")
         elif self.exif_method == "pillow":
-            self.exif_status_label.setText("EXIF method: Pillow ⚠")
-            self.exif_status_label.setStyleSheet("color: orange;")
-            info_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16)
-            self.exif_status_label.setPixmap(info_icon)
-            self.exif_status_label.setToolTip("To make use of the great exiftool, go to https://exiftool.org to download it, place exiftool.exe in your program folder or PATH, then restart. RAW support is limited with Pillow.")
+            self.exif_status_label.setText("EXIF method: Pillow (limited) ⚠️")
+            self.exif_status_label.setStyleSheet("color: orange; font-weight: bold;")
+            self.exif_status_label.setToolTip("Using Pillow - RAW support limited. Install ExifTool for best results.")
         else:
             self.exif_status_label.setText("No EXIF support available ❌")
-            self.exif_status_label.setStyleSheet("color: red;")
-            info_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16)
-            self.exif_status_label.setPixmap(info_icon)
-            self.exif_status_label.setToolTip("Please install exiftool (https://exiftool.org) or Pillow for EXIF support.")
+            self.exif_status_label.setStyleSheet("color: red; font-weight: bold;")
+            self.exif_status_label.setToolTip("Please install ExifTool or Pillow for EXIF support.")
+    
+    def check_and_show_exiftool_warning(self):
+        """Check if ExifTool warning should be shown and display it"""
+        # Show warning if ExifTool is not available (regardless of Pillow status)
+        exiftool_available = EXIFTOOL_AVAILABLE and self.exiftool_path
+        
+        print(f"Debug: EXIFTOOL_AVAILABLE={EXIFTOOL_AVAILABLE}, exiftool_path={self.exiftool_path}")
+        print(f"Debug: exiftool_available={exiftool_available}, exif_method={self.exif_method}")
+        
+        if not exiftool_available:
+            # Check if user has disabled the warning (using QSettings for persistence)
+            settings = QSettings("RenameFiles", "ExifToolWarning")
+            show_warning = settings.value("show_exiftool_warning", True, type=bool)
+            
+            print(f"Debug: show_warning={show_warning}")
+            
+            if show_warning:
+                print("Debug: Showing ExifTool warning dialog")
+                dialog = ExifToolWarningDialog(self, self.exif_method)
+                dialog.exec()
+                
+                # Save user preference
+                if not dialog.should_show_again():
+                    settings.setValue("show_exiftool_warning", False)
+            else:
+                print("Debug: Warning disabled by user")
+        else:
+            print("Debug: ExifTool available, no warning needed")
 
     def update_preview(self):
         """Update the interactive preview widget with current settings"""
@@ -2074,12 +2162,15 @@ class FileRenamerApp(QMainWindow):
         date_format = self.date_format_combo.currentText()
         devider = self.devider_combo.currentText()
         
-        # Choose first JPG file, else first file, else dummy
+        # Choose first JPG file, else first media file, else dummy
         preview_file = next((f for f in self.files if os.path.splitext(f)[1].lower() in [".jpg", ".jpeg"]), None)
+        if not preview_file:
+            preview_file = next((f for f in self.files if is_media_file(f)), None)
         if not preview_file and self.files:
             preview_file = self.files[0]
         if not preview_file:
-            preview_file = "20250725_DSC0001.ARW"
+            # Default example with video extension to show video support
+            preview_file = "20250725_DSC0001.MP4"
 
         date_taken = None
         camera_model = None
@@ -2181,14 +2272,15 @@ class FileRenamerApp(QMainWindow):
             item = self.file_list.itemAt(event.pos())
             if item:
                 QToolTip.showText(event.globalPos(), 
-                    "💡 Single click: Quick image info in status bar\n🔍 Double click: Full EXIF data dialog", 
+                    "💡 Single click: Quick media info in status bar\n🔍 Double click: Full metadata dialog", 
                     self.file_list)
                 return True
         return super().eventFilter(obj, event)
 
     def show_exif_info(self, file):
         if not self.exif_method:
-            self.show_exif_dialog(file, "No EXIF support available.")
+            file_type = "Video" if is_video_file(file) else "Image" 
+            self.show_exif_dialog(file, f"No metadata support available for {file_type.lower()} files.")
             return
         try:
             if self.exif_method == "exiftool":
@@ -2199,7 +2291,8 @@ class FileRenamerApp(QMainWindow):
                     with exiftool.ExifToolHelper() as et:
                         meta = et.get_metadata([file])[0]
                 if not meta:
-                    self.show_exif_dialog(file, "No EXIF data found.")
+                    file_type = "Video" if is_video_file(file) else "Image"
+                    self.show_exif_dialog(file, f"No metadata found in {file_type.lower()} file.")
                     return
                 info = []
                 for k, v in meta.items():
@@ -2207,10 +2300,14 @@ class FileRenamerApp(QMainWindow):
                 info_str = "\n".join(info)
                 self.show_exif_dialog(file, info_str)
             elif self.exif_method == "pillow":
+                if is_video_file(file):
+                    self.show_exif_dialog(file, "Video files require ExifTool for metadata extraction. Pillow only supports image files.")
+                    return
+                    
                 image = Image.open(file)
                 exif_data = image._getexif()
                 if not exif_data:
-                    self.show_exif_dialog(file, "No EXIF data found.")
+                    self.show_exif_dialog(file, "No EXIF data found in image file.")
                     return
                 info = []
                 for tag, value in exif_data.items():
@@ -2219,11 +2316,13 @@ class FileRenamerApp(QMainWindow):
                 info_str = "\n".join(info)
                 self.show_exif_dialog(file, info_str)
         except Exception as e:
-            self.show_exif_dialog(file, f"Error reading EXIF: {e}")
+            file_type = "Video" if is_video_file(file) else "Image"
+            self.show_exif_dialog(file, f"Error reading {file_type.lower()} metadata: {e}")
 
     def show_exif_dialog(self, file, info_str):
+        file_type = "Video" if is_video_file(file) else "Image"
         dialog = QDialog(self)
-        dialog.setWindowTitle(f"EXIF Info: {os.path.basename(file)}")
+        dialog.setWindowTitle(f"{file_type} Metadata: {os.path.basename(file)}")
         layout = QVBoxLayout(dialog)
         text_edit = QPlainTextEdit()
         text_edit.setReadOnly(True)
@@ -2292,7 +2391,7 @@ class FileRenamerApp(QMainWindow):
 
     def show_selected_exif(self, item):
         file = item.text()
-        if is_image_file(file):
+        if is_media_file(file):
             self.show_exif_info(file)
 
     def show_camera_prefix_info(self):
@@ -2492,7 +2591,7 @@ The yellow box shows the sequential number which always stays at the end."""
                 self.status.showMessage("No images found in dropped folder(s)", 3000)
 
     def select_files(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "Select Files", "", "Image Files (*.jpg *.jpeg *.png *.arw *.cr2 *.nef *.dng *.tif *.tiff *.bmp *.gif)")
+        files, _ = QFileDialog.getOpenFileNames(self, "Select Files", "", "Media Files (*.jpg *.jpeg *.png *.arw *.cr2 *.nef *.dng *.tif *.tiff *.bmp *.gif *.mp4 *.mov *.avi *.mkv *.m4v *.3gp *.wmv *.flv *.webm *.mpg *.mpeg *.m2v *.mts *.m2ts);;Image Files (*.jpg *.jpeg *.png *.arw *.cr2 *.nef *.dng *.tif *.tiff *.bmp *.gif);;Video Files (*.mp4 *.mov *.avi *.mkv *.m4v *.3gp *.wmv *.flv *.webm *.mpg *.mpeg *.m2v *.mts *.m2ts);;All Files (*)")
         if files:
             self.add_files_to_list(files)
 
@@ -2528,19 +2627,19 @@ The yellow box shows the sequential number which always stays at the end."""
         use_date = self.checkbox_date.isChecked()
         date_format = self.date_format_combo.currentText()
         devider = self.devider_combo.currentText()
-        non_images = [f for f in self.files if not is_image_file(f)]
-        if non_images:
+        non_media = [f for f in self.files if not is_media_file(f)]
+        if non_media:
             reply = QMessageBox.question(
                 self,
-                "Non-image files found",
-                "Some selected files are not images. Continue renaming?",
+                "Non-media files found",
+                "Some selected files are not media files. Continue renaming?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
             )
             if reply == QMessageBox.StandardButton.No:
                 return
-        image_files = [f for f in self.files if is_image_file(f)]
-        if not image_files:
-            QMessageBox.warning(self, "Warning", "No image files found for renaming.")
+        media_files = [f for f in self.files if is_media_file(f)]
+        if not media_files:
+            QMessageBox.warning(self, "Warning", "No media files found for renaming.")
             return
         
         # Disable UI during processing
@@ -2552,7 +2651,7 @@ The yellow box shows the sequential number which always stays at the end."""
         
         # Start worker thread for background processing
         self.worker = RenameWorkerThread(
-            image_files, camera_prefix, additional, use_camera, use_lens, 
+            media_files, camera_prefix, additional, use_camera, use_lens, 
             self.exif_method, devider, self.exiftool_path, self.custom_order,
             date_format, use_date
         )
@@ -2569,17 +2668,17 @@ The yellow box shows the sequential number which always stays at the end."""
     def on_rename_finished(self, renamed_files, errors):
         """Handle completion of rename operation"""
         # Update the file list with the new file names
-        original_non_images = [f for f in self.files if not is_image_file(f)]
+        original_non_media = [f for f in self.files if not is_media_file(f)]
         
         # Update original_filenames tracking for renamed files
         # Create a mapping from old to new names
-        old_image_files = [f for f in self.files if is_image_file(f)]
+        old_media_files = [f for f in self.files if is_media_file(f)]
         rename_mapping = {}
         
         # Create mapping from old to new filenames
         for i, renamed_file in enumerate(renamed_files):
-            if i < len(old_image_files):
-                old_file = old_image_files[i]
+            if i < len(old_media_files):
+                old_file = old_media_files[i]
                 # Update the original tracking: if this file was already renamed before,
                 # keep the original filename, otherwise use the current name as original
                 if old_file in self.original_filenames:
@@ -2593,15 +2692,15 @@ The yellow box shows the sequential number which always stays at the end."""
         self.files.clear()
         self.file_list.clear()
         
-        # Add renamed image files
+        # Add renamed media files
         for renamed_file in renamed_files:
             self.files.append(renamed_file)
             self.file_list.addItem(renamed_file)
         
-        # Add back any non-image files (they weren't renamed)
-        for non_image in original_non_images:
-            self.files.append(non_image)
-            self.file_list.addItem(non_image)
+        # Add back any non-media files (they weren't renamed)
+        for non_media in original_non_media:
+            self.files.append(non_media)
+            self.file_list.addItem(non_media)
         
         # Enable undo button if we have any rename tracking
         if renamed_files and any(current != original for current, original in self.original_filenames.items()):
