@@ -28,6 +28,8 @@ jobs:
         pip install PyQt6
         # Install optional dependencies for testing
         pip install Pillow
+        # Install ExifTool Python package
+        pip install PyExifTool
         # Note: ExifTool is not easily installable via pip in CI
         # We'll test the application without ExifTool for now
 
@@ -78,7 +80,7 @@ jobs:
       run: |
         # Set headless mode for Qt applications
         export QT_QPA_PLATFORM=offscreen
-        python test_ci_safe.py
+        python test_ci_complete.py
 
   lint:
     runs-on: ubuntu-latest
