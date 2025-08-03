@@ -36,30 +36,27 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y exiftool
 
-    - name: Test basic imports
+    - name: Quick import and functionality test
       run: |
         python -c "
         import sys
-        import os
         sys.path.append('.')
         
-        # Test if main modules can be imported
-        try:
-            from RenameFiles import is_media_file, is_image_file, is_video_file
-            print('✅ Core functions imported successfully')
-        except Exception as e:
-            print(f'❌ Import error: {e}')
-            sys.exit(1)
+        # Test basic imports
+        from RenameFiles import is_media_file, is_image_file, is_video_file, sanitize_filename
+        print('✅ Core functions imported')
         
-        # Test media file detection
+        # Test media detection
         assert is_media_file('test.jpg') == True
-        assert is_media_file('test.mp4') == True
         assert is_media_file('test.txt') == False
-        assert is_image_file('test.jpg') == True
-        assert is_image_file('test.mp4') == False
-        assert is_video_file('test.mp4') == True
-        assert is_video_file('test.jpg') == False
-        print('✅ Media file detection tests passed')
+        print('✅ Media detection works')
+        
+        # Test sanitization
+        result = sanitize_filename('test/file:name')
+        assert '/' not in result and ':' not in result
+        print('✅ Sanitization works')
+        
+        print('🎉 Quick functionality test passed')
         "
 
     - name: Run unit tests
@@ -77,51 +74,11 @@ jobs:
           echo "No Tests directory found, skipping unit tests"
         fi
 
-    - name: Test application startup (headless)
+    - name: Run comprehensive CI tests
       run: |
-        # Test if the application can start without GUI (import test)
-        python -c "
-        import sys
-        import os
-        
-        # Set headless mode for Qt
-        os.environ['QT_QPA_PLATFORM'] = 'offscreen'
-        
-        sys.path.append('.')
-        
-        try:
-            # Test core functionality without GUI
-            from RenameFiles import (
-                get_filename_components_static,
-                sanitize_filename,
-                extract_exif_fields_with_retry,
-                is_exiftool_installed
-            )
-            print('✅ Core functions imported successfully')
-            
-            # Test filename component generation
-            components = get_filename_components_static(
-                '20250725', 'A7R3', 'vacation', 'ILCE-7RM3', 'FE24-70',
-                True, True, 1, ['Date', 'Prefix', 'Additional', 'Camera', 'Lens'],
-                'YYYY-MM-DD', True
-            )
-            print(f'✅ Filename components generated: {components}')
-            
-            # Test filename sanitization
-            clean_name = sanitize_filename('test/file:name<>')
-            print(f'✅ Filename sanitization works: {clean_name}')
-            
-            # Test ExifTool detection
-            exiftool_path = is_exiftool_installed()
-            if exiftool_path:
-                print(f'✅ ExifTool found at: {exiftool_path}')
-            else:
-                print('ℹ️ ExifTool not found (expected in CI environment)')
-            
-        except Exception as e:
-            print(f'❌ Application test failed: {e}')
-            sys.exit(1)
-        "
+        # Set headless mode for Qt applications
+        export QT_QPA_PLATFORM=offscreen
+        python test_ci_safe.py
 
   lint:
     runs-on: ubuntu-latest

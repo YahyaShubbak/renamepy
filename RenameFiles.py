@@ -3,6 +3,7 @@ import shutil
 import re
 import datetime
 import time
+import glob
 import webbrowser
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QLineEdit, QPushButton, QListWidget, QFileDialog, QMessageBox, QCheckBox, QDialog, QPlainTextEdit, QHBoxLayout, QStyle, QToolTip, QComboBox, QStatusBar, QListWidgetItem, QStyledItemDelegate
@@ -1401,7 +1402,6 @@ def get_exiftool_metadata_shared(image_path, exiftool_path=None):
                     return et.get_metadata([normalized_path])[0]
         except Exception as e2:
             print(f"Temporary ExifTool instance also failed: {e2}")
-            return {}
             return {}
 
 def cleanup_global_exiftool():
