@@ -531,6 +531,54 @@ def get_cached_exif_data(file_path, method, exiftool_path=None):
         print(f"Cached EXIF extraction failed for {file_path}: {e}")
         return None, None, None
 
+def get_selective_cached_exif_data(file_path, method, exiftool_path=None, need_date=True, need_camera=False, need_lens=False):
+    """
+    OPTIMIZED: Get only requested EXIF data with intelligent caching.
+    This function only extracts and caches the fields that are actually needed.
+    
+    Args:
+        file_path: Path to the image file
+        method: 'exiftool' or 'pillow'
+        exiftool_path: Path to exiftool executable
+        need_date: Whether to extract date information
+        need_camera: Whether to extract camera model
+        need_lens: Whether to extract lens model
+    
+    Returns:
+        (date, camera, lens) - only requested fields are extracted and cached
+    """
+    try:
+        # CRITICAL FIX: Normalize path to prevent double backslashes
+        normalized_path = os.path.normpath(file_path)
+        
+        # Verify file exists before processing
+        if not os.path.exists(normalized_path):
+            print(f"File not found: {normalized_path}")
+            return None, None, None
+        
+        # Create cache key based on file path, modification time, method AND requested fields
+        mtime = os.path.getmtime(normalized_path)
+        field_signature = (need_date, need_camera, need_lens)
+        cache_key = (normalized_path, mtime, method, field_signature)
+        
+        # Check cache first
+        if cache_key in _exif_cache:
+            return _exif_cache[cache_key]
+        
+        # Extract only requested EXIF fields
+        result = extract_selective_exif_fields(
+            normalized_path, method, exiftool_path, 
+            need_date=need_date, need_camera=need_camera, need_lens=need_lens
+        )
+        
+        # Cache the result
+        _exif_cache[cache_key] = result
+        
+        return result
+    except Exception as e:
+        print(f"Error in get_selective_cached_exif_data for {file_path}: {e}")
+        return None, None, None
+
 class RenameWorkerThread(QThread):
     """
     Worker thread for file renaming to prevent UI freezing
@@ -540,7 +588,7 @@ class RenameWorkerThread(QThread):
     error = pyqtSignal(str)
     
     def __init__(self, files, camera_prefix, additional, use_camera, use_lens, 
-                 exif_method, devider, exiftool_path, custom_order, date_format="YYYY-MM-DD", use_date=True):
+                 exif_method, devider, exiftool_path, custom_order, date_format="YYYY-MM-DD", use_date=True, continuous_counter=False):
         super().__init__()
         self.files = files
         self.camera_prefix = camera_prefix
@@ -553,6 +601,7 @@ class RenameWorkerThread(QThread):
         self.custom_order = custom_order
         self.date_format = date_format
         self.use_date = use_date
+        self.continuous_counter = continuous_counter
     
     def run(self):
         """Run the rename operation in background thread"""
@@ -562,29 +611,150 @@ class RenameWorkerThread(QThread):
             # Use optimized rename function
             renamed_files, errors = self.optimized_rename_files()
             
+            # IMPORTANT: Clean up global ExifTool instance after batch processing
+            cleanup_global_exiftool()
+            
             self.finished.emit(renamed_files, errors)
         except Exception as e:
+            # Clean up ExifTool instance even if there's an error
+            cleanup_global_exiftool()
             self.error.emit(str(e))
+    
+    def _create_continuous_counter_map(self):
+        """
+        CONTINUOUS COUNTER: Create a master mapping of all files to their continuous counter numbers.
+        This is done once for all files across all directories.
+        IMPORTANT: File pairs (JPG+RAW) share the same counter number!
+        """
+        if hasattr(self, '_continuous_counter_map'):
+            return  # Already created
+            
+        self._continuous_counter_map = {}
+        date_group_pairs = []
+        
+        self.progress_update.emit("Creating continuous counter map...")
+        
+        # Step 1: Group files by basename AND directory (CRITICAL FIX for identical filenames in different folders)
+        from collections import defaultdict
+        basename_groups = defaultdict(list)
+        for file in self.files:
+            if is_media_file(file):
+                # CRITICAL FIX: Include directory path to prevent grouping identical filenames from different folders
+                directory = os.path.dirname(file)
+                base = os.path.splitext(os.path.basename(file))[0]
+                # Create unique key combining directory and basename
+                unique_key = f"{directory}#{base}"
+                basename_groups[unique_key].append(file)
+        
+        # Step 2: Create file groups (same logic as main processing)
+        file_groups = []
+        orphaned_files = []
+        for base, file_list in basename_groups.items():
+            if len(file_list) > 1:
+                file_groups.append(file_list)  # JPG+RAW pairs
+            else:
+                orphaned_files.extend(file_list)  # Single files
+        
+        # Add orphans as individual groups
+        for file in orphaned_files:
+            file_groups.append([file])
+        
+        # Step 3: Get date for each group and create (date, group) pairs
+        for group in file_groups:
+            first_file = group[0]  # Use first file to determine group date
+            file_date = None
+            
+            try:
+                if self.exif_method:
+                    d, _, _ = get_selective_cached_exif_data(
+                        first_file, self.exif_method, self.exiftool_path,
+                        need_date=True, need_camera=False, need_lens=False
+                    )
+                    if d:
+                        file_date = d
+                
+                # Fallback to filename pattern
+                if not file_date:
+                    m = re.search(r'(20\d{2})(\d{2})(\d{2})', os.path.basename(first_file))
+                    if m:
+                        file_date = f"{m.group(1)}{m.group(2)}{m.group(3)}"
+                
+                # Fallback to file date
+                if not file_date:
+                    mtime = os.path.getmtime(first_file)
+                    dt = datetime.datetime.fromtimestamp(mtime)
+                    file_date = dt.strftime('%Y%m%d')
+                    
+                if file_date:
+                    date_group_pairs.append((file_date, group))
+            except:
+                # Ultimate fallback
+                try:
+                    mtime = os.path.getmtime(first_file)
+                    dt = datetime.datetime.fromtimestamp(mtime)
+                    file_date = dt.strftime('%Y%m%d')
+                    date_group_pairs.append((file_date, group))
+                except:
+                    pass
+        
+        # Step 4: Sort by date, then by first filename in group
+        date_group_pairs.sort(key=lambda x: (x[0], x[1][0]))
+        
+        # Step 5: Assign continuous counter numbers to GROUPS (not individual files)
+        counter = 1
+        for date, group in date_group_pairs:
+            # All files in the same group get the same counter number
+            for file in group:
+                self._continuous_counter_map[file] = counter
+            counter += 1  # Increment only once per group
     
     def optimized_rename_files(self):
         """
-        Optimized rename function with batch EXIF processing
+        SUPER OPTIMIZED rename function with selective EXIF processing
+        Only extracts the metadata fields that are actually needed
         """
         import re
         from collections import defaultdict
         
-        self.progress_update.emit("Grouping files...")
+        self.progress_update.emit("Starting optimized batch processing...")
+        
+        # CONTINUOUS COUNTER: Pre-process ALL files to create master counter map
+        if self.use_date and self.continuous_counter:
+            self._create_continuous_counter_map()
         
         # Clear cache for fresh processing
         clear_global_exif_cache()
         
-        # Step 1: Group files by basename (fast)
+        # Determine what EXIF fields we actually need
+        need_date = self.use_date
+        need_camera = self.use_camera
+        need_lens = self.use_lens
+        
+        # Early exit message for user
+        fields_needed = []
+        if need_date:
+            fields_needed.append("date")
+        if need_camera:
+            fields_needed.append("camera")
+        if need_lens:
+            fields_needed.append("lens")
+        
+        if fields_needed:
+            self.progress_update.emit(f"Extracting only: {', '.join(fields_needed)}")
+        else:
+            self.progress_update.emit("No EXIF extraction needed - using file names only")
+        
+        # Step 1: Group files by basename AND directory (CRITICAL FIX for identical filenames in different folders)
         file_groups = []
         basename_groups = defaultdict(list)
         for file in self.files:
             if is_media_file(file):
+                # CRITICAL FIX: Include directory path to prevent grouping identical filenames from different folders
+                directory = os.path.dirname(file)
                 base = os.path.splitext(os.path.basename(file))[0]
-                basename_groups[base].append(file)
+                # Create unique key combining directory and basename
+                unique_key = f"{directory}#{base}"
+                basename_groups[unique_key].append(file)
         
         # Separate grouped and orphaned files
         orphaned_files = []
@@ -594,7 +764,7 @@ class RenameWorkerThread(QThread):
             else:
                 orphaned_files.extend(file_list)
         
-        # Add orphans as individual groups (simple approach for now)
+        # Add orphans as individual groups
         for file in orphaned_files:
             file_groups.append([file])
         
@@ -607,18 +777,23 @@ class RenameWorkerThread(QThread):
                 earliest = None
                 for file in group:
                     try:
-                        # Try EXIF date first
-                        date_taken, _, _ = get_cached_exif_data(file, self.exif_method, self.exiftool_path)
-                        if date_taken:
-                            timestamp = datetime.datetime.strptime(date_taken, '%Y%m%d')
-                            if earliest is None or timestamp < earliest:
-                                earliest = timestamp
-                        else:
-                            # Fallback to file modification time
-                            mtime = os.path.getmtime(file)
-                            timestamp = datetime.datetime.fromtimestamp(mtime)
-                            if earliest is None or timestamp < earliest:
-                                earliest = timestamp
+                        # Only extract date if we have EXIF method available
+                        if self.exif_method and need_date:
+                            date_taken, _, _ = get_selective_cached_exif_data(
+                                file, self.exif_method, self.exiftool_path,
+                                need_date=True, need_camera=False, need_lens=False
+                            )
+                            if date_taken:
+                                timestamp = datetime.datetime.strptime(date_taken, '%Y%m%d')
+                                if earliest is None or timestamp < earliest:
+                                    earliest = timestamp
+                                continue
+                        
+                        # Fallback to file modification time
+                        mtime = os.path.getmtime(file)
+                        timestamp = datetime.datetime.fromtimestamp(mtime)
+                        if earliest is None or timestamp < earliest:
+                            earliest = timestamp
                     except:
                         # Fallback to file modification time
                         mtime = os.path.getmtime(file)
@@ -630,13 +805,13 @@ class RenameWorkerThread(QThread):
             # Sort file groups by earliest timestamp
             file_groups.sort(key=get_earliest_timestamp)
         
-        # Step 2: Process each group with cached EXIF reads
+        # Step 2: Process each group with SELECTIVE EXIF reads
         renamed_files = []
         errors = []
         date_counter = {}
         
         for i, group_files in enumerate(file_groups):
-            if i % 50 == 0:  # Update progress every 50 groups (reduced from 10 for better performance)
+            if i % 100 == 0:  # Update progress every 100 groups for better performance
                 self.progress_update.emit(f"Processing group {i+1}/{len(file_groups)}")
             
             # Check file access (fast check only)
@@ -644,67 +819,111 @@ class RenameWorkerThread(QThread):
             if not accessible_files:
                 continue
             
-            # Extract EXIF data using cache
+            # OPTIMIZED: Extract ONLY the EXIF data we actually need
             date_taken = None
             camera_model = None
             lens_model = None
             
-            for file in accessible_files:
-                if self.use_camera and not camera_model:
-                    _, camera_model, _ = get_cached_exif_data(file, self.exif_method, self.exiftool_path)
-                if self.use_lens and not lens_model:
-                    _, _, lens_model = get_cached_exif_data(file, self.exif_method, self.exiftool_path)
-                if not date_taken:
-                    date_taken, _, _ = get_cached_exif_data(file, self.exif_method, self.exiftool_path)
-                
-                if date_taken and (not self.use_camera or camera_model) and (not self.use_lens or lens_model):
-                    break
+            # Strategy: Try to get all needed data from the first file if possible
+            first_file = accessible_files[0]
             
-            # Fallback date extraction
-            if not date_taken:
+            if self.exif_method and any([need_date, need_camera, need_lens]):
+                # Single optimized call to get only what we need
+                date_taken, camera_model, lens_model = get_selective_cached_exif_data(
+                    first_file, self.exif_method, self.exiftool_path,
+                    need_date=need_date, need_camera=need_camera, need_lens=need_lens
+                )
+                
+                # If we didn't get everything we need from the first file, try others
+                if ((need_date and not date_taken) or 
+                    (need_camera and not camera_model) or 
+                    (need_lens and not lens_model)):
+                    
+                    for file in accessible_files[1:]:
+                        # Only request fields we still need
+                        still_need_date = need_date and not date_taken
+                        still_need_camera = need_camera and not camera_model
+                        still_need_lens = need_lens and not lens_model
+                        
+                        if not any([still_need_date, still_need_camera, still_need_lens]):
+                            break  # We have everything we need
+                        
+                        d, c, l = get_selective_cached_exif_data(
+                            file, self.exif_method, self.exiftool_path,
+                            need_date=still_need_date, 
+                            need_camera=still_need_camera, 
+                            need_lens=still_need_lens
+                        )
+                        
+                        if still_need_date and d:
+                            date_taken = d
+                        if still_need_camera and c:
+                            camera_model = c
+                        if still_need_lens and l:
+                            lens_model = l
+            
+            # Fallback date extraction (only if we need date but didn't get it)
+            if need_date and not date_taken:
+                # Try filename pattern first
                 for file in accessible_files:
                     m = re.search(r'(20\d{2})(\d{2})(\d{2})', os.path.basename(file))
                     if m:
                         date_taken = f"{m.group(1)}{m.group(2)}{m.group(3)}"
                         break
+                
+                # Use file modification time as last resort
+                if not date_taken:
+                    mtime = os.path.getmtime(accessible_files[0])
+                    dt = datetime.datetime.fromtimestamp(mtime)
+                    date_taken = dt.strftime('%Y%m%d')
             
-            if not date_taken:
-                file = accessible_files[0]
-                mtime = os.path.getmtime(file)
-                dt = datetime.datetime.fromtimestamp(mtime)
-                date_taken = dt.strftime('%Y%m%d')
-            
-            # Counter logic - depends on whether date is included in filename
-            if self.use_date:
-                # When date is included: counter per date (existing behavior)
-                if date_taken not in date_counter:
-                    date_counter[date_taken] = 1
+            # Counter logic - depends on whether date is included in filename and continuous counter setting
+            if self.use_date and not self.continuous_counter:
+                # Standard mode: counter per date (resets each day)
+                counter_key = date_taken or "unknown"
+                if counter_key not in date_counter:
+                    date_counter[counter_key] = 1
                 else:
-                    date_counter[date_taken] += 1
-                num = date_counter[date_taken]
-            else:
+                    date_counter[counter_key] += 1
+                num = date_counter[counter_key]
+            elif not self.use_date:
                 # When date is NOT included: continuous counter across all files
-                # Use a single counter key for all files
                 global_key = "all_files"
                 if global_key not in date_counter:
                     date_counter[global_key] = 1
                 else:
                     date_counter[global_key] += 1
                 num = date_counter[global_key]
-            year = date_taken[:4]
-            month = date_taken[4:6]
-            day = date_taken[6:8]
+            elif self.use_date and self.continuous_counter:
+                # CONTINUOUS COUNTER: Get the counter for this file group
+                # All files in the same group (JPG+RAW pairs) get the same number
+                if hasattr(self, '_continuous_counter_map'):
+                    # Use the first file in the group to determine the counter
+                    first_file = accessible_files[0]
+                    num = self._continuous_counter_map.get(first_file, 1)
+                else:
+                    # Fallback to simple counter if map wasn't created
+                    global_key = "all_files"
+                    if global_key not in date_counter:
+                        date_counter[global_key] = 1
+                    else:
+                        date_counter[global_key] += 1
+                    num = date_counter[global_key]
             
             # Rename files in group
             for file in accessible_files:
                 try:
+                    # All files in the group use the same counter (num)
+                    # This ensures JPG+RAW pairs get identical numbers
+                    current_num = num
+                    
                     ext = os.path.splitext(file)[1]
                     
                     # Use get_filename_components_static for ordered naming
                     name_parts = get_filename_components_static(
                         date_taken, self.camera_prefix, self.additional, 
                         camera_model, lens_model, self.use_camera, self.use_lens, 
-                        num, self.custom_order, self.date_format, self.use_date
+                        current_num, self.custom_order, self.date_format, self.use_date
                     )
                     
                     sep = "" if self.devider == "None" else self.devider
@@ -778,6 +997,95 @@ def scan_directory_recursive(directory):
         print(f"Error scanning directory {directory}: {e}")
     
     return media_files
+
+def analyze_file_statistics(files):
+    """
+    Analyze file statistics by type and extension.
+    Returns a dictionary with detailed statistics.
+    """
+    stats = {
+        'total': 0,
+        'images': 0,
+        'videos': 0,
+        'extensions': {},
+        'categories': {
+            'JPEG': 0,
+            'RAW': 0,
+            'PNG/Other Images': 0,
+            'MP4/MOV': 0,
+            'MKV/AVI': 0,
+            'Other Videos': 0
+        }
+    }
+    
+    # Define category mappings
+    jpeg_extensions = ['.jpg', '.jpeg']
+    raw_extensions = ['.cr2', '.nef', '.arw', '.orf', '.rw2', '.dng', '.raw', '.sr2', '.pef', '.raf', '.3fr', '.erf', '.kdc', '.mos', '.nrw', '.srw', '.x3f']
+    png_other_image_extensions = ['.png', '.bmp', '.tiff', '.tif', '.gif']
+    mp4_mov_extensions = ['.mp4', '.mov', '.m4v']
+    mkv_avi_extensions = ['.mkv', '.avi', '.wmv', '.flv']
+    other_video_extensions = ['.webm', '.mpg', '.mpeg', '.m2v', '.mts', '.m2ts', '.ts', '.vob', '.asf', '.rm', '.rmvb', '.f4v', '.ogv', '.3gp']
+    
+    for file_path in files:
+        if is_media_file(file_path):
+            stats['total'] += 1
+            
+            # Get extension
+            ext = os.path.splitext(file_path)[1].lower()
+            stats['extensions'][ext] = stats['extensions'].get(ext, 0) + 1
+            
+            # Categorize by type
+            if is_image_file(file_path):
+                stats['images'] += 1
+                
+                # Subcategorize images
+                if ext in jpeg_extensions:
+                    stats['categories']['JPEG'] += 1
+                elif ext in raw_extensions:
+                    stats['categories']['RAW'] += 1
+                elif ext in png_other_image_extensions:
+                    stats['categories']['PNG/Other Images'] += 1
+                    
+            elif is_video_file(file_path):
+                stats['videos'] += 1
+                
+                # Subcategorize videos
+                if ext in mp4_mov_extensions:
+                    stats['categories']['MP4/MOV'] += 1
+                elif ext in mkv_avi_extensions:
+                    stats['categories']['MKV/AVI'] += 1
+                elif ext in other_video_extensions:
+                    stats['categories']['Other Videos'] += 1
+    
+    return stats
+
+def format_file_statistics(stats):
+    """
+    Format file statistics into a human-readable string.
+    """
+    if stats['total'] == 0:
+        return "No media files loaded"
+    
+    # Build summary line
+    summary_parts = []
+    if stats['images'] > 0:
+        summary_parts.append(f"{stats['images']} image{'s' if stats['images'] != 1 else ''}")
+    if stats['videos'] > 0:
+        summary_parts.append(f"{stats['videos']} video{'s' if stats['videos'] != 1 else ''}")
+    
+    summary = f"📊 Total: {stats['total']} files ({', '.join(summary_parts)})"
+    
+    # Build detailed breakdown
+    details = []
+    for category, count in stats['categories'].items():
+        if count > 0:
+            details.append(f"{category}: {count}")
+    
+    if details:
+        detail_text = " | ".join(details)
+        return f"{summary}\n💾 {detail_text}"
+    else:
+        return summary
 
 def is_exiftool_installed():
     """
@@ -938,11 +1246,189 @@ def extract_exif_fields(image_path, method, exiftool_path=None):
     """
     return extract_exif_fields_with_retry(image_path, method, exiftool_path, max_retries=3)
 
+def extract_selective_exif_fields(image_path, method, exiftool_path=None, need_date=True, need_camera=False, need_lens=False):
+    """
+    OPTIMIZED: Extracts only the requested EXIF fields from an image.
+    This dramatically improves performance by only reading what's needed.
+    
+    Args:
+        image_path: Path to the image file
+        method: 'exiftool' or 'pillow'
+        exiftool_path: Path to exiftool executable (if using exiftool)
+        need_date: Whether to extract date information
+        need_camera: Whether to extract camera model
+        need_lens: Whether to extract lens model
+    
+    Returns:
+        (date, camera, lens) - only requested fields are extracted, others are None
+    """
+    import time
+    
+    # If nothing is needed, return early
+    if not any([need_date, need_camera, need_lens]):
+        return None, None, None
+    
+    # CRITICAL FIX: Normalize path to prevent double backslashes
+    normalized_path = os.path.normpath(image_path)
+    
+    # Verify file exists
+    if not os.path.exists(normalized_path):
+        print(f"extract_selective_exif_fields: File not found: {normalized_path}")
+        return None, None, None
+    
+    max_retries = 2  # Reduced retries for batch processing
+    
+    for attempt in range(max_retries):
+        try:
+            if method == "exiftool":
+                # Use shared ExifTool instance for better performance
+                meta = get_exiftool_metadata_shared(normalized_path, exiftool_path)
+                
+                # Extract only requested fields
+                date = None
+                camera = None  
+                lens = None
+                
+                if need_date:
+                    date = meta.get('EXIF:DateTimeOriginal') or meta.get('CreateDate') or meta.get('DateTimeOriginal')
+                    if date:
+                        date = date.split(' ')[0].replace(':', '')
+                
+                if need_camera:
+                    camera = meta.get('EXIF:Model') or meta.get('Model')
+                    if camera:
+                        camera = str(camera).replace(' ', '-')
+                
+                if need_lens:
+                    lens = meta.get('EXIF:LensModel') or meta.get('LensModel') or meta.get('LensInfo')
+                    if lens:
+                        lens = str(lens).replace(' ', '-')
+                
+                return date, camera, lens
+                
+            elif method == "pillow":
+                image = Image.open(image_path)
+                exif_data = image._getexif()
+                date = None
+                camera = None
+                lens = None
+                
+                if exif_data:
+                    # Only process tags we actually need
+                    for tag, value in exif_data.items():
+                        decoded_tag = TAGS.get(tag, tag)
+                        
+                        if need_date and decoded_tag == "DateTimeOriginal" and not date:
+                            date = value.split(" ")[0].replace(":", "")
+                        
+                        if need_camera and decoded_tag == "Model" and not camera:
+                            camera = str(value).replace(" ", "-")
+                        
+                        if need_lens and decoded_tag == "LensModel" and not lens:
+                            lens = str(value).replace(" ", "-")
+                        
+                        # Early exit if we have everything we need
+                        if ((not need_date or date) and 
+                            (not need_camera or camera) and 
+                            (not need_lens or lens)):
+                            break
+                
+                return date, camera, lens
+            else:
+                return None, None, None
+                
+        except Exception as e:
+            if attempt == max_retries - 1:
+                return None, None, None
+            else:
+                time.sleep(0.05)  # Shorter pause for batch processing
+
+# Global ExifTool instance for batch processing
+_global_exiftool_instance = None
+_global_exiftool_path = None
+
+def get_exiftool_metadata_shared(image_path, exiftool_path=None):
+    """
+    PERFORMANCE OPTIMIZATION: Use a shared ExifTool instance to avoid 
+    the overhead of starting/stopping ExifTool for each file.
+    """
+    global _global_exiftool_instance, _global_exiftool_path
+    
+    # CRITICAL FIX: Normalize path to prevent double backslashes
+    normalized_path = os.path.normpath(image_path)
+    
+    # Verify file exists
+    if not os.path.exists(normalized_path):
+        print(f"get_exiftool_metadata_shared: File not found: {normalized_path}")
+        return {}
+    
+    try:
+        # Check if we need to create/recreate the instance
+        if (_global_exiftool_instance is None or 
+            _global_exiftool_path != exiftool_path):
+            
+            # Close existing instance if needed
+            if _global_exiftool_instance is not None:
+                try:
+                    _global_exiftool_instance.terminate()
+                except:
+                    pass
+            
+            # Create new instance
+            if exiftool_path and os.path.exists(exiftool_path):
+                _global_exiftool_instance = exiftool.ExifToolHelper(executable=exiftool_path)
+            else:
+                _global_exiftool_instance = exiftool.ExifToolHelper()
+            
+            _global_exiftool_path = exiftool_path
+            
+            # Start the instance
+            _global_exiftool_instance.__enter__()
+        
+        # Get metadata using the shared instance with normalized path
+        meta = _global_exiftool_instance.get_metadata([normalized_path])[0]
+        return meta
+        
+    except Exception as e:
+        # If the shared instance fails, fall back to a temporary instance
+        print(f"Shared ExifTool instance failed, using temporary instance: {e}")
+        try:
+            if exiftool_path and os.path.exists(exiftool_path):
+                with exiftool.ExifToolHelper(executable=exiftool_path) as et:
+                    return et.get_metadata([normalized_path])[0]
+            else:
+                with exiftool.ExifToolHelper() as et:
+                    return et.get_metadata([normalized_path])[0]
+        except Exception as e2:
+            print(f"Temporary ExifTool instance also failed: {e2}")
+            return {}
+            return {}
+
+def cleanup_global_exiftool():
+    """
+    Clean up the global ExifTool instance when done with batch processing
+    """
+    global _global_exiftool_instance
+    if _global_exiftool_instance is not None:
+        try:
+            _global_exiftool_instance.__exit__(None, None, None)
+        except:
+            pass
+        _global_exiftool_instance = None
+
 def extract_exif_fields_with_retry(image_path, method, exiftool_path=None, max_retries=3):
     """
     Extracts EXIF fields with retry mechanism for reliability.
     """
     import time
+    
+    # CRITICAL FIX: Normalize path to prevent double backslashes
+    normalized_path = os.path.normpath(image_path)
+    
+    # Verify file exists
+    if not os.path.exists(normalized_path):
+        print(f"extract_exif_fields_with_retry: File not found: {normalized_path}")
+        return None, None, None
     
     for attempt in range(max_retries):
         try:
@@ -950,11 +1436,11 @@ def extract_exif_fields_with_retry(image_path, method, exiftool_path=None, max_r
                 # Use exiftool with or without explicit path
                 if exiftool_path and os.path.exists(exiftool_path):
                     with exiftool.ExifToolHelper(executable=exiftool_path) as et:
-                        meta = et.get_metadata([image_path])[0]
+                        meta = et.get_metadata([normalized_path])[0]
                 else:
                     # Try to use system exiftool or let exiftool package find it
                     with exiftool.ExifToolHelper() as et:
-                        meta = et.get_metadata([image_path])[0]
+                        meta = et.get_metadata([normalized_path])[0]
                 
                 # Extract date
                 date = meta.get('EXIF:DateTimeOriginal')
@@ -1026,16 +1512,24 @@ def extract_image_number(image_path, method, exiftool_path=None):
     Extracts the image number/shutter count from an image using the specified method.
     Returns the image number as a string or None if not found.
     """
+    # CRITICAL FIX: Normalize path to prevent double backslashes
+    normalized_path = os.path.normpath(image_path)
+    
+    # Verify file exists
+    if not os.path.exists(normalized_path):
+        print(f"extract_image_number: File not found: {normalized_path}")
+        return None
+    
     if method == "exiftool":
         try:
             # Use exiftool with or without explicit path
             if exiftool_path and os.path.exists(exiftool_path):
                 with exiftool.ExifToolHelper(executable=exiftool_path) as et:
-                    meta = et.get_metadata([image_path])[0]
+                    meta = et.get_metadata([normalized_path])[0]
             else:
                 # Try to use system exiftool or let exiftool package find it
                 with exiftool.ExifToolHelper() as et:
-                    meta = et.get_metadata([image_path])[0]
+                    meta = et.get_metadata([normalized_path])[0]
             
             # Try different possible fields for image number/shutter count
             possible_fields = [
@@ -1378,6 +1872,32 @@ class FileRenamerApp(QMainWindow):
         date_options_row.addStretch()
         self.layout.addLayout(date_options_row)
 
+        # Continuous Counter Checkbox (vacation scenario)
+        continuous_counter_row = QHBoxLayout()
+        self.checkbox_continuous_counter = QCheckBox("Continuous counter for vacation/multi-day shoots")
+        self.checkbox_continuous_counter.setChecked(False)  # Default: disabled
+        self.checkbox_continuous_counter.setStyleSheet("""
+            QCheckBox {
+                color: #0066cc;
+                font-weight: bold;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #0066cc;
+                border: 2px solid #004499;
+            }
+        """)
+        self.checkbox_continuous_counter.setToolTip(
+            "Enable for vacation scenarios where you want continuous numbering across dates:\n"
+            "• Day 1: 2025-07-20_001, 2025-07-20_002, 2025-07-20_003\n"
+            "• Day 2: 2025-07-21_004, 2025-07-21_005, 2025-07-21_006\n"
+            "Instead of restarting at 001 each day"
+        )
+        self.checkbox_continuous_counter.stateChanged.connect(self.on_continuous_counter_changed)
+        
+        continuous_counter_row.addWidget(self.checkbox_continuous_counter)
+        continuous_counter_row.addStretch()
+        self.layout.addLayout(continuous_counter_row)
+
         # Camera Prefix with clickable info icon
         camera_layout = QVBoxLayout()
         camera_label = QLabel("Camera Prefix:")
@@ -1503,6 +2023,25 @@ class FileRenamerApp(QMainWindow):
         self.file_list.itemDoubleClicked.connect(self.show_selected_exif)
         self.file_list.itemClicked.connect(self.show_media_info)
         
+        # File Statistics Info Panel
+        self.file_stats_label = QLabel()
+        self.file_stats_label.setStyleSheet("""
+            QLabel {
+                background-color: #e8f4fd;
+                border: 2px solid #b3d9ff;
+                border-radius: 6px;
+                padding: 8px 12px;
+                color: #0066cc;
+                font-size: 11px;
+                font-weight: bold;
+                text-align: left;
+            }
+        """)
+        self.file_stats_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
+        self.file_stats_label.setWordWrap(True)
+        self.update_file_statistics()
+        self.layout.addWidget(self.file_stats_label)
+        
         # Enhanced info for media clicking with visual indicator
         file_list_info = QLabel("💡Single click = Media info in status bar | Double click = Full metadata dialog")
         file_list_info.setStyleSheet("""
@@ -1581,6 +2120,7 @@ class FileRenamerApp(QMainWindow):
         self.undo_button.setToolTip("Restore all files to their original names (only available after renaming)")
         self.layout.addWidget(self.undo_button)
 
+        # Initialize files list BEFORE calling update methods
         self.files = []
         self.original_filenames = {}  # Track original filenames for undo
         self.exiftool_path = is_exiftool_installed()
@@ -1605,6 +2145,7 @@ class FileRenamerApp(QMainWindow):
         self.update_exif_status()
         self.update_preview()
         self.update_file_list_placeholder()  # Add initial placeholder
+        self.update_file_statistics()  # Initialize file statistics display
 
         # EXIF cache for preview file
         self._preview_exif_cache = {}
@@ -1619,41 +2160,85 @@ class FileRenamerApp(QMainWindow):
 
     def on_preview_order_changed(self, new_order):
         """Handle changes from the interactive preview widget"""
-        # Map display names back to internal names
-        display_to_internal = {
-            "2025-07-21": "Date",
-            "A7R3": "Prefix", 
-            "Sarah30": "Additional",
-            "ILCE-7RM3": "Camera",
-            "FE24-70": "Lens"
-        }
+        # Get current actual values for mapping
+        camera_prefix = self.camera_prefix_entry.text().strip()
+        additional = self.additional_entry.text().strip()
+        use_camera = self.checkbox_camera.isChecked()
+        use_lens = self.checkbox_lens.isChecked()
+        use_date = self.checkbox_date.isChecked()
         
-        # Convert display order to internal order
+        # Build dynamic mapping based on current actual values
+        current_values = {}
+        
+        # Get current date value (formatted)
+        if use_date:
+            date_format = self.date_format_combo.currentText()
+            # Use a sample date to get the format
+            year, month, day = "2025", "04", "20"
+            if date_format == "YYYY-MM-DD":
+                formatted_date = f"{year}-{month}-{day}"
+            elif date_format == "YYYY_MM_DD":
+                formatted_date = f"{year}_{month}_{day}"
+            elif date_format == "DD-MM-YYYY":
+                formatted_date = f"{day}-{month}-{year}"
+            elif date_format == "DD_MM_YYYY":
+                formatted_date = f"{day}_{month}_{year}"
+            elif date_format == "YYYYMMDD":
+                formatted_date = f"{year}{month}{day}"
+            elif date_format == "MM-DD-YYYY":
+                formatted_date = f"{month}-{day}-{year}"
+            elif date_format == "MM_DD_YYYY":
+                formatted_date = f"{month}_{day}_{year}"
+            else:
+                formatted_date = f"{year}-{month}-{day}"
+            current_values[formatted_date] = "Date"
+        
+        # Get current prefix value
+        if camera_prefix:
+            current_values[camera_prefix] = "Prefix"
+        
+        # Get current additional value
+        if additional:
+            current_values[additional] = "Additional"
+        
+        # Get current camera and lens values (from cache or fallback)
+        if use_camera:
+            # Try to get actual camera value from preview cache
+            camera_value = None
+            if hasattr(self, '_preview_exif_cache') and self._preview_exif_cache:
+                camera_value = self._preview_exif_cache.get('camera')
+            if not camera_value:
+                camera_value = "A7R3"  # Fallback used in preview
+            current_values[camera_value] = "Camera"
+        
+        if use_lens:
+            # Try to get actual lens value from preview cache
+            lens_value = None
+            if hasattr(self, '_preview_exif_cache') and self._preview_exif_cache:
+                lens_value = self._preview_exif_cache.get('lens')
+            if not lens_value:
+                lens_value = "FE24-70"  # Fallback used in preview
+            current_values[lens_value] = "Lens"
+        
+        # Convert display order to internal order using dynamic mapping
         internal_order = []
         for display_name in new_order:
-            # Try exact match first
-            if display_name in display_to_internal:
-                internal_order.append(display_to_internal[display_name])
-            else:
-                # Try to guess based on content
-                if re.match(r'\d{4}-\d{2}-\d{2}', display_name):
-                    internal_order.append("Date")
-                elif display_name in ["A7R3", "D850"]:  # Common prefixes
-                    internal_order.append("Prefix")
-                elif display_name in ["ILCE-7RM3", "D850"]:  # Camera models
-                    internal_order.append("Camera")
-                elif "FE" in display_name or "mm" in display_name:  # Lens patterns
-                    internal_order.append("Lens")
-                else:
-                    internal_order.append("Additional")  # Default fallback
+            if display_name in current_values:
+                component_type = current_values[display_name]
+                if component_type not in internal_order:  # Prevent duplicates
+                    internal_order.append(component_type)
         
-        # Add missing components that weren't in the display
+        # Add missing components that weren't in the display (in original order)
         all_components = ["Date", "Prefix", "Additional", "Camera", "Lens"]
         for component in all_components:
             if component not in internal_order:
                 internal_order.append(component)
         
+        # Update custom order
         self.custom_order = internal_order
+        
+        # Immediately update preview to reflect the change
+        self.update_preview()
 
     def on_theme_changed(self, theme_name):
         """Handle theme changes"""
@@ -1797,6 +2382,21 @@ class FileRenamerApp(QMainWindow):
                     """)
                     break
             
+            # File Statistics Dark Theme
+            if hasattr(self, 'file_stats_label'):
+                self.file_stats_label.setStyleSheet("""
+                    QLabel {
+                        background-color: #2d3748;
+                        border: 2px solid #4a5568;
+                        border-radius: 6px;
+                        padding: 8px 12px;
+                        color: #63b3ed;
+                        font-size: 11px;
+                        font-weight: bold;
+                        text-align: left;
+                    }
+                """)
+            
             # File List Dark Theme
             self.file_list.setStyleSheet("""
                 QListWidget {
@@ -1873,6 +2473,21 @@ class FileRenamerApp(QMainWindow):
                     """)
                     break
             
+            # File Statistics Light Theme
+            if hasattr(self, 'file_stats_label'):
+                self.file_stats_label.setStyleSheet("""
+                    QLabel {
+                        background-color: #e8f4fd;
+                        border: 2px solid #b3d9ff;
+                        border-radius: 6px;
+                        padding: 8px 12px;
+                        color: #0066cc;
+                        font-size: 11px;
+                        font-weight: bold;
+                        text-align: left;
+                    }
+                """)
+            
             # File List Light Theme
             self.file_list.setStyleSheet("""
                 QListWidget {
@@ -1947,6 +2562,21 @@ class FileRenamerApp(QMainWindow):
                     """)
                     break
             
+            # File Statistics System Theme
+            if hasattr(self, 'file_stats_label'):
+                self.file_stats_label.setStyleSheet("""
+                    QLabel {
+                        background-color: #e8f4fd;
+                        border: 2px solid #b3d9ff;
+                        border-radius: 6px;
+                        padding: 8px 12px;
+                        color: #0066cc;
+                        font-size: 11px;
+                        font-weight: bold;
+                        text-align: left;
+                    }
+                """)
+            
             # File List System Theme
             self.file_list.setStyleSheet("""
                 QListWidget {
@@ -1976,6 +2606,12 @@ class FileRenamerApp(QMainWindow):
         """Handle devider combo box changes"""
         devider = self.devider_combo.currentText()
         self.interactive_preview.set_separator(devider)
+
+    def on_continuous_counter_changed(self):
+        """Handle continuous counter checkbox changes"""
+        # No immediate action needed - the setting will be used during rename operation
+        # Could add preview update here if needed in the future
+        pass
 
     def validate_and_update_preview(self):
         # Get current text
@@ -2075,15 +2711,23 @@ class FileRenamerApp(QMainWindow):
             return
         
         try:
+            # CRITICAL FIX: Normalize path to prevent double backslashes
+            normalized_path = os.path.normpath(file_path)
+            
+            # Verify file exists
+            if not os.path.exists(normalized_path):
+                print(f"show_media_info: File not found: {normalized_path}")
+                return
+            
             if is_video_file(file_path):
                 # For videos, try to extract frame count or duration info
                 if self.exif_method == "exiftool":
                     if self.exiftool_path and os.path.exists(self.exiftool_path):
                         with exiftool.ExifToolHelper(executable=self.exiftool_path) as et:
-                            meta = et.get_metadata([file_path])[0]
+                            meta = et.get_metadata([normalized_path])[0]
                     else:
                         with exiftool.ExifToolHelper() as et:
-                            meta = et.get_metadata([file_path])[0]
+                            meta = et.get_metadata([normalized_path])[0]
                     
                     # Try to get video duration or frame count
                     duration = meta.get('QuickTime:Duration') or meta.get('File:Duration') or meta.get('H264:Duration')
@@ -2128,28 +2772,18 @@ class FileRenamerApp(QMainWindow):
         # Show warning if ExifTool is not available (regardless of Pillow status)
         exiftool_available = EXIFTOOL_AVAILABLE and self.exiftool_path
         
-        print(f"Debug: EXIFTOOL_AVAILABLE={EXIFTOOL_AVAILABLE}, exiftool_path={self.exiftool_path}")
-        print(f"Debug: exiftool_available={exiftool_available}, exif_method={self.exif_method}")
-        
         if not exiftool_available:
             # Check if user has disabled the warning (using QSettings for persistence)
             settings = QSettings("RenameFiles", "ExifToolWarning")
             show_warning = settings.value("show_exiftool_warning", True, type=bool)
             
-            print(f"Debug: show_warning={show_warning}")
-            
             if show_warning:
-                print("Debug: Showing ExifTool warning dialog")
                 dialog = ExifToolWarningDialog(self, self.exif_method)
                 dialog.exec()
                 
                 # Save user preference
                 if not dialog.should_show_again():
                     settings.setValue("show_exiftool_warning", False)
-            else:
-                print("Debug: Warning disabled by user")
-        else:
-            print("Debug: ExifTool available, no warning needed")
 
     def update_preview(self):
         """Update the interactive preview widget with current settings"""
@@ -2216,11 +2850,17 @@ class FileRenamerApp(QMainWindow):
                 else:
                     date_taken = "20250725"
             
-            # Use fallback values for preview if not detected
+            # Use fallback values for preview if not detected AND checkbox is enabled
             if use_camera and not camera_model:
                 camera_model = "A7R3"
             if use_lens and not lens_model:
                 lens_model = "FE24-70"
+            
+            # Clear values if checkboxes are disabled
+            if not use_camera:
+                camera_model = None
+            if not use_lens:
+                lens_model = None
         
         # Format date for display using the selected format
         if date_taken and use_date:
@@ -2283,13 +2923,22 @@ class FileRenamerApp(QMainWindow):
             self.show_exif_dialog(file, f"No metadata support available for {file_type.lower()} files.")
             return
         try:
+            # CRITICAL FIX: Normalize path to prevent double backslashes
+            normalized_file = os.path.normpath(file)
+            
+            # Verify file exists
+            if not os.path.exists(normalized_file):
+                print(f"show_exif_info: File not found: {normalized_file}")
+                self.show_exif_dialog(file, "File not found.")
+                return
+            
             if self.exif_method == "exiftool":
                 if self.exiftool_path:
                     with exiftool.ExifToolHelper(executable=self.exiftool_path) as et:
-                        meta = et.get_metadata([file])[0]
+                        meta = et.get_metadata([normalized_file])[0]
                 else:
                     with exiftool.ExifToolHelper() as et:
-                        meta = et.get_metadata([file])[0]
+                        meta = et.get_metadata([normalized_file])[0]
                 if not meta:
                     file_type = "Video" if is_video_file(file) else "Image"
                     self.show_exif_dialog(file, f"No metadata found in {file_type.lower()} file.")
@@ -2355,8 +3004,9 @@ class FileRenamerApp(QMainWindow):
                 
                 self.files.append(file)
                 self.file_list.addItem(file)
-                # Track original filename for undo functionality
-                self.original_filenames[file] = file
+                # Track original FILENAME only (not full path) for undo functionality
+                original_filename = os.path.basename(file)
+                self.original_filenames[file] = original_filename
                 added_count += 1
         
         # Show warning for inaccessible files
@@ -2376,6 +3026,7 @@ class FileRenamerApp(QMainWindow):
         # Update preview and camera/lens labels when files are added
         self.update_preview()
         self.update_camera_lens_labels()
+        self.update_file_statistics()
 
     def clear_file_list(self):
         """Clear the file list and reset the GUI"""
@@ -2388,6 +3039,22 @@ class FileRenamerApp(QMainWindow):
         self.update_file_list_placeholder()  # Add placeholder back
         self.update_preview()
         self.update_camera_lens_labels()
+        self.update_file_statistics()
+
+    def update_file_statistics(self):
+        """Update the file statistics display"""
+        if hasattr(self, 'file_stats_label'):
+            # Ensure files list exists before analyzing
+            files_to_analyze = getattr(self, 'files', [])
+            stats = analyze_file_statistics(files_to_analyze)
+            stats_text = format_file_statistics(stats)
+            self.file_stats_label.setText(stats_text)
+            
+            # Show/hide the statistics panel based on whether files are loaded
+            if stats['total'] == 0:
+                self.file_stats_label.hide()
+            else:
+                self.file_stats_label.show()
 
     def show_selected_exif(self, item):
         file = item.text()
@@ -2625,6 +3292,7 @@ The yellow box shows the sequential number which always stays at the end."""
         use_camera = self.checkbox_camera.isChecked()
         use_lens = self.checkbox_lens.isChecked()
         use_date = self.checkbox_date.isChecked()
+        continuous_counter = self.checkbox_continuous_counter.isChecked()
         date_format = self.date_format_combo.currentText()
         devider = self.devider_combo.currentText()
         non_media = [f for f in self.files if not is_media_file(f)]
@@ -2653,7 +3321,7 @@ The yellow box shows the sequential number which always stays at the end."""
         self.worker = RenameWorkerThread(
             media_files, camera_prefix, additional, use_camera, use_lens, 
             self.exif_method, devider, self.exiftool_path, self.custom_order,
-            date_format, use_date
+            date_format, use_date, continuous_counter
         )
         self.worker.progress_update.connect(self.update_status)
         self.worker.finished.connect(self.on_rename_finished)
@@ -2670,23 +3338,49 @@ The yellow box shows the sequential number which always stays at the end."""
         # Update the file list with the new file names
         original_non_media = [f for f in self.files if not is_media_file(f)]
         
-        # Update original_filenames tracking for renamed files
-        # Create a mapping from old to new names
+        # CRITICAL FIX: Use directory-based mapping instead of index-based
+        # Group old files by directory for proper mapping
         old_media_files = [f for f in self.files if is_media_file(f)]
-        rename_mapping = {}
         
-        # Create mapping from old to new filenames
-        for i, renamed_file in enumerate(renamed_files):
-            if i < len(old_media_files):
-                old_file = old_media_files[i]
-                # Update the original tracking: if this file was already renamed before,
-                # keep the original filename, otherwise use the current name as original
-                if old_file in self.original_filenames:
-                    original_name = self.original_filenames[old_file]
-                    self.original_filenames[renamed_file] = original_name
-                    del self.original_filenames[old_file]
-                else:
-                    self.original_filenames[renamed_file] = old_file
+        # Create directory-based mapping for safer undo tracking
+        new_original_filenames = {}
+        
+        # Group old files by directory
+        old_files_by_dir = {}
+        for old_file in old_media_files:
+            directory = os.path.dirname(old_file)
+            if directory not in old_files_by_dir:
+                old_files_by_dir[directory] = []
+            old_files_by_dir[directory].append(old_file)
+        
+        # Group renamed files by directory  
+        renamed_files_by_dir = {}
+        for renamed_file in renamed_files:
+            directory = os.path.dirname(renamed_file)
+            if directory not in renamed_files_by_dir:
+                renamed_files_by_dir[directory] = []
+            renamed_files_by_dir[directory].append(renamed_file)
+        
+        # Create safe mapping based on directory and order preservation
+        for directory in old_files_by_dir:
+            old_files_in_dir = sorted(old_files_by_dir[directory])  # Ensure consistent order
+            renamed_files_in_dir = sorted(renamed_files_by_dir.get(directory, []))  # Ensure consistent order
+            
+            # Map files in same directory in order
+            for i, renamed_file in enumerate(renamed_files_in_dir):
+                if i < len(old_files_in_dir):
+                    old_file = old_files_in_dir[i]
+                    
+                    # Preserve original filename from previous renames or use current
+                    if old_file in self.original_filenames:
+                        original_filename = self.original_filenames[old_file]
+                    else:
+                        original_filename = os.path.basename(old_file)
+                    
+                    new_original_filenames[renamed_file] = original_filename
+        
+        # Replace original_filenames dictionary safely
+        self.original_filenames = new_original_filenames
         
         # Clear and rebuild the file list
         self.files.clear()
@@ -2701,9 +3395,13 @@ The yellow box shows the sequential number which always stays at the end."""
         for non_media in original_non_media:
             self.files.append(non_media)
             self.file_list.addItem(non_media)
+            # Preserve original tracking for non-media files too
+            if non_media not in self.original_filenames:
+                self.original_filenames[non_media] = os.path.basename(non_media)
         
         # Enable undo button if we have any rename tracking
-        if renamed_files and any(current != original for current, original in self.original_filenames.items()):
+        # Enable undo button if there are files that can be restored to different names
+        if renamed_files and any(os.path.basename(current) != original for current, original in self.original_filenames.items()):
             self.undo_button.setEnabled(True)
         
         # Show results
@@ -2762,9 +3460,10 @@ The yellow box shows the sequential number which always stays at the end."""
         
         # Check which files actually need to be undone (current name != original name)
         files_to_undo = []
-        for current_file, original_file in self.original_filenames.items():
-            if current_file != original_file and current_file in self.files:
-                files_to_undo.append((current_file, original_file))
+        for current_file, original_filename in self.original_filenames.items():
+            current_filename = os.path.basename(current_file)
+            if current_filename != original_filename and current_file in self.files:
+                files_to_undo.append((current_file, original_filename))
         
         if not files_to_undo:
             QMessageBox.information(
@@ -2798,22 +3497,26 @@ The yellow box shows the sequential number which always stays at the end."""
         restored_files = []
         errors = []
         
-        for current_file, original_file in files_to_undo:
+        for current_file, original_filename in files_to_undo:
             try:
                 if os.path.exists(current_file):
+                    # CRITICAL FIX: Only restore filename, never move between directories
+                    current_directory = os.path.dirname(current_file)
+                    target_path = os.path.join(current_directory, original_filename)
+                    
                     # Check if target name already exists
-                    if os.path.exists(original_file) and original_file != current_file:
+                    if os.path.exists(target_path) and target_path != current_file:
                         errors.append(f"Cannot restore {os.path.basename(current_file)}: Target name already exists")
                         continue
                     
-                    os.rename(current_file, original_file)
-                    restored_files.append(original_file)
+                    os.rename(current_file, target_path)
+                    restored_files.append(target_path)
                     
                     # Update our file list
                     if current_file in self.files:
                         index = self.files.index(current_file)
-                        self.files[index] = original_file
-                        self.file_list.item(index).setText(original_file)
+                        self.files[index] = target_path
+                        self.file_list.item(index).setText(target_path)
                     
                 else:
                     errors.append(f"File not found: {os.path.basename(current_file)}")
@@ -2821,11 +3524,12 @@ The yellow box shows the sequential number which always stays at the end."""
             except Exception as e:
                 errors.append(f"Failed to restore {os.path.basename(current_file)}: {e}")
         
-        # Update original_filenames tracking - reset to current state
+        # Update original_filenames tracking - reset to current state (filenames only)
         new_original_filenames = {}
         for file in self.files:
-            if is_image_file(file):
-                new_original_filenames[file] = file
+            if is_media_file(file):
+                filename = os.path.basename(file)
+                new_original_filenames[file] = filename
         self.original_filenames = new_original_filenames
         
         # Show results
