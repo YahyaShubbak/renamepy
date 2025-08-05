@@ -18,7 +18,7 @@ if modules_dir not in sys.path:
 # Import and run the main application
 if __name__ == "__main__":
     try:
-        from modules.original_ui_complete import main
+        from modules.main_application import main
         main()
     except ImportError as e:
         print(f"Error importing modules: {e}")
