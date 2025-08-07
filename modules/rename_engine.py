@@ -656,15 +656,18 @@ class RenameWorkerThread(QThread):
                                         print(f"  Alternative method failed: {e2}")
                                 
                                 # Only update the metadata keys that are marked as True
-                                for key in ['aperture', 'iso', 'focal_length', 'shutter_speed', 'exposure_bias']:
-                                    if (key in self.selected_metadata and 
-                                        self.selected_metadata[key] is True and
-                                        key in file_metadata):
-                                        individual_metadata[key] = file_metadata[key]
-                                        print(f"  ✅ Updated {key}: True -> {file_metadata[key]}")
-                                    elif (key in self.selected_metadata and 
-                                          self.selected_metadata[key] is True):
-                                        print(f"  ❌ {key} requested but no metadata extracted")
+                                for key in ['aperture', 'iso', 'focal_length', 'shutter', 'shutter_speed', 'exposure_bias']:
+                                    if key in self.selected_metadata and self.selected_metadata[key] is True:
+                                        # CRITICAL FIX: Add key mapping for shutter -> shutter_speed (same as main_application.py)
+                                        exif_key = key
+                                        if key == 'shutter' and 'shutter_speed' in file_metadata:
+                                            exif_key = 'shutter_speed'
+                                        
+                                        if exif_key in file_metadata:
+                                            individual_metadata[key] = file_metadata[exif_key]
+                                            print(f"  ✅ Updated {key}: True -> {file_metadata[exif_key]}")
+                                        else:
+                                            print(f"  ❌ {key} requested but no metadata extracted (looked for {exif_key})")
                                         
                             except Exception as e:
                                 print(f"❌ Error extracting metadata for {file}: {e}")

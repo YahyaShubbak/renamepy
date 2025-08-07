@@ -1146,7 +1146,7 @@ class FileRenamerApp(QMainWindow):
         if checked:
             # SIMPLIFIED FIX: Store boolean flags instead of placeholders
             # This tells the rename engine which metadata types to extract
-            if metadata_key in ['aperture', 'iso', 'focal_length', 'shutter_speed', 'exposure_bias']:
+            if metadata_key in ['aperture', 'iso', 'focal_length', 'shutter', 'shutter_speed', 'exposure_bias']:
                 # For EXIF metadata, store True to indicate extraction needed
                 self.selected_metadata[metadata_key] = True
             else:
@@ -1573,10 +1573,16 @@ class FileRenamerApp(QMainWindow):
                         
                         # Replace Boolean flags with real values for preview
                         for key, value in self.selected_metadata.items():
-                            if value is True and key in real_metadata:
-                                old_value = preview_metadata[key]
-                                preview_metadata[key] = real_metadata[key]
-                                print(f"  Preview: {key} {old_value} -> {real_metadata[key]}")
+                            if value is True:
+                                # Handle key mapping for shutter/shutter_speed
+                                exif_key = key
+                                if key == 'shutter' and 'shutter_speed' in real_metadata:
+                                    exif_key = 'shutter_speed'
+                                
+                                if exif_key in real_metadata:
+                                    old_value = preview_metadata[key]
+                                    preview_metadata[key] = real_metadata[exif_key]
+                                    print(f"  Preview: {key} {old_value} -> {real_metadata[exif_key]}")
                     except Exception as e:
                         print(f"❌ Warning: Could not extract real metadata for preview: {e}")
                         import traceback
@@ -1595,36 +1601,25 @@ class FileRenamerApp(QMainWindow):
                 if display_value:
                     component_mapping[f"Meta_{metadata_key}"] = display_value
         
-        # Add components in current order, but only if they have values and are active
-        print(f"🔍 Debug: custom_order = {getattr(self, 'custom_order', 'NOT SET')}")
-        for component_name in self.custom_order:
+        # Build a unified list of all active components for the preview
+        display_components = []
+        
+        # Create a dynamic, full order list for this preview update
+        # This ensures that newly selected metadata items are included and become draggable
+        active_components_order = list(self.custom_order)
+        if hasattr(self, 'selected_metadata') and self.selected_metadata:
+            for meta_key, is_selected in self.selected_metadata.items():
+                if is_selected:
+                    meta_name = f"Meta_{meta_key}"
+                    if meta_name not in active_components_order:
+                        active_components_order.append(meta_name)
+
+        # Add components in the current, full order
+        print(f"🔍 Debug: Full component order for display: {active_components_order}")
+        for component_name in active_components_order:
             value = component_mapping.get(component_name)
-            print(f"🔍 Debug: Checking component '{component_name}' -> value: {value}")
             if value:  # Only add non-empty and active components
                 display_components.append(value)
-                print(f"🔍 Debug: Added '{component_name}' = '{value}' to display_components")
-        
-        # Add metadata components that aren't in the custom order yet
-        print(f"🔍 Debug: Adding metadata components not in custom_order...")
-        if hasattr(self, 'selected_metadata') and self.selected_metadata:
-            for metadata_key, metadata_value in self.selected_metadata.items():
-                # SAFETY CHECK: Don't add camera/lens metadata if their checkboxes are unchecked
-                if metadata_key == 'camera' and not use_camera:
-                    print(f"🔍 Debug: Skipping camera metadata (checkbox unchecked)")
-                    continue
-                if metadata_key == 'lens' and not use_lens:
-                    print(f"🔍 Debug: Skipping lens metadata (checkbox unchecked)")
-                    continue
-                    
-                meta_component_name = f"Meta_{metadata_key}"
-                print(f"🔍 Debug: Checking meta component '{meta_component_name}' (in custom_order: {meta_component_name in self.custom_order})")
-                if meta_component_name not in self.custom_order:
-                    # FIX: Use already-formatted values from component_mapping instead of re-formatting
-                    display_value = component_mapping.get(meta_component_name)
-                    print(f"🔍 Debug: Getting pre-formatted value for '{metadata_key}': '{display_value}'")
-                    if display_value:
-                        display_components.append(display_value)
-                        print(f"🔍 Debug: Added meta component '{display_value}' to display_components")
         
         # Update the interactive preview
         print(f"🖼️ Debug: Setting preview components: {display_components}")
@@ -1674,7 +1669,13 @@ class FileRenamerApp(QMainWindow):
         elif metadata_key in ['shutter', 'shutter_speed']:
             # Keep shutter speed format but replace problematic characters for filename
             # Convert 1/800s to 1_800s for filename safety while keeping it readable
-            return metadata_value.replace('/', '_').replace(' ', '')
+            # Also ensure we don't get double 's' (1/800s -> 1_800s, not 1_800ss)
+            result = metadata_value.replace('/', '_').replace(' ', '')
+            # Clean up any double 's' that might occur
+            if result.endswith('ss') and not result.endswith('sss'):
+                result = result[:-1]  # Remove one 's' if double
+            print(f"🔧 Debug: Formatted shutter '{metadata_value}' -> '{result}'")
+            return result
         elif metadata_key == 'focal_length':
             # Extract just the number part
             import re
@@ -1711,27 +1712,61 @@ class FileRenamerApp(QMainWindow):
         if additional:
             value_to_component[additional] = "Additional"
             
-        # Map date component
+        # Map date component - CRITICAL FIX: Use the same date logic as update_preview()
         if use_date:
-            date_format = self.date_format_combo.currentText()
-            year, month, day = "2025", "04", "20"
-            if date_format == "YYYY-MM-DD":
-                formatted_date = f"{year}-{month}-{day}"
-            elif date_format == "YYYY_MM_DD":
-                formatted_date = f"{year}_{month}_{day}"
-            elif date_format == "DD-MM-YYYY":
-                formatted_date = f"{day}-{month}-{year}"
-            elif date_format == "DD_MM_YYYY":
-                formatted_date = f"{day}_{month}_{year}"
-            elif date_format == "YYYYMMDD":
-                formatted_date = f"{year}{month}{day}"
-            elif date_format == "MM-DD-YYYY":
-                formatted_date = f"{month}-{day}-{year}"
-            elif date_format == "MM_DD_YYYY":
-                formatted_date = f"{month}_{day}_{year}"
-            else:
-                formatted_date = f"{year}-{month}-{day}"
-            value_to_component[formatted_date] = "Date"
+            # Get the same preview file as used in update_preview
+            preview_file = next((f for f in self.files if os.path.splitext(f)[1].lower() in [".jpg", ".jpeg"]), None)
+            if not preview_file:
+                preview_file = next((f for f in self.files if is_media_file(f)), None)
+            if not preview_file and self.files:
+                preview_file = self.files[0]
+            
+            # Extract date using the same logic as update_preview()
+            date_taken = None
+            if hasattr(self, '_preview_exif_cache') and self._preview_exif_cache:
+                date_taken = self._preview_exif_cache.get('date')
+            
+            # Fallback date extraction (same as update_preview)
+            if not date_taken:
+                if preview_file:
+                    m = re.search(r'(20\d{2})(\d{2})(\d{2})', os.path.basename(preview_file))
+                    if m:
+                        date_taken = f"{m.group(1)}{m.group(2)}{m.group(3)}"
+            
+            if not date_taken:
+                if preview_file and os.path.exists(preview_file):
+                    mtime = os.path.getmtime(preview_file)
+                    dt = datetime.datetime.fromtimestamp(mtime)
+                    date_taken = dt.strftime('%Y%m%d')
+                else:
+                    date_taken = "20250805"  # Use current date as fallback
+            
+            # Format date using the same logic as update_preview()
+            if date_taken:
+                year = date_taken[:4]
+                month = date_taken[4:6]
+                day = date_taken[6:8]
+                
+                date_format = self.date_format_combo.currentText()
+                if date_format == "YYYY-MM-DD":
+                    formatted_date = f"{year}-{month}-{day}"
+                elif date_format == "YYYY_MM_DD":
+                    formatted_date = f"{year}_{month}_{day}"
+                elif date_format == "DD-MM-YYYY":
+                    formatted_date = f"{day}-{month}-{year}"
+                elif date_format == "DD_MM_YYYY":
+                    formatted_date = f"{day}_{month}_{year}"
+                elif date_format == "YYYYMMDD":
+                    formatted_date = f"{year}{month}{day}"
+                elif date_format == "MM-DD-YYYY":
+                    formatted_date = f"{month}-{day}-{year}"
+                elif date_format == "MM_DD_YYYY":
+                    formatted_date = f"{month}_{day}_{year}"
+                else:
+                    formatted_date = f"{year}-{month}-{day}"  # Default fallback
+                
+                value_to_component[formatted_date] = "Date"
+                print(f"🔄 Debug: Mapped Date '{formatted_date}' -> 'Date'")
             
         # Map camera and lens components
         if use_camera:
@@ -1752,12 +1787,55 @@ class FileRenamerApp(QMainWindow):
             
         # Map metadata components - this is the key fix!
         if hasattr(self, 'selected_metadata') and self.selected_metadata:
-            for metadata_key, metadata_value in self.selected_metadata.items():
-                # Get the formatted display value (same logic as in update_preview)
+            # We need to get the same preview metadata that update_preview() creates
+            # This ensures we're mapping the same values that are actually displayed
+            
+            # Get the preview file (same logic as in update_preview)
+            preview_file = next((f for f in self.files if os.path.splitext(f)[1].lower() in [".jpg", ".jpeg"]), None)
+            if not preview_file:
+                preview_file = next((f for f in self.files if is_media_file(f)), None)
+            if not preview_file and self.files:
+                preview_file = self.files[0]
+            
+            # Get preview metadata (same logic as in update_preview)
+            preview_metadata = self.selected_metadata.copy()
+            if self.exif_method and preview_file and os.path.exists(preview_file):
+                needs_real_metadata = any(
+                    value is True for value in self.selected_metadata.values()
+                )
+                
+                if needs_real_metadata:
+                    try:
+                        from .exif_processor import get_all_metadata
+                        real_metadata = get_all_metadata(preview_file, self.exif_method, self.exiftool_path)
+                        
+                        # Replace Boolean flags with real values for preview
+                        for key, value in self.selected_metadata.items():
+                            if value is True:
+                                # CRITICAL FIX: Add key mapping for shutter -> shutter_speed
+                                exif_key = key
+                                if key == 'shutter' and 'shutter_speed' in real_metadata:
+                                    exif_key = 'shutter_speed'
+                                
+                                if exif_key in real_metadata:
+                                    preview_metadata[key] = real_metadata[exif_key]
+                                    print(f"🔄 Debug: Mapped preview {key} True -> {real_metadata[exif_key]}")
+                    except Exception as e:
+                        print(f"❌ Warning: Could not extract real metadata for preview mapping: {e}")
+            
+            # Now map the actual formatted values that are displayed
+            for metadata_key, metadata_value in preview_metadata.items():
+                # Skip if this metadata conflicts with main checkboxes
+                if metadata_key == 'camera' and not use_camera:
+                    continue
+                if metadata_key == 'lens' and not use_lens:
+                    continue
+                    
                 display_value = self.format_metadata_for_filename(metadata_key, metadata_value)
                 if display_value:
                     meta_component_name = f"Meta_{metadata_key}"
                     value_to_component[display_value] = meta_component_name
+                    print(f"🔄 Debug: Mapped EXIF '{display_value}' -> '{meta_component_name}'")
         
         # Convert display order to internal order
         new_internal_order = []
