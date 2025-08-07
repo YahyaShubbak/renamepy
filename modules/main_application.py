@@ -323,6 +323,36 @@ class FileRenamerApp(QMainWindow):
         
         # Initialize EXIF cache
         self._preview_exif_cache = {}
+
+    def has_restore_data(self):
+        """
+        Check if there's anything that can be restored (filenames or timestamps)
+        
+        Returns:
+            bool: True if there are filenames or timestamps that can be restored
+        """
+        # Check if we have original filename tracking (regardless of whether they've changed)
+        has_filename_data = bool(self.original_filenames)
+        
+        # Check if we have timestamp backup data
+        has_timestamp_data = bool(self.timestamp_backup)
+        
+        return has_filename_data or has_timestamp_data
+
+    def update_restore_button_state(self):
+        """Update the restore button state based on available restore data"""
+        if self.has_restore_data():
+            self.undo_button.setEnabled(True)
+            # Update button text based on what can be restored
+            if self.original_filenames and self.timestamp_backup:
+                self.undo_button.setText("↶ Restore Names & Timestamps")
+            elif self.timestamp_backup:
+                self.undo_button.setText("↶ Restore Timestamps")
+            else:
+                self.undo_button.setText("↶ Restore Original Names")
+        else:
+            self.undo_button.setEnabled(False)
+            self.undo_button.setText("↶ Restore Original Names")
         self._preview_exif_file = None
         
         # Check for ExifTool availability and show warning if needed
@@ -2011,58 +2041,69 @@ class FileRenamerApp(QMainWindow):
         original_non_media = [f for f in self.files if not is_media_file(f)]
         old_media_files = [f for f in self.files if is_media_file(f)]
         
-        # CRITICAL FIX: Only create original mapping if it doesn't exist yet
-        # This preserves the FIRST original filenames, not subsequent renames
+        # CRITICAL FIX: Handle both rename operations and EXIF-only sync
+        # Create original_filenames mapping for both scenarios
         if not hasattr(self, 'original_filenames') or not self.original_filenames:
-            # First rename operation - create mapping from current names to original names
             new_original_filenames = {}
             
-            # Group old files by directory for proper mapping
-            old_files_by_dir = {}
-            for old_file in old_media_files:
-                directory = os.path.dirname(old_file)
-                if directory not in old_files_by_dir:
-                    old_files_by_dir[directory] = []
-                old_files_by_dir[directory].append(old_file)
-            
-            # Group renamed files by directory  
-            renamed_files_by_dir = {}
-            for renamed_file in renamed_files:
-                directory = os.path.dirname(renamed_file)
-                if directory not in renamed_files_by_dir:
-                    renamed_files_by_dir[directory] = []
-                renamed_files_by_dir[directory].append(renamed_file)
-            
-            # Create safe mapping based on directory and order preservation
-            # CRITICAL FIX: Use index mapping instead of sorting to avoid order issues
-            for directory in old_files_by_dir:
-                old_files_in_dir = old_files_by_dir[directory]
-                renamed_files_in_dir = renamed_files_by_dir.get(directory, [])
+            # CASE 1: Regular rename operation (renamed_files not empty)
+            if renamed_files:
+                # Group old files by directory for proper mapping
+                old_files_by_dir = {}
+                for old_file in old_media_files:
+                    directory = os.path.dirname(old_file)
+                    if directory not in old_files_by_dir:
+                        old_files_by_dir[directory] = []
+                    old_files_by_dir[directory].append(old_file)
                 
-                # SAFETY CHECK: Ensure we have the same number of files
-                if len(old_files_in_dir) != len(renamed_files_in_dir):
-                    print(f"WARNING: File count mismatch in {directory}")
-                    print(f"  Original: {len(old_files_in_dir)}, Renamed: {len(renamed_files_in_dir)}")
-                    # Use minimum count to avoid index errors
-                    min_count = min(len(old_files_in_dir), len(renamed_files_in_dir))
-                    old_files_in_dir = old_files_in_dir[:min_count]
-                    renamed_files_in_dir = renamed_files_in_dir[:min_count]
+                # Group renamed files by directory  
+                renamed_files_by_dir = {}
+                for renamed_file in renamed_files:
+                    directory = os.path.dirname(renamed_file)
+                    if directory not in renamed_files_by_dir:
+                        renamed_files_by_dir[directory] = []
+                    renamed_files_by_dir[directory].append(renamed_file)
                 
-                # Map files based on their original position in self.files list
-                # This preserves the exact order relationship
-                for old_file in old_files_in_dir:
-                    try:
-                        # Find the position of this old file in the original self.files list
-                        old_index = old_media_files.index(old_file)
-                        
-                        # Find the corresponding renamed file at the same position
-                        if old_index < len(renamed_files):
-                            renamed_file = renamed_files[old_index]
-                            original_filename = os.path.basename(old_file)
-                            new_original_filenames[renamed_file] = original_filename
-                            print(f"Mapping: {os.path.basename(renamed_file)} -> {original_filename}")
-                    except (ValueError, IndexError) as e:
-                        print(f"WARNING: Could not map {os.path.basename(old_file)}: {e}")
+                # Create safe mapping based on directory and order preservation
+                # CRITICAL FIX: Use index mapping instead of sorting to avoid order issues
+                for directory in old_files_by_dir:
+                    old_files_in_dir = old_files_by_dir[directory]
+                    renamed_files_in_dir = renamed_files_by_dir.get(directory, [])
+                    
+                    # SAFETY CHECK: Ensure we have the same number of files
+                    if len(old_files_in_dir) != len(renamed_files_in_dir):
+                        print(f"WARNING: File count mismatch in {directory}")
+                        print(f"  Original: {len(old_files_in_dir)}, Renamed: {len(renamed_files_in_dir)}")
+                        # Use minimum count to avoid index errors
+                        min_count = min(len(old_files_in_dir), len(renamed_files_in_dir))
+                        old_files_in_dir = old_files_in_dir[:min_count]
+                        renamed_files_in_dir = renamed_files_in_dir[:min_count]
+                    
+                    # Map files based on their original position in self.files list
+                    # This preserves the exact order relationship
+                    for old_file in old_files_in_dir:
+                        try:
+                            # Find the position of this old file in the original self.files list
+                            old_index = old_media_files.index(old_file)
+                            
+                            # Find the corresponding renamed file at the same position
+                            if old_index < len(renamed_files):
+                                renamed_file = renamed_files[old_index]
+                                original_filename = os.path.basename(old_file)
+                                new_original_filenames[renamed_file] = original_filename
+                                print(f"Mapping: {os.path.basename(renamed_file)} -> {original_filename}")
+                        except (ValueError, IndexError) as e:
+                            print(f"WARNING: Could not map {os.path.basename(old_file)}: {e}")
+            
+            # CASE 2: EXIF-only sync (no renamed files, but we have timestamp backup)
+            elif timestamp_backup and old_media_files:
+                print("🔄 EXIF-only sync detected - creating filename mapping for restore functionality")
+                # Create identity mapping (file -> its own basename) for files that had timestamp changes
+                for media_file in old_media_files:
+                    if media_file in timestamp_backup:
+                        original_filename = os.path.basename(media_file)
+                        new_original_filenames[media_file] = original_filename
+                        print(f"EXIF mapping: {os.path.basename(media_file)} -> {original_filename}")
             
             # Set original_filenames for the first time
             self.original_filenames = new_original_filenames
@@ -2091,12 +2132,21 @@ class FileRenamerApp(QMainWindow):
         self.files.clear()
         self.file_list.clear()
         
-        # Add renamed media files with proper item data
-        for renamed_file in renamed_files:
-            self.files.append(renamed_file)
-            item = QListWidgetItem(os.path.basename(renamed_file))
-            item.setData(Qt.ItemDataRole.UserRole, renamed_file)
-            self.file_list.addItem(item)
+        # CASE 1: Normal rename operation - use renamed files
+        if renamed_files:
+            # Add renamed media files with proper item data
+            for renamed_file in renamed_files:
+                self.files.append(renamed_file)
+                item = QListWidgetItem(os.path.basename(renamed_file))
+                item.setData(Qt.ItemDataRole.UserRole, renamed_file)
+                self.file_list.addItem(item)
+        else:
+            # CASE 2: EXIF-only sync - keep original files (no renaming occurred)
+            for media_file in old_media_files:
+                self.files.append(media_file)
+                item = QListWidgetItem(os.path.basename(media_file))
+                item.setData(Qt.ItemDataRole.UserRole, media_file)
+                self.file_list.addItem(item)
         
         # Add back any non-media files (they weren't renamed) with proper item data
         for non_media in original_non_media:
@@ -2109,9 +2159,8 @@ class FileRenamerApp(QMainWindow):
                 self.original_filenames[non_media] = os.path.basename(non_media)
         
         # Enable undo button if we have any rename tracking
-        # Enable undo button if there are files that can be restored to different names
-        if renamed_files and any(os.path.basename(current) != original for current, original in self.original_filenames.items()):
-            self.undo_button.setEnabled(True)
+        # Update restore button state based on available restore data (filenames or timestamps)
+        self.update_restore_button_state()
         
         # Show results
         if errors:
