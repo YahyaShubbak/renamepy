@@ -6,6 +6,16 @@ Constants and utility functions for the RenameFiles application.
 import os
 import re
 
+def natural_sort_key(filename):
+    """
+    Generate a sort key for natural sorting (handles numbers correctly)
+    DSC00001 comes before DSC00009
+    """
+    def convert(text):
+        return int(text) if text.isdigit() else text.lower()
+    
+    return [convert(c) for c in re.split(r'(\d+)', filename)]
+
 def get_filename_components_static(date_taken, camera_prefix, additional, camera_model, lens_model, use_camera, use_lens, num, custom_order, date_format="YYYY-MM-DD", use_date=True):
     """
     Static version of get_filename_components for use in worker threads.
@@ -268,7 +278,7 @@ def scan_directory(directory, include_subdirs=False):
         except Exception as e:
             print(f"Error scanning directory {directory}: {e}")
         
-        return sorted(media_files)
+        return sorted(media_files, key=lambda x: (os.path.dirname(x), natural_sort_key(os.path.basename(x))))
 
 def scan_directory_recursive(directory):
     """
@@ -285,7 +295,7 @@ def scan_directory_recursive(directory):
     except Exception as e:
         print(f"Error scanning directory {directory}: {e}")
     
-    return media_files
+    return sorted(media_files, key=lambda x: (os.path.dirname(x), natural_sort_key(os.path.basename(x))))
 
 def get_safe_filename(directory, new_name):
     """

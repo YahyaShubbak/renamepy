@@ -17,14 +17,29 @@ if modules_dir not in sys.path:
 
 # Import and run the main application
 if __name__ == "__main__":
+    # Debug output for console
+    print("🚀 File Renamer wird gestartet...")
+    print(f"Python Version: {sys.version}")
+    print(f"Arbeitsverzeichnis: {os.getcwd()}")
+    print(f"Modules Pfad: {modules_dir}")
+    
     try:
+        print("📦 Importiere Module...")
         from modules.main_application import main
+        print("✅ Module erfolgreich importiert")
+        print("🖼️ Starte GUI...")
         main()
+        print("👋 Anwendung beendet")
     except ImportError as e:
-        print(f"Error importing modules: {e}")
-        print("Please ensure all required modules are installed:")
+        print(f"❌ Fehler beim Importieren der Module: {e}")
+        print("Bitte stellen Sie sicher, dass alle erforderlichen Module installiert sind:")
         print("pip install PyQt6 PyExifTool Pillow")
+        input("Drücken Sie Enter zum Beenden...")
         sys.exit(1)
     except Exception as e:
-        print(f"Application error: {e}")
+        print(f"❌ Anwendungsfehler: {e}")
+        print(f"Fehlerdetails: {type(e).__name__}")
+        import traceback
+        traceback.print_exc()
+        input("Drücken Sie Enter zum Beenden...")
         sys.exit(1)

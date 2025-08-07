@@ -33,18 +33,8 @@ except ImportError:
     def validate_path_length(path):
         return len(path) <= 260
 
-try:
-    from .exif_handler import get_selective_cached_exif_data, clear_global_exif_cache, cleanup_global_exiftool
-except ImportError:
-    # Fallback implementations
-    def get_selective_cached_exif_data(file_path, exif_method, exiftool_path, need_date=True, need_camera=False, need_lens=False):
-        return None, None, None
-    
-    def clear_global_exif_cache():
-        pass
-    
-    def cleanup_global_exiftool():
-        pass
+# Import exif_processor module (not individual functions to avoid scope conflicts)
+import exif_processor
 
 def get_filename_components_static(date_taken, camera_prefix, additional, camera_model, lens_model, 
                                  use_camera, use_lens, num, custom_order, date_format="YYYY-MM-DD", use_date=True, selected_metadata=None):
@@ -98,6 +88,14 @@ def get_filename_components_static(date_taken, camera_prefix, additional, camera
         """Format EXIF metadata for safe filename usage"""
         if not value or value == "(not detected)":
             return None
+        
+        # SIMPLIFIED FIX: Skip boolean flags (these indicate extraction needed)
+        if isinstance(value, bool):
+            return None  # This is a flag, not actual data
+            
+        # CRITICAL FIX: Skip placeholder values (these indicate type selection only)
+        if isinstance(value, str) and value.startswith('<') and value.endswith('>'):
+            return None  # This is a placeholder, not actual data
         
         # Clean and format the value
         formatted = str(value).strip()
@@ -155,13 +153,19 @@ def get_filename_components_static(date_taken, camera_prefix, additional, camera
             ordered_parts.append(component_value)
             
     # Add any remaining metadata that wasn't in custom_order (fallback)
+    # BUT ONLY if no metadata components were specified in custom_order
     if selected_metadata:
-        for key, value in selected_metadata.items():
-            meta_component_name = f"Meta_{key}"
-            if meta_component_name not in custom_order and value:
-                formatted_value = format_metadata_for_filename(key, value)
-                if formatted_value:
-                    ordered_parts.append(formatted_value)
+        # Check if any Meta_ components are in custom_order
+        has_meta_in_order = any(comp.startswith('Meta_') for comp in custom_order)
+        
+        # Only add fallback metadata if no Meta_ components were explicitly ordered
+        if not has_meta_in_order:
+            for key, value in selected_metadata.items():
+                meta_component_name = f"Meta_{key}"
+                if value:
+                    formatted_value = format_metadata_for_filename(key, value)
+                    if formatted_value:
+                        ordered_parts.append(formatted_value)
     
     # Always add sequential number at the end
     ordered_parts.append(f"{num:03d}")
@@ -202,12 +206,12 @@ class RenameWorkerThread(QThread):
             renamed_files, errors = self.optimized_rename_files()
             
             # IMPORTANT: Clean up global ExifTool instance after batch processing
-            cleanup_global_exiftool()
+            exif_processor.cleanup_global_exiftool()
             
             self.finished.emit(renamed_files, errors)
         except Exception as e:
             # Clean up ExifTool instance even if there's an error
-            cleanup_global_exiftool()
+            exif_processor.cleanup_global_exiftool()
             self.error.emit(str(e))
     
     def _create_continuous_counter_map(self):
@@ -255,7 +259,7 @@ class RenameWorkerThread(QThread):
             
             try:
                 if self.exif_method:
-                    d, _, _ = get_selective_cached_exif_data(
+                    d, _, _ = exif_processor.get_selective_cached_exif_data(
                         first_file, self.exif_method, self.exiftool_path,
                         need_date=True, need_camera=False, need_lens=False
                     )
@@ -286,8 +290,38 @@ class RenameWorkerThread(QThread):
                 except:
                     pass
         
-        # Step 4: Sort by date, then by first filename in group
-        date_group_pairs.sort(key=lambda x: (x[0], x[1][0]))
+        # Step 4: Sort by date, then by original file order (using file modification time as fallback)
+        def get_sort_key(date_group):
+            date, group = date_group
+            first_file = group[0]
+            try:
+                # Try to extract number from filename for natural sorting
+                basename = os.path.basename(first_file)
+                # Look for numbers in filename (like DSC0001, IMG_1234, etc.)
+                # Use ALL digits to maintain original order
+                match = re.search(r'(\d+)', basename)
+                if match:
+                    # Keep the original string with leading zeros for proper sorting
+                    file_number_str = match.group(1)
+                    file_number = int(file_number_str)
+                    # Use file modification time as primary sort after date to maintain chronological order
+                    try:
+                        mtime = os.path.getmtime(first_file)
+                        return (date, mtime, file_number, first_file)
+                    except:
+                        return (date, file_number, first_file)
+                else:
+                    # Fallback to modification time then filename
+                    try:
+                        mtime = os.path.getmtime(first_file)
+                        return (date, mtime, first_file)
+                    except:
+                        return (date, 0, first_file)
+            except:
+                # Ultimate fallback to filename
+                return (date, 0, first_file)
+        
+        date_group_pairs.sort(key=get_sort_key)
         
         # Step 5: Assign continuous counter numbers to GROUPS (not individual files)
         counter = 1
@@ -309,7 +343,7 @@ class RenameWorkerThread(QThread):
             self._create_continuous_counter_map()
         
         # Clear cache for fresh processing
-        clear_global_exif_cache()
+        exif_processor.clear_global_exif_cache()
         
         # Determine what EXIF fields we actually need
         need_date = self.use_date
@@ -365,7 +399,7 @@ class RenameWorkerThread(QThread):
                     try:
                         # Only extract date if we have EXIF method available
                         if self.exif_method and need_date:
-                            date_taken, _, _ = get_selective_cached_exif_data(
+                            date_taken, _, _ = exif_processor.get_selective_cached_exif_data(
                                 file, self.exif_method, self.exiftool_path,
                                 need_date=True, need_camera=False, need_lens=False
                             )
@@ -415,7 +449,7 @@ class RenameWorkerThread(QThread):
             
             if self.exif_method and any([need_date, need_camera, need_lens]):
                 # Single optimized call to get only what we need
-                date_taken, camera_model, lens_model = get_selective_cached_exif_data(
+                date_taken, camera_model, lens_model = exif_processor.get_selective_cached_exif_data(
                     first_file, self.exif_method, self.exiftool_path,
                     need_date=need_date, need_camera=need_camera, need_lens=need_lens
                 )
@@ -434,7 +468,7 @@ class RenameWorkerThread(QThread):
                         if not any([still_need_date, still_need_camera, still_need_lens]):
                             break  # We have everything we need
                         
-                        d, c, l = get_selective_cached_exif_data(
+                        d, c, l = exif_processor.get_selective_cached_exif_data(
                             file, self.exif_method, self.exiftool_path,
                             need_date=still_need_date, 
                             need_camera=still_need_camera, 
@@ -509,17 +543,140 @@ class RenameWorkerThread(QThread):
             # Rename files in group
             for file in accessible_files:
                 try:
+                    # CRITICAL FIX: Extract EXIF data for EACH individual file
+                    # This ensures each file gets its own metadata (aperture, ISO, etc.)
+                    file_date_taken = date_taken  # Group date as fallback
+                    file_camera_model = camera_model  # Group camera as fallback  
+                    file_lens_model = lens_model  # Group lens as fallback
+                    
+                    # Extract individual EXIF data for this specific file
+                    if self.exif_method and any([need_date, need_camera, need_lens]):
+                        try:
+                            d, c, l = exif_processor.get_selective_cached_exif_data(
+                                file, self.exif_method, self.exiftool_path,
+                                need_date=need_date, need_camera=need_camera, need_lens=need_lens
+                            )
+                            # Use individual file data if available, otherwise fall back to group data
+                            if need_date and d:
+                                file_date_taken = d
+                            if need_camera and c:
+                                file_camera_model = c
+                            if need_lens and l:
+                                file_lens_model = l
+                        except Exception as e:
+                            print(f"Error extracting individual EXIF for {file}: {e}")
+                    
                     # All files in the group use the same counter (num)
                     # This ensures JPG+RAW pairs get identical numbers
                     current_num = num
                     
                     ext = os.path.splitext(file)[1]
                     
+                    # SIMPLIFIED FIX: Extract individual metadata for each file
+                    individual_metadata = self.selected_metadata.copy() if self.selected_metadata else {}
+                    
+                    if self.selected_metadata and self.exif_method:
+                        # Check if we need individual file metadata (Boolean flags)
+                        needs_individual_metadata = any(
+                            key in self.selected_metadata and 
+                            self.selected_metadata[key] is True
+                            for key in ['aperture', 'iso', 'focal_length', 'shutter_speed', 'exposure_bias']
+                        )
+                        
+                        if needs_individual_metadata:
+                            # Extract metadata for this specific file and update only relevant fields
+                            try:
+                                print(f"🔍 Extracting metadata for: {os.path.basename(file)}")
+                                print(f"  Full file path: {file}")
+                                print(f"  File exists: {os.path.exists(file)}")
+                                print(f"  ExifTool path: {self.exiftool_path}")
+                                print(f"  ExifTool exists: {os.path.exists(self.exiftool_path) if self.exiftool_path else 'None'}")
+                                
+                                # CRITICAL FIX: Use the same method as preview (which works!)
+                                date_taken, camera_model, lens_model = exif_processor.get_selective_cached_exif_data(
+                                    file, self.exif_method, self.exiftool_path,
+                                    need_date=False, need_camera=False, need_lens=False
+                                )
+                                
+                                # Also try get_all_metadata for comparison
+                                file_metadata = exif_processor.get_all_metadata(file, self.exif_method, self.exiftool_path)
+                                print(f"  get_all_metadata result: {file_metadata}")
+                                
+                                # If get_all_metadata is empty, use alternative method
+                                if not file_metadata:
+                                    print(f"  get_all_metadata returned empty, trying alternative...")
+                                    # Use ExifTool directly for these specific tags
+                                    try:
+                                        raw_meta = exif_processor.get_exiftool_metadata_shared(file, self.exiftool_path)
+                                        print(f"  Raw ExifTool metadata: {raw_meta}")
+                                        
+                                        if raw_meta:
+                                            # Extract the metadata we need manually
+                                            file_metadata = {}
+                                            
+                                            # Aperture
+                                            aperture = raw_meta.get('EXIF:FNumber') or raw_meta.get('FNumber')
+                                            if aperture:
+                                                try:
+                                                    if isinstance(aperture, str) and '/' in aperture:
+                                                        num, den = aperture.split('/')
+                                                        aperture_val = float(num) / float(den)
+                                                    else:
+                                                        aperture_val = float(aperture)
+                                                    file_metadata['aperture'] = f"f{aperture_val:.1f}".replace('.0', '')
+                                                except:
+                                                    pass
+                                            
+                                            # ISO
+                                            iso = raw_meta.get('EXIF:ISO') or raw_meta.get('ISO')
+                                            if iso:
+                                                file_metadata['iso'] = str(iso)
+                                            
+                                            # Focal Length
+                                            focal_length = raw_meta.get('EXIF:FocalLength') or raw_meta.get('FocalLength')
+                                            if focal_length:
+                                                try:
+                                                    if isinstance(focal_length, str) and '/' in focal_length:
+                                                        num, den = focal_length.split('/')
+                                                        fl_val = float(num) / float(den)
+                                                    else:
+                                                        fl_val = float(focal_length)
+                                                    file_metadata['focal_length'] = f"{fl_val:.0f}mm"
+                                                except:
+                                                    pass
+                                            
+                                            # Shutter Speed
+                                            shutter = raw_meta.get('EXIF:ShutterSpeedValue') or raw_meta.get('EXIF:ExposureTime')
+                                            if shutter:
+                                                file_metadata['shutter_speed'] = str(shutter)
+                                            
+                                            print(f"  Manual extraction result: {file_metadata}")
+                                    
+                                    except Exception as e2:
+                                        print(f"  Alternative method failed: {e2}")
+                                
+                                # Only update the metadata keys that are marked as True
+                                for key in ['aperture', 'iso', 'focal_length', 'shutter_speed', 'exposure_bias']:
+                                    if (key in self.selected_metadata and 
+                                        self.selected_metadata[key] is True and
+                                        key in file_metadata):
+                                        individual_metadata[key] = file_metadata[key]
+                                        print(f"  ✅ Updated {key}: True -> {file_metadata[key]}")
+                                    elif (key in self.selected_metadata and 
+                                          self.selected_metadata[key] is True):
+                                        print(f"  ❌ {key} requested but no metadata extracted")
+                                        
+                            except Exception as e:
+                                print(f"❌ Error extracting metadata for {file}: {e}")
+                                import traceback
+                                traceback.print_exc()
+                                # Keep the original selected_metadata values as fallback
+                    
                     # Use get_filename_components_static for ordered naming
                     name_parts = get_filename_components_static(
-                        date_taken, self.camera_prefix, self.additional, 
-                        camera_model, lens_model, self.use_camera, self.use_lens, 
-                        current_num, self.custom_order, self.date_format, self.use_date, self.selected_metadata
+                        file_date_taken, self.camera_prefix, self.additional, 
+                        file_camera_model, file_lens_model, self.use_camera, self.use_lens, 
+                        current_num, self.custom_order, self.date_format, self.use_date, individual_metadata
                     )
                     
                     sep = "" if self.devider == "None" else self.devider

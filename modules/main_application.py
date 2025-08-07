@@ -1144,7 +1144,14 @@ class FileRenamerApp(QMainWindow):
             self.selected_metadata = {}
         
         if checked:
-            self.selected_metadata[metadata_key] = value
+            # SIMPLIFIED FIX: Store boolean flags instead of placeholders
+            # This tells the rename engine which metadata types to extract
+            if metadata_key in ['aperture', 'iso', 'focal_length', 'shutter_speed', 'exposure_bias']:
+                # For EXIF metadata, store True to indicate extraction needed
+                self.selected_metadata[metadata_key] = True
+            else:
+                # For camera/lens, store the actual value (these are typically the same for all files)
+                self.selected_metadata[metadata_key] = value
         else:
             self.selected_metadata.pop(metadata_key, None)
         
@@ -1459,7 +1466,7 @@ class FileRenamerApp(QMainWindow):
             if os.path.exists(preview_file):
                 if not hasattr(self, '_preview_exif_file') or self._preview_exif_file != cache_key:
                     try:
-                        from .exif_handler import get_selective_cached_exif_data
+                        from exif_processor import get_selective_cached_exif_data
                         date_taken, camera_model, lens_model = get_selective_cached_exif_data(
                             preview_file, self.exif_method, self.exiftool_path,
                             need_date=use_date, need_camera=use_camera, need_lens=use_lens
@@ -1548,8 +1555,35 @@ class FileRenamerApp(QMainWindow):
         
         # Add selected metadata from metadata dialog
         if hasattr(self, 'selected_metadata') and self.selected_metadata:
-            # Add selected metadata components
-            for metadata_key, metadata_value in self.selected_metadata.items():
+            # For preview: extract real metadata from preview file if placeholders are used
+            preview_metadata = self.selected_metadata.copy()
+            
+            # Check if we need to extract real metadata for Boolean flags
+            if self.exif_method and preview_file and os.path.exists(preview_file):
+                needs_real_metadata = any(
+                    value is True for value in self.selected_metadata.values()
+                )
+                
+                if needs_real_metadata:
+                    try:
+                        from .exif_processor import get_all_metadata
+                        print(f"🔍 Preview: Extracting real metadata from {os.path.basename(preview_file)}")
+                        real_metadata = get_all_metadata(preview_file, self.exif_method, self.exiftool_path)
+                        print(f"  Preview metadata: {real_metadata}")
+                        
+                        # Replace Boolean flags with real values for preview
+                        for key, value in self.selected_metadata.items():
+                            if value is True and key in real_metadata:
+                                old_value = preview_metadata[key]
+                                preview_metadata[key] = real_metadata[key]
+                                print(f"  Preview: {key} {old_value} -> {real_metadata[key]}")
+                    except Exception as e:
+                        print(f"❌ Warning: Could not extract real metadata for preview: {e}")
+                        import traceback
+                        traceback.print_exc()
+            
+            # Add selected metadata components using preview metadata
+            for metadata_key, metadata_value in preview_metadata.items():
                 # SAFETY CHECK: Don't add camera/lens metadata if their checkboxes are unchecked
                 if metadata_key == 'camera' and not use_camera:
                     continue
@@ -1562,27 +1596,40 @@ class FileRenamerApp(QMainWindow):
                     component_mapping[f"Meta_{metadata_key}"] = display_value
         
         # Add components in current order, but only if they have values and are active
+        print(f"🔍 Debug: custom_order = {getattr(self, 'custom_order', 'NOT SET')}")
         for component_name in self.custom_order:
             value = component_mapping.get(component_name)
+            print(f"🔍 Debug: Checking component '{component_name}' -> value: {value}")
             if value:  # Only add non-empty and active components
                 display_components.append(value)
+                print(f"🔍 Debug: Added '{component_name}' = '{value}' to display_components")
         
         # Add metadata components that aren't in the custom order yet
+        print(f"🔍 Debug: Adding metadata components not in custom_order...")
         if hasattr(self, 'selected_metadata') and self.selected_metadata:
             for metadata_key, metadata_value in self.selected_metadata.items():
                 # SAFETY CHECK: Don't add camera/lens metadata if their checkboxes are unchecked
                 if metadata_key == 'camera' and not use_camera:
+                    print(f"🔍 Debug: Skipping camera metadata (checkbox unchecked)")
                     continue
                 if metadata_key == 'lens' and not use_lens:
+                    print(f"🔍 Debug: Skipping lens metadata (checkbox unchecked)")
                     continue
                     
                 meta_component_name = f"Meta_{metadata_key}"
+                print(f"🔍 Debug: Checking meta component '{meta_component_name}' (in custom_order: {meta_component_name in self.custom_order})")
                 if meta_component_name not in self.custom_order:
-                    display_value = self.format_metadata_for_filename(metadata_key, metadata_value)
+                    # FIX: Use already-formatted values from component_mapping instead of re-formatting
+                    display_value = component_mapping.get(meta_component_name)
+                    print(f"🔍 Debug: Getting pre-formatted value for '{metadata_key}': '{display_value}'")
                     if display_value:
                         display_components.append(display_value)
+                        print(f"🔍 Debug: Added meta component '{display_value}' to display_components")
         
         # Update the interactive preview
+        print(f"🖼️ Debug: Setting preview components: {display_components}")
+        print(f"🖼️ Debug: Selected metadata: {getattr(self, 'selected_metadata', {})}")
+        print(f"🖼️ Debug: Component mapping: {component_mapping}")
         self.interactive_preview.set_separator(devider)
         self.interactive_preview.set_components(display_components, "001")
     
@@ -1590,6 +1637,10 @@ class FileRenamerApp(QMainWindow):
         """Format metadata values for use in filenames"""
         if not metadata_value or metadata_value == 'Unknown':
             return None
+        
+        # CRITICAL FIX: Skip boolean flags (these indicate extraction needed)
+        if isinstance(metadata_value, bool):
+            return None  # This is a flag, not actual data
         
         # Clean and format different metadata types
         if metadata_key == 'camera':
@@ -1610,12 +1661,20 @@ class FileRenamerApp(QMainWindow):
                 # Remove spaces if already formatted
                 return str(metadata_value).replace(' ', '')
         elif metadata_key == 'aperture':
-            # Clean up aperture value (remove 'f/' if present)
-            clean_aperture = metadata_value.replace('f/', '').replace('/', '')
-            return f"f{clean_aperture}"
-        elif metadata_key == 'shutter':
-            # Clean up shutter speed
-            return metadata_value.replace('/', '-').replace(' ', '')
+            # Clean up aperture value (remove 'f/' if present, but keep single 'f')
+            if metadata_value.startswith('f/'):
+                # Case: "f/9" -> "f9"
+                return metadata_value.replace('f/', 'f')
+            elif metadata_value.startswith('f'):
+                # Case: "f9" -> "f9" (already correct)
+                return metadata_value
+            else:
+                # Case: "9" -> "f9"
+                return f"f{metadata_value}"
+        elif metadata_key in ['shutter', 'shutter_speed']:
+            # Keep shutter speed format but replace problematic characters for filename
+            # Convert 1/800s to 1_800s for filename safety while keeping it readable
+            return metadata_value.replace('/', '_').replace(' ', '')
         elif metadata_key == 'focal_length':
             # Extract just the number part
             import re
@@ -1824,15 +1883,35 @@ class FileRenamerApp(QMainWindow):
                 renamed_files_by_dir[directory].append(renamed_file)
             
             # Create safe mapping based on directory and order preservation
+            # CRITICAL FIX: Use index mapping instead of sorting to avoid order issues
             for directory in old_files_by_dir:
-                old_files_in_dir = sorted(old_files_by_dir[directory])  # Ensure consistent order
-                renamed_files_in_dir = sorted(renamed_files_by_dir.get(directory, []))  # Ensure consistent order
+                old_files_in_dir = old_files_by_dir[directory]
+                renamed_files_in_dir = renamed_files_by_dir.get(directory, [])
                 
-                # Map files in same directory in order
-                for i, renamed_file in enumerate(renamed_files_in_dir):
-                    if i < len(old_files_in_dir):
-                        original_filename = os.path.basename(old_files_in_dir[i])
-                        new_original_filenames[renamed_file] = original_filename
+                # SAFETY CHECK: Ensure we have the same number of files
+                if len(old_files_in_dir) != len(renamed_files_in_dir):
+                    print(f"WARNING: File count mismatch in {directory}")
+                    print(f"  Original: {len(old_files_in_dir)}, Renamed: {len(renamed_files_in_dir)}")
+                    # Use minimum count to avoid index errors
+                    min_count = min(len(old_files_in_dir), len(renamed_files_in_dir))
+                    old_files_in_dir = old_files_in_dir[:min_count]
+                    renamed_files_in_dir = renamed_files_in_dir[:min_count]
+                
+                # Map files based on their original position in self.files list
+                # This preserves the exact order relationship
+                for old_file in old_files_in_dir:
+                    try:
+                        # Find the position of this old file in the original self.files list
+                        old_index = old_media_files.index(old_file)
+                        
+                        # Find the corresponding renamed file at the same position
+                        if old_index < len(renamed_files):
+                            renamed_file = renamed_files[old_index]
+                            original_filename = os.path.basename(old_file)
+                            new_original_filenames[renamed_file] = original_filename
+                            print(f"Mapping: {os.path.basename(renamed_file)} -> {original_filename}")
+                    except (ValueError, IndexError) as e:
+                        print(f"WARNING: Could not map {os.path.basename(old_file)}: {e}")
             
             # Set original_filenames for the first time
             self.original_filenames = new_original_filenames

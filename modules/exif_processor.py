@@ -503,3 +503,88 @@ def get_selective_exif_data(file_path: str,
         'camera': camera,
         'lens': lens
     }
+
+def get_all_metadata(file_path, method, exiftool_path=None):
+    """
+    Extract all relevant metadata for filename generation
+    Returns dict with aperture, iso, focal_length, shutter_speed, etc.
+    """
+    try:
+        normalized_path = os.path.normpath(file_path)
+        
+        if not os.path.exists(normalized_path):
+            return {}
+        
+        metadata = {}
+        
+        if method == "exiftool" and EXIFTOOL_AVAILABLE:
+            meta = get_exiftool_metadata_shared(normalized_path, exiftool_path)
+            
+            # Extract all relevant metadata
+            if meta:
+                # Aperture (f-number)
+                aperture = meta.get('EXIF:FNumber') or meta.get('FNumber') or meta.get('EXIF:ApertureValue')
+                if aperture:
+                    try:
+                        # Convert to f/x format
+                        if isinstance(aperture, str) and '/' in aperture:
+                            num, den = aperture.split('/')
+                            aperture_val = float(num) / float(den)
+                        else:
+                            aperture_val = float(aperture)
+                        metadata['aperture'] = f"f{aperture_val:.1f}".replace('.0', '')
+                    except:
+                        pass
+                
+                # ISO
+                iso = meta.get('EXIF:ISO') or meta.get('ISO')
+                if iso:
+                    metadata['iso'] = str(iso)
+                
+                # Focal Length
+                focal = meta.get('EXIF:FocalLength') or meta.get('FocalLength')
+                if focal:
+                    try:
+                        if isinstance(focal, str) and '/' in focal:
+                            num, den = focal.split('/')
+                            focal_val = float(num) / float(den)
+                        else:
+                            focal_val = float(focal)
+                        metadata['focal_length'] = f"{focal_val:.0f}mm"
+                    except:
+                        pass
+                
+                # Shutter Speed
+                shutter = meta.get('EXIF:ExposureTime') or meta.get('ExposureTime')
+                if shutter:
+                    try:
+                        if isinstance(shutter, str) and '/' in shutter:
+                            num, den = shutter.split('/')
+                            shutter_val = float(num) / float(den)
+                            if shutter_val >= 1:
+                                metadata['shutter_speed'] = f"{shutter_val:.0f}s"
+                            else:
+                                metadata['shutter_speed'] = f"1/{int(1/shutter_val)}s"
+                        else:
+                            shutter_val = float(shutter)
+                            if shutter_val >= 1:
+                                metadata['shutter_speed'] = f"{shutter_val:.0f}s"
+                            else:
+                                metadata['shutter_speed'] = f"1/{int(1/shutter_val)}s"
+                    except:
+                        pass
+                
+                # Camera model
+                camera = meta.get('EXIF:Model') or meta.get('Model')
+                if camera:
+                    metadata['camera'] = str(camera).replace(' ', '-')
+                
+                # Lens model
+                lens = meta.get('EXIF:LensModel') or meta.get('LensModel')
+                if lens:
+                    metadata['lens'] = str(lens).replace(' ', '-')
+        
+        return metadata
+    except Exception as e:
+        print(f"Error extracting metadata from {file_path}: {e}")
+        return {}
