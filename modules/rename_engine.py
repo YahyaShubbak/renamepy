@@ -119,10 +119,15 @@ def get_filename_components_static(date_taken, camera_prefix, additional, camera
                 formatted = f"ISO{formatted}"
             else:
                 formatted = re.sub(r'ISO\s*(\d+)', r'ISO\1', formatted)
-        elif key in ['ShutterSpeed', 'Shutter Speed', 'shutter']:
-            # Convert shutter speed: "1/125" -> "1-125s"
+        elif key in ['ShutterSpeed', 'Shutter Speed', 'shutter', 'shutter_speed']:
+            # Convert shutter speed: "1/800s" -> "1-800s" (safe for filename)
+            # CRITICAL FIX: Handle cases where 's' might already be present
+            # First remove any existing 's' at the end to avoid double 's'
+            formatted = re.sub(r's$', '', formatted)  # Remove trailing 's' if present
+            # Then convert fraction and add single 's'
             formatted = re.sub(r'(\d+)/(\d+)', r'\1-\2s', formatted)
-            formatted = re.sub(r'(\d+(?:\.\d+)?)\s*s', r'\1s', formatted)
+            # Clean up any remaining spaces
+            formatted = re.sub(r'\s+', '', formatted)
         elif key in ['date']:
             # Date formatting: "2025:04:20 10:12:06" -> "2025-04-20"
             formatted = formatted.split(' ')[0].replace(':', '-')
