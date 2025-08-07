@@ -571,7 +571,8 @@ class RenameWorkerThread(QThread):
                             if need_lens and l:
                                 file_lens_model = l
                         except Exception as e:
-                            print(f"Error extracting individual EXIF for {file}: {e}")
+                            # Silently continue if individual EXIF extraction fails
+                            pass
                     
                     # All files in the group use the same counter (num)
                     # This ensures JPG+RAW pairs get identical numbers
@@ -593,12 +594,6 @@ class RenameWorkerThread(QThread):
                         if needs_individual_metadata:
                             # Extract metadata for this specific file and update only relevant fields
                             try:
-                                print(f"🔍 Extracting metadata for: {os.path.basename(file)}")
-                                print(f"  Full file path: {file}")
-                                print(f"  File exists: {os.path.exists(file)}")
-                                print(f"  ExifTool path: {self.exiftool_path}")
-                                print(f"  ExifTool exists: {os.path.exists(self.exiftool_path) if self.exiftool_path else 'None'}")
-                                
                                 # CRITICAL FIX: Use the same method as preview (which works!)
                                 date_taken, camera_model, lens_model = exif_processor.get_selective_cached_exif_data(
                                     file, self.exif_method, self.exiftool_path,
@@ -607,15 +602,12 @@ class RenameWorkerThread(QThread):
                                 
                                 # Also try get_all_metadata for comparison
                                 file_metadata = exif_processor.get_all_metadata(file, self.exif_method, self.exiftool_path)
-                                print(f"  get_all_metadata result: {file_metadata}")
                                 
                                 # If get_all_metadata is empty, use alternative method
                                 if not file_metadata:
-                                    print(f"  get_all_metadata returned empty, trying alternative...")
                                     # Use ExifTool directly for these specific tags
                                     try:
                                         raw_meta = exif_processor.get_exiftool_metadata_shared(file, self.exiftool_path)
-                                        print(f"  Raw ExifTool metadata: {raw_meta}")
                                         
                                         if raw_meta:
                                             # Extract the metadata we need manually
@@ -656,11 +648,10 @@ class RenameWorkerThread(QThread):
                                             shutter = raw_meta.get('EXIF:ShutterSpeedValue') or raw_meta.get('EXIF:ExposureTime')
                                             if shutter:
                                                 file_metadata['shutter_speed'] = str(shutter)
-                                            
-                                            print(f"  Manual extraction result: {file_metadata}")
                                     
                                     except Exception as e2:
-                                        print(f"  Alternative method failed: {e2}")
+                                        # Alternative method failed, continue with empty metadata
+                                        pass
                                 
                                 # Only update the metadata keys that are marked as True
                                 for key in ['aperture', 'iso', 'focal_length', 'shutter', 'shutter_speed', 'exposure_bias']:
@@ -672,15 +663,11 @@ class RenameWorkerThread(QThread):
                                         
                                         if exif_key in file_metadata:
                                             individual_metadata[key] = file_metadata[exif_key]
-                                            print(f"  ✅ Updated {key}: True -> {file_metadata[exif_key]}")
-                                        else:
-                                            print(f"  ❌ {key} requested but no metadata extracted (looked for {exif_key})")
                                         
                             except Exception as e:
-                                print(f"❌ Error extracting metadata for {file}: {e}")
-                                import traceback
-                                traceback.print_exc()
+                                # Silently continue if metadata extraction fails
                                 # Keep the original selected_metadata values as fallback
+                                pass
                     
                     # Use get_filename_components_static for ordered naming
                     name_parts = get_filename_components_static(

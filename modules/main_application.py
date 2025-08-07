@@ -692,6 +692,9 @@ class FileRenamerApp(QMainWindow):
         # Update camera and lens labels initially
         self.update_camera_lens_labels()
         
+        # CRITICAL FIX: Ensure rename button starts disabled (no files initially)
+        self.rename_button.setEnabled(False)
+        
         # Show ExifTool warning if needed (after UI is fully initialized)
         QApplication.processEvents()  # Ensure UI is rendered first
 
@@ -2404,6 +2407,10 @@ The number (001) is always at the end and auto-increments.
         self.update_preview()
         self.extract_camera_info()  # This will call update_camera_lens_labels() at the end
         self.update_file_statistics()
+        
+        # CRITICAL FIX: Enable rename button when files are present
+        # This ensures the button is properly enabled after clearing and adding new files
+        self.rename_button.setEnabled(len(self.files) > 0)
     
     def eventFilter(self, obj, event):
         """Event filter for tooltips and other events"""
