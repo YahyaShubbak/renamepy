@@ -118,7 +118,7 @@ class InteractivePreviewWidget(QListWidget):
     def set_components(self, components, number="001"):
         """Set the filename components to display"""
         self.components = components.copy()
-        self.fixed_number = number
+        self.fixed_number = number  # Keep for backward compatibility but not used anymore
         self.update_display()
     
     def update_display(self):
@@ -142,7 +142,13 @@ class InteractivePreviewWidget(QListWidget):
             item = QListWidgetItem(component)
             item.setFlags(item.flags() | Qt.ItemFlag.ItemIsDragEnabled | Qt.ItemFlag.ItemIsDropEnabled)
             item.setData(Qt.ItemDataRole.UserRole, "component")
-            item.setToolTip("Drag to swap position with another component")
+            
+            # FLEXIBLE: Highlight number component but make it draggable
+            if component == "001" or component.isdigit():
+                item.setBackground(Qt.GlobalColor.yellow)
+                item.setToolTip("Sequential number (draggable)")
+            else:
+                item.setToolTip("Drag to swap position with another component")
             
             # Calculate optimal size for the component based on text
             # Use QFont to measure the text size
@@ -170,41 +176,8 @@ class InteractivePreviewWidget(QListWidget):
                 # Separator should be just big enough for the separator character
                 sep_item.setSizeHint(QSize(8, 20))  # Kompakte Separator-Größe
                 self.addItem(sep_item)
-        
-        # Add final separator before number (only if we have components)
-        if self.separator and self.components:
-            sep_item = QListWidgetItem(self.separator)
-            sep_item.setFlags(Qt.ItemFlag.NoItemFlags)
-            sep_item.setData(Qt.ItemDataRole.UserRole, "separator")
-            sep_item.setToolTip("Separator character")
-            # Kompakte Separator-Größe
-            sep_item.setSizeHint(QSize(8, 20))  # Kleinere, angemessene Separator-Größe
-            self.addItem(sep_item)
-        
-        # Add fixed number at the end (not draggable)
-        number_item = QListWidgetItem(self.fixed_number)
-        number_item.setFlags(Qt.ItemFlag.NoItemFlags)  # Not selectable or draggable
-        number_item.setData(Qt.ItemDataRole.UserRole, "number")
-        number_item.setBackground(Qt.GlobalColor.yellow)
-        number_item.setToolTip("Sequential number (fixed position)")
-        
-        # Calculate optimal size for the number based on text - use same font size as components
-        font = QFont("Arial", 8)  # Same as components
-        font.setBold(True)
-        number_item.setFont(font)
-        
-        metrics = QFontMetrics(font)
-        text_width = metrics.horizontalAdvance(self.fixed_number)
-        text_height = metrics.height()
-        
-        # Add proper padding around the text (same as components)
-        optimal_width = text_width + 17  # 3px padding on each side + margin
-        optimal_height = text_height   # 1px padding top and bottom
-        
-        # Set the size hint to fit the text perfectly
-        number_item.setSizeHint(QSize(optimal_width, optimal_height))
-        
-        self.addItem(number_item)
+                
+        # FLEXIBLE: No more fixed number - it's now part of components
     
     def get_component_order(self):
         """Get the current order of components (excluding separators and number)"""

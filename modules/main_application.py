@@ -682,7 +682,7 @@ class FileRenamerApp(QMainWindow):
         self.status.addPermanentWidget(self.exif_status_label)
         
         # Initialize custom ordering BEFORE calling update_preview
-        self.custom_order = ["Date", "Camera", "Lens", "Prefix", "Additional"]  # Number always at end
+        self.custom_order = ["Date", "Camera", "Lens", "Prefix", "Additional", "Number"]  # FLEXIBLE: Number is now draggable
         
         self.update_exif_status()
         self.update_preview()
@@ -1550,7 +1550,8 @@ class FileRenamerApp(QMainWindow):
             "Prefix": camera_prefix if camera_prefix else None,  # Only if text entered
             "Additional": additional if additional else None,  # Only if text entered
             "Camera": camera_model if (use_camera and camera_model and not has_camera_in_metadata) else None,  # Only if checkbox checked AND value exists AND not in metadata
-            "Lens": lens_model if (use_lens and lens_model and not has_lens_in_metadata) else None  # Only if checkbox checked AND value exists AND not in metadata
+            "Lens": lens_model if (use_lens and lens_model and not has_lens_in_metadata) else None,  # Only if checkbox checked AND value exists AND not in metadata
+            "Number": "001"  # FLEXIBLE: Add number as draggable component
         }
         
         # Add selected metadata from metadata dialog
@@ -1785,6 +1786,9 @@ class FileRenamerApp(QMainWindow):
                 lens_value = "FE-20-70mm-F4-G"  # Fallback
             value_to_component[lens_value] = "Lens"
             
+        # FLEXIBLE: Map Number component
+        value_to_component["001"] = "Number"
+            
         # Map metadata components - this is the key fix!
         if hasattr(self, 'selected_metadata') and self.selected_metadata:
             # We need to get the same preview metadata that update_preview() creates
@@ -1846,7 +1850,7 @@ class FileRenamerApp(QMainWindow):
                     new_internal_order.append(component_name)
         
         # Add any missing basic components that weren't in the display
-        basic_components = ["Date", "Prefix", "Additional", "Camera", "Lens"]
+        basic_components = ["Date", "Prefix", "Additional", "Camera", "Lens", "Number"]  # FLEXIBLE: Include Number
         for component in basic_components:
             if component not in new_internal_order:
                 new_internal_order.append(component)

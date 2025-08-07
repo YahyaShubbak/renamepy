@@ -41,7 +41,7 @@ def get_filename_components_static(date_taken, camera_prefix, additional, camera
     """
     Static version of get_filename_components for use in worker threads.
     Build filename components according to the selected order.
-    Sequential number is always added at the end.
+    Sequential number can now be positioned flexibly.
     """
     year = date_taken[:4]
     month = date_taken[4:6]
@@ -77,7 +77,8 @@ def get_filename_components_static(date_taken, camera_prefix, additional, camera
         "Prefix": camera_prefix if camera_prefix else None,
         "Additional": additional if additional else None,
         "Camera": camera_model if (use_camera and camera_model and not has_camera_in_metadata) else None,
-        "Lens": lens_model if (use_lens and lens_model and not has_lens_in_metadata) else None
+        "Lens": lens_model if (use_lens and lens_model and not has_lens_in_metadata) else None,
+        "Number": f"{num:03d}"  # FLEXIBLE: Make number a regular component
     }
     
     # Build ordered list based on custom order - INCLUDING metadata components
@@ -172,8 +173,9 @@ def get_filename_components_static(date_taken, camera_prefix, additional, camera
                     if formatted_value:
                         ordered_parts.append(formatted_value)
     
-    # Always add sequential number at the end
-    ordered_parts.append(f"{num:03d}")
+    # FLEXIBLE: Only add number at end if it wasn't in custom_order
+    if "Number" not in custom_order:
+        ordered_parts.append(f"{num:03d}")
     
     return ordered_parts
 
