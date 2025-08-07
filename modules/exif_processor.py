@@ -226,6 +226,10 @@ def get_exiftool_metadata_shared(image_path, exiftool_path=None):
         print(f"get_exiftool_metadata_shared: File not found: {normalized_path}")
         return {}
     
+    # Auto-detect ExifTool path if not provided
+    if not exiftool_path:
+        exiftool_path = find_exiftool_path()
+    
     try:
         # Check if we need to create/recreate the instance
         if (_global_exiftool_instance is None or 
@@ -241,8 +245,10 @@ def get_exiftool_metadata_shared(image_path, exiftool_path=None):
             # Create new instance
             if exiftool_path and os.path.exists(exiftool_path):
                 _global_exiftool_instance = exiftool.ExifToolHelper(executable=exiftool_path)
+                print(f"🔧 Created ExifTool instance with: {exiftool_path}")
             else:
                 _global_exiftool_instance = exiftool.ExifToolHelper()
+                print("🔧 Created default ExifTool instance")
             
             _global_exiftool_path = exiftool_path
             
@@ -588,3 +594,615 @@ def get_all_metadata(file_path, method, exiftool_path=None):
     except Exception as e:
         print(f"Error extracting metadata from {file_path}: {e}")
         return {}
+
+def find_exiftool_path():
+    """
+    Find the ExifTool executable path automatically
+    
+    Returns:
+        str: Path to ExifTool executable or None if not found
+    """
+    # Possible ExifTool locations
+    possible_paths = [
+        # Local project ExifTool
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "exiftool-13.33_64", "exiftool(-k).exe"),
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "exiftool-13.32_64", "exiftool.exe"),
+        # System ExifTool
+        "exiftool.exe",
+        "exiftool",
+        # Common Windows locations
+        "C:\\exiftool\\exiftool.exe",
+        "C:\\Program Files\\exiftool\\exiftool.exe",
+        "C:\\Program Files (x86)\\exiftool\\exiftool.exe"
+    ]
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            print(f"🔍 ExifTool found at: {path}")
+            return path
+    
+    print("⚠️  ExifTool not found in any expected location")
+    return None
+
+def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps=None):
+    """
+    Synchronize EXIF DateTimeOriginal to file creation/modification date.
+    
+    Args:
+        file_path: Path to the media file
+        exiftool_path: Path to ExifTool executable
+        backup_timestamps: Dictionary to store original timestamps for undo
+        
+    Returns:
+        tuple: (success: bool, message: str, original_times: dict or None)
+    """
+    if not EXIFTOOL_AVAILABLE:
+        return False, "ExifTool not available", None
+    
+    if not os.path.exists(file_path):
+        return False, f"File not found: {file_path}", None
+    
+    # Auto-detect ExifTool path if not provided
+    if not exiftool_path:
+        exiftool_path = find_exiftool_path()
+        if not exiftool_path:
+            return False, "ExifTool executable not found", None
+    
+    print(f"🔧 Using ExifTool: {exiftool_path}")
+    
+    try:
+        # Get original file timestamps for backup
+        stat_info = os.stat(file_path)
+        original_times = {
+            'atime': stat_info.st_atime,    # Access time
+            'mtime': stat_info.st_mtime,    # Modification time
+            'ctime': stat_info.st_birthtime      # Creation time (Windows) / Status change time (Unix)
+        }
+        
+        # On Windows, get the real creation time using Windows API
+        try:
+            if os.name == 'nt':  # Windows
+                import ctypes
+                from ctypes import wintypes
+                
+                # Create FILETIME structure
+                class FILETIME(ctypes.Structure):
+                    _fields_ = [("dwLowDateTime", wintypes.DWORD),
+                               ("dwHighDateTime", wintypes.DWORD)]
+                
+                # Open file to get creation time
+                kernel32 = ctypes.windll.kernel32
+                handle = kernel32.CreateFileW(
+                    file_path,
+                    0x80000000,  # GENERIC_READ
+                    0x00000001 | 0x00000002,  # FILE_SHARE_READ | FILE_SHARE_WRITE
+                    None,
+                    3,  # OPEN_EXISTING
+                    0x80,  # FILE_ATTRIBUTE_NORMAL
+                    None
+                )
+                
+                if handle != -1:  # INVALID_HANDLE_VALUE
+                    creation_time = FILETIME()
+                    access_time = FILETIME()
+                    write_time = FILETIME()
+                    
+                    # Get file times
+                    if kernel32.GetFileTime(handle, ctypes.byref(creation_time), 
+                                          ctypes.byref(access_time), ctypes.byref(write_time)):
+                        # Convert Windows FILETIME to Unix timestamp
+                        EPOCH_AS_FILETIME = 116444736000000000
+                        creation_100ns = (creation_time.dwHighDateTime << 32) + creation_time.dwLowDateTime
+                        creation_timestamp = (creation_100ns - EPOCH_AS_FILETIME) / 10000000.0
+                        
+                        # Store the real Windows creation time
+                        original_times['windows_creation_time'] = creation_timestamp
+                    
+                    kernel32.CloseHandle(handle)
+        
+        except Exception as e:
+            # If Windows API fails, we still have the basic timestamps
+            print(f"Warning: Could not get Windows creation time: {e}")
+        
+        # Store in backup if provided
+        if backup_timestamps is not None:
+            backup_timestamps[file_path] = original_times
+        
+        # Extract EXIF DateTimeOriginal using ExifTool
+        try:
+            # Use ExifTool to get metadata
+            if exiftool_path:
+                with exiftool.ExifToolHelper(executable=exiftool_path) as et:
+                    meta = et.get_metadata(file_path)[0]
+            else:
+                with exiftool.ExifToolHelper() as et:
+                    meta = et.get_metadata(file_path)[0]
+            
+            # Try multiple possible EXIF date fields
+            exif_date = None
+            date_fields = [
+                'EXIF:DateTimeOriginal',
+                'EXIF:DateTime', 
+                'EXIF:CreateDate',
+                'DateTimeOriginal',
+                'DateTime',
+                'CreateDate'
+            ]
+            
+            for field in date_fields:
+                if field in meta and meta[field]:
+                    exif_date = meta[field]
+                    break
+            
+            if not exif_date:
+                return False, "No EXIF date found in file", original_times
+            
+            # Parse EXIF date (format: "YYYY:MM:DD HH:MM:SS")
+            try:
+                import datetime
+                # Handle both with and without time component
+                if ' ' in str(exif_date):
+                    dt = datetime.datetime.strptime(str(exif_date), '%Y:%m:%d %H:%M:%S')
+                else:
+                    dt = datetime.datetime.strptime(str(exif_date), '%Y:%m:%d')
+                
+                # Convert to timestamp
+                new_timestamp = dt.timestamp()
+                
+                # FORCE SYNC - Always update timestamps to ensure File:FileCreateDate is correct
+                print(f"🔧 Force syncing timestamps to EXIF date...")
+                print(f"📊 Current mtime: {datetime.datetime.fromtimestamp(original_times['mtime'])}")
+                print(f"📊 Target EXIF date: {dt}")
+                print(f"📊 Time difference: {abs(original_times['mtime'] - new_timestamp):.2f} seconds")
+                
+                # Apply Ultimate Windows Timestamp Sync
+                success_count = _apply_ultimate_timestamp_sync(file_path, new_timestamp, dt)
+                
+                if success_count > 0:
+                    return True, f"Successfully synced date from EXIF using {success_count} methods: {dt.strftime('%Y-%m-%d %H:%M:%S')}", original_times
+                else:
+                    return False, "All timestamp sync methods failed", original_times
+                
+            except ValueError as e:
+                return False, f"Could not parse EXIF date '{exif_date}': {e}", original_times
+        
+        except Exception as e:
+            return False, f"Error accessing EXIF data: {e}", original_times
+                
+    except Exception as e:
+        return False, f"Error syncing date: {e}", None
+
+def _set_file_timestamp_method1(file_path, timestamp):
+    """Method 1: Standard os.utime"""
+    try:
+        os.utime(file_path, (timestamp, timestamp))
+        print("   ✅ Method 1: os.utime successful")
+        return True
+    except Exception as e:
+        print(f"   ❌ Method 1: os.utime failed: {e}")
+        return False
+
+def _set_file_timestamp_method2(file_path, timestamp):
+    """Method 2: Windows API with SetFileTime"""
+    try:
+        if os.name != 'nt':  # Not Windows
+            return False
+            
+        import ctypes
+        from ctypes import wintypes
+        
+        # Convert to Windows FILETIME
+        EPOCH_AS_FILETIME = 116444736000000000
+        timestamp_100ns = int((timestamp * 10000000) + EPOCH_AS_FILETIME)
+        
+        # FILETIME structure
+        class FILETIME(ctypes.Structure):
+            _fields_ = [("dwLowDateTime", wintypes.DWORD),
+                       ("dwHighDateTime", wintypes.DWORD)]
+        
+        ft = FILETIME()
+        ft.dwLowDateTime = timestamp_100ns & 0xFFFFFFFF
+        ft.dwHighDateTime = timestamp_100ns >> 32
+        
+        # Open file with proper flags
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.CreateFileW(
+            file_path,
+            0x40000000,  # GENERIC_WRITE
+            0x00000001 | 0x00000002,  # FILE_SHARE_READ | FILE_SHARE_WRITE
+            None,
+            3,  # OPEN_EXISTING
+            0x00000080,  # FILE_ATTRIBUTE_NORMAL
+            None
+        )
+        
+        if handle != -1:
+            # Set ALL file timestamps to ensure File:FileCreateDate is updated
+            result = kernel32.SetFileTime(
+                handle,
+                ctypes.byref(ft),  # Creation time (File:FileCreateDate)
+                ctypes.byref(ft),  # Last access time
+                ctypes.byref(ft)   # Last write time (File:FileModifyDate)
+            )
+            
+            kernel32.CloseHandle(handle)
+            
+            if result:
+                print("   ✅ Method 2: Windows SetFileTime successful")
+                return True
+            else:
+                error_code = kernel32.GetLastError()
+                print(f"   ❌ Method 2: SetFileTime failed, Error: {error_code}")
+                return False
+        else:
+            error_code = kernel32.GetLastError()
+            print(f"   ❌ Method 2: File open failed, Error: {error_code}")
+            return False
+    
+    except Exception as e:
+        print(f"   ❌ Method 2: Windows API failed: {e}")
+        return False
+
+def _set_file_timestamp_method3(file_path, dt):
+    """Method 3: PowerShell for extra robustness"""
+    try:
+        if os.name != 'nt':  # Not Windows
+            return False
+            
+        import subprocess
+        
+        # Format date for PowerShell (ISO 8601)
+        ps_date = dt.strftime('%Y-%m-%dT%H:%M:%S')
+        
+        # PowerShell script for robust timestamp setting
+        ps_script = f'''
+        $file = Get-Item -LiteralPath "{file_path}"
+        $date = [DateTime]::Parse("{ps_date}")
+        $file.CreationTime = $date
+        $file.LastWriteTime = $date
+        $file.LastAccessTime = $date
+        Write-Host "PowerShell timestamp sync completed"
+        '''
+        
+        # Execute PowerShell command
+        result = subprocess.run([
+            'powershell', '-Command', ps_script
+        ], capture_output=True, text=True, timeout=15)
+        
+        if result.returncode == 0:
+            print("   ✅ Method 3: PowerShell successful")
+            return True
+        else:
+            print(f"   ❌ Method 3: PowerShell failed: {result.stderr.strip()}")
+            return False
+    
+    except Exception as e:
+        print(f"   ❌ Method 3: PowerShell failed: {e}")
+        return False
+
+def _apply_ultimate_timestamp_sync(file_path, new_timestamp, dt):
+    """
+    Apply Ultimate Windows Timestamp Sync using multiple methods
+    
+    Args:
+        file_path: Path to the file
+        new_timestamp: Unix timestamp to set
+        dt: datetime object for PowerShell method
+        
+    Returns:
+        int: Number of successful methods
+    """
+    success_count = 0
+    print(f"🔧 Ultimate timestamp sync for: {os.path.basename(file_path)}")
+    print(f"📅 Target date: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # Method 1: Standard os.utime
+    if _set_file_timestamp_method1(file_path, new_timestamp):
+        success_count += 1
+    
+    # Method 2: Windows API with SetFileTime 
+    if _set_file_timestamp_method2(file_path, new_timestamp):
+        success_count += 1
+    
+    # Method 3: PowerShell
+    if _set_file_timestamp_method3(file_path, dt):
+        success_count += 1
+    
+    # Method 4: System flush to ensure changes are written
+    try:
+        if os.name == 'nt' and success_count > 0:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            kernel32.FlushFileBuffers(-1)  # Flush all system buffers
+            print("   ✅ Method 4: System flush completed")
+    except:
+        pass
+    
+    print(f"📊 Result: {success_count}/3 methods successful")
+    return success_count
+
+def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps=None):
+    """
+    Synchronize EXIF DateTimeOriginal to file creation/modification date.
+    
+    Args:
+        file_path: Path to the media file
+        exiftool_path: Path to ExifTool executable
+        backup_timestamps: Dictionary to store original timestamps for undo
+        
+    Returns:
+        tuple: (success: bool, message: str, original_times: dict or None)
+    """
+    if not EXIFTOOL_AVAILABLE:
+        return False, "ExifTool not available", None
+    
+    if not os.path.exists(file_path):
+        return False, f"File not found: {file_path}", None
+    
+    # Auto-detect ExifTool path if not provided
+    if not exiftool_path:
+        exiftool_path = find_exiftool_path()
+        if not exiftool_path:
+            return False, "ExifTool executable not found", None
+    
+    print(f"🔧 Using ExifTool: {exiftool_path}")
+    
+    try:
+        # Get original file timestamps for backup
+        stat_info = os.stat(file_path)
+        original_times = {
+            'atime': stat_info.st_atime,    # Access time
+            'mtime': stat_info.st_mtime,    # Modification time
+            'ctime': stat_info.st_ctime     # Creation time (Windows) / Status change time (Unix)
+        }
+        
+        # On Windows, get the real creation time using Windows API
+        try:
+            if os.name == 'nt':  # Windows
+                import ctypes
+                from ctypes import wintypes
+                
+                # Create FILETIME structure
+                class FILETIME(ctypes.Structure):
+                    _fields_ = [("dwLowDateTime", wintypes.DWORD),
+                               ("dwHighDateTime", wintypes.DWORD)]
+                
+                # Open file to get creation time
+                kernel32 = ctypes.windll.kernel32
+                handle = kernel32.CreateFileW(
+                    file_path,
+                    0x80000000,  # GENERIC_READ
+                    0x00000001 | 0x00000002,  # FILE_SHARE_READ | FILE_SHARE_WRITE
+                    None,
+                    3,  # OPEN_EXISTING
+                    0x80,  # FILE_ATTRIBUTE_NORMAL
+                    None
+                )
+                
+                if handle != -1:  # INVALID_HANDLE_VALUE
+                    creation_time = FILETIME()
+                    access_time = FILETIME()
+                    write_time = FILETIME()
+                    
+                    # Get file times
+                    if kernel32.GetFileTime(handle, ctypes.byref(creation_time), 
+                                          ctypes.byref(access_time), ctypes.byref(write_time)):
+                        # Convert Windows FILETIME to Unix timestamp
+                        EPOCH_AS_FILETIME = 116444736000000000
+                        creation_100ns = (creation_time.dwHighDateTime << 32) + creation_time.dwLowDateTime
+                        creation_timestamp = (creation_100ns - EPOCH_AS_FILETIME) / 10000000.0
+                        
+                        # Store the real Windows creation time
+                        original_times['windows_creation_time'] = creation_timestamp
+                    
+                    kernel32.CloseHandle(handle)
+        
+        except Exception as e:
+            # If Windows API fails, we still have the basic timestamps
+            print(f"Warning: Could not get Windows creation time: {e}")
+        
+        # Store in backup if provided
+        if backup_timestamps is not None:
+            backup_timestamps[file_path] = original_times
+        
+        # Extract EXIF DateTimeOriginal using ExifTool
+        try:
+            # Use ExifTool to get metadata
+            if exiftool_path:
+                with exiftool.ExifToolHelper(executable=exiftool_path) as et:
+                    meta = et.get_metadata(file_path)[0]
+            else:
+                with exiftool.ExifToolHelper() as et:
+                    meta = et.get_metadata(file_path)[0]
+            
+            # Try multiple possible EXIF date fields
+            exif_date = None
+            date_fields = [
+                'EXIF:DateTimeOriginal',
+                'EXIF:DateTime', 
+                'EXIF:CreateDate',
+                'DateTimeOriginal',
+                'DateTime',
+                'CreateDate'
+            ]
+            
+            for field in date_fields:
+                if field in meta and meta[field]:
+                    exif_date = meta[field]
+                    break
+            
+            if not exif_date:
+                return False, "No EXIF date found in file", original_times
+            
+            # Parse EXIF date (format: "YYYY:MM:DD HH:MM:SS")
+            try:
+                import datetime
+                # Handle both with and without time component
+                if ' ' in str(exif_date):
+                    dt = datetime.datetime.strptime(str(exif_date), '%Y:%m:%d %H:%M:%S')
+                else:
+                    dt = datetime.datetime.strptime(str(exif_date), '%Y:%m:%d')
+                
+                # Convert to timestamp
+                new_timestamp = dt.timestamp()
+                
+                # FORCE SYNC - Always update timestamps to ensure File:FileCreateDate is correct
+                print(f"🔧 Force syncing timestamps to EXIF date...")
+                print(f"📊 Current mtime: {datetime.datetime.fromtimestamp(original_times['mtime'])}")
+                print(f"📊 Target EXIF date: {dt}")
+                print(f"📊 Time difference: {abs(original_times['mtime'] - new_timestamp):.2f} seconds")
+                
+                # Apply Ultimate Windows Timestamp Sync
+                success_count = _apply_ultimate_timestamp_sync(file_path, new_timestamp, dt)
+                
+                if success_count > 0:
+                    return True, f"Successfully synced date from EXIF using {success_count} methods: {dt.strftime('%Y-%m-%d %H:%M:%S')}", original_times
+                else:
+                    return False, "All timestamp sync methods failed", original_times
+                
+            except ValueError as e:
+                return False, f"Could not parse EXIF date '{exif_date}': {e}", original_times
+        
+        except Exception as e:
+            return False, f"Error accessing EXIF data: {e}", original_times
+                
+    except Exception as e:
+        return False, f"Error syncing date: {e}", None
+
+def _restore_windows_creation_time(file_path, creation_timestamp):
+    """Restore Windows creation time using Windows API"""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        
+        # Convert timestamp to Windows FILETIME format
+        EPOCH_AS_FILETIME = 116444736000000000  # January 1, 1970 as FILETIME
+        timestamp_100ns = int((creation_timestamp * 10000000) + EPOCH_AS_FILETIME)
+        
+        # Create FILETIME structure
+        class FILETIME(ctypes.Structure):
+            _fields_ = [("dwLowDateTime", wintypes.DWORD),
+                       ("dwHighDateTime", wintypes.DWORD)]
+        
+        ft = FILETIME()
+        ft.dwLowDateTime = timestamp_100ns & 0xFFFFFFFF
+        ft.dwHighDateTime = timestamp_100ns >> 32
+        
+        # Open file handle with write access
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.CreateFileW(
+            file_path,
+            0x40000000,  # GENERIC_WRITE
+            0x00000001 | 0x00000002,  # FILE_SHARE_READ | FILE_SHARE_WRITE
+            None,
+            3,  # OPEN_EXISTING
+            0x80,  # FILE_ATTRIBUTE_NORMAL
+            None
+        )
+        
+        if handle != -1:  # INVALID_HANDLE_VALUE
+            # Restore original creation time
+            kernel32.SetFileTime(handle, ctypes.byref(ft), None, None)
+            kernel32.CloseHandle(handle)
+            return True
+        
+        return False
+    except Exception:
+        return False
+
+def restore_file_timestamps(file_path, original_times):
+    """
+    Restore original file timestamps from backup.
+    
+    Args:
+        file_path: Path to the file
+        original_times: Dictionary with original timestamps
+        
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    try:
+        if not os.path.exists(file_path):
+            return False, f"File not found: {file_path}"
+        
+        if not original_times:
+            return False, "No backup timestamps available"
+        
+        # Restore access and modification times
+        os.utime(file_path, (original_times['atime'], original_times['mtime']))
+        
+        # On Windows, also restore creation time using Windows API
+        if os.name == 'nt':  # Windows
+            # Use the real Windows creation time if available, otherwise fall back to ctime
+            creation_timestamp = original_times.get('windows_creation_time', original_times.get('ctime'))
+            
+            if creation_timestamp:
+                success = _restore_windows_creation_time(file_path, creation_timestamp)
+                if not success:
+                    print(f"Warning: Could not restore creation time for {file_path}")
+        
+        return True, "File timestamps restored successfully"
+        
+    except Exception as e:
+        return False, f"Error restoring timestamps: {e}"
+
+def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None):
+    """
+    Batch synchronize EXIF dates to file dates for multiple files.
+    
+    Args:
+        file_paths: List of file paths to process
+        exiftool_path: Path to ExifTool executable
+        progress_callback: Optional callback function for progress updates
+        
+    Returns:
+        tuple: (successes: list, errors: list, backup_data: dict)
+    """
+    successes = []
+    errors = []
+    backup_data = {}
+    
+    for i, file_path in enumerate(file_paths):
+        if progress_callback:
+            progress_callback(f"Processing {i+1}/{len(file_paths)}: {os.path.basename(file_path)}")
+        
+        success, message, original_times = sync_exif_date_to_file_date(
+            file_path, exiftool_path, backup_data
+        )
+        
+        if success:
+            successes.append((file_path, message))
+        else:
+            errors.append((file_path, message))
+    
+    return successes, errors, backup_data
+
+def batch_restore_timestamps(backup_data, progress_callback=None):
+    """
+    Batch restore original timestamps for multiple files.
+    
+    Args:
+        backup_data: Dictionary mapping file paths to original timestamps
+        progress_callback: Optional callback function for progress updates
+        
+    Returns:
+        tuple: (successes: list, errors: list)
+    """
+    successes = []
+    errors = []
+    
+    file_paths = list(backup_data.keys())
+    
+    for i, file_path in enumerate(file_paths):
+        if progress_callback:
+            progress_callback(f"Restoring {i+1}/{len(file_paths)}: {os.path.basename(file_path)}")
+        
+        original_times = backup_data[file_path]
+        success, message = restore_file_timestamps(file_path, original_times)
+        
+        if success:
+            successes.append((file_path, message))
+        else:
+            errors.append((file_path, message))
+    
+    return successes, errors

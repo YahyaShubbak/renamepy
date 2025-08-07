@@ -5,6 +5,8 @@ Complete original UI implementation with all features from RenameFiles.py
 
 import os
 import sys
+import re
+import datetime
 from pathlib import Path
 
 # Add the parent directory to the Python path to allow module imports
@@ -315,6 +317,7 @@ class FileRenamerApp(QMainWindow):
         self.lens_models = {}
         self.original_filenames = {}  # Track original filenames for undo
         self.selected_metadata = {}  # Store metadata selected from EXIF dialog
+        self.timestamp_backup = {}  # Store original timestamps for EXIF date sync undo
         
         self.setup_ui()
         
@@ -543,6 +546,39 @@ class FileRenamerApp(QMainWindow):
         lens_checkbox_layout.addStretch()
         self.layout.addLayout(lens_checkbox_layout)
         self.checkbox_lens.stateChanged.connect(self.on_lens_checkbox_changed)
+
+        # EXIF Date to File Date Sync Feature
+        sync_date_layout = QHBoxLayout()
+        self.checkbox_sync_exif_date = QCheckBox("Sync EXIF date to file creation date")
+        self.checkbox_sync_exif_date.setStyleSheet("""
+            QCheckBox {
+                color: #ff6b35;
+                font-weight: bold;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #ff6b35;
+                border: 2px solid #e55a2b;
+            }
+        """)
+        self.checkbox_sync_exif_date.setToolTip(
+            "⚠️ WARNING: This will modify file metadata!\n\n"
+            "• Extracts DateTimeOriginal from EXIF\n"
+            "• Sets it as file creation/modification date\n"
+            "• Useful for cloud services that use file dates\n"
+            "• Can be undone with restore function\n\n"
+            "Only works if ExifTool is available."
+        )
+        sync_date_layout.addWidget(self.checkbox_sync_exif_date)
+        
+        # Info icon for EXIF sync
+        sync_info_icon = QLabel()
+        sync_info_icon.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning).pixmap(16, 16))
+        sync_info_icon.setToolTip("Click for detailed info about EXIF date synchronization")
+        sync_info_icon.setCursor(Qt.CursorShape.PointingHandCursor)
+        sync_info_icon.mousePressEvent = lambda event: self.show_exif_sync_info()
+        sync_date_layout.addWidget(sync_info_icon)
+        sync_date_layout.addStretch()
+        self.layout.addLayout(sync_date_layout)
 
         # Drag & Drop File List with dashed border and info text
         self.file_list = QListWidget()
@@ -1923,11 +1959,37 @@ class FileRenamerApp(QMainWindow):
         self.select_folder_menu_button.setEnabled(False)
         self.clear_files_menu_button.setEnabled(False)
         
+        # Get EXIF date sync setting
+        sync_exif_date = getattr(self, 'checkbox_sync_exif_date', None) and self.checkbox_sync_exif_date.isChecked()
+        
+        # Show warning dialog if EXIF date sync is enabled
+        if sync_exif_date:
+            reply = QMessageBox.warning(
+                self, 
+                "⚠️ EXIF Date Sync Warning",
+                "You have enabled EXIF date synchronization.\n\n"
+                "This will modify file timestamps by setting them to match the EXIF DateTimeOriginal.\n\n"
+                "• Original timestamps will be backed up\n"
+                "• Changes can be reversed with 'Restore Original Names'\n"
+                "• Only files with valid EXIF dates will be modified\n\n"
+                "Do you want to continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                # Re-enable UI and return
+                self.rename_button.setEnabled(True)
+                self.rename_button.setText("🚀 Rename Files")
+                self.select_files_menu_button.setEnabled(True)
+                self.select_folder_menu_button.setEnabled(True)
+                self.clear_files_menu_button.setEnabled(True)
+                return
+        
         # Start worker thread for background processing
         self.worker = RenameWorkerThread(
             media_files, camera_prefix, additional, use_camera, use_lens, 
             self.exif_method, devider, self.exiftool_path, self.custom_order,
-            date_format, use_date, continuous_counter, self.selected_metadata
+            date_format, use_date, continuous_counter, self.selected_metadata, sync_exif_date
         )
         self.worker.progress_update.connect(self.update_status)
         self.worker.finished.connect(self.on_rename_finished)
@@ -1939,8 +2001,12 @@ class FileRenamerApp(QMainWindow):
         self.status.showMessage(message)
         QApplication.processEvents()  # Update UI
     
-    def on_rename_finished(self, renamed_files, errors):
+    def on_rename_finished(self, renamed_files, errors, timestamp_backup=None):
         """Handle completion of rename operation"""
+        # Store timestamp backup for potential undo operations
+        if timestamp_backup:
+            self.timestamp_backup = timestamp_backup
+        
         # Update the file list with the new file names
         original_non_media = [f for f in self.files if not is_media_file(f)]
         old_media_files = [f for f in self.files if is_media_file(f)]
@@ -2179,6 +2245,32 @@ class FileRenamerApp(QMainWindow):
             except Exception as e:
                 errors.append(f"Failed to restore {os.path.basename(current_file)}: {e}")
         
+        # Restore original timestamps if EXIF sync was used
+        if hasattr(self, 'timestamp_backup') and self.timestamp_backup:
+            print("🔄 Restoring original timestamps...")
+            from exif_processor import batch_restore_timestamps
+            
+            try:
+                timestamp_successes, timestamp_errors = batch_restore_timestamps(
+                    self.timestamp_backup,
+                    progress_callback=lambda msg: self.status.showMessage(msg, 1000)
+                )
+                
+                if timestamp_successes:
+                    print(f"✅ Restored timestamps for {len(timestamp_successes)} files")
+                
+                if timestamp_errors:
+                    print(f"❌ Failed to restore timestamps for {len(timestamp_errors)} files")
+                    for file_path, error_msg in timestamp_errors:
+                        errors.append(f"Timestamp restore failed for {os.path.basename(file_path)}: {error_msg}")
+                
+                # Clear timestamp backup after restore
+                self.timestamp_backup = {}
+                
+            except Exception as e:
+                print(f"❌ Error during timestamp restore: {e}")
+                errors.append(f"Timestamp restore error: {e}")
+        
         # CRITICAL FIX: Clear original_filenames tracking after successful undo
         # This allows a fresh start for the next rename operation
         self.original_filenames = {}
@@ -2329,6 +2421,49 @@ The number (001) is always at the end and auto-increments.
         layout.addWidget(info_text)
         
         close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        dialog.exec()
+
+    def show_exif_sync_info(self):
+        """Show EXIF date synchronization help dialog"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("⚠️ EXIF Date Synchronization")
+        dialog.setModal(True)
+        dialog.resize(500, 400)
+        layout = QVBoxLayout(dialog)
+        
+        # Warning header
+        warning_label = QLabel("⚠️ WARNING: This feature modifies file metadata!")
+        warning_label.setStyleSheet("color: #ff6b35; font-weight: bold; font-size: 14px;")
+        layout.addWidget(warning_label)
+        
+        info_text = QLabel("""
+<b>What this feature does:</b>
+• Extracts DateTimeOriginal from EXIF metadata
+• Sets it as the file's creation and modification date
+• Helps cloud services show correct photo dates
+
+<b>Why you might need this:</b>
+Many cloud storage services (Google Photos, iCloud, OneDrive) use the file's creation date instead of the EXIF DateTimeOriginal for photo organization and timeline display.
+
+<b>Requirements:</b>
+• ExifTool must be installed and detected
+• Files must contain valid EXIF DateTimeOriginal data
+
+<b>Safety features:</b>
+• Original file timestamps are backed up
+• Can be reversed using the "Restore Original Names" function
+• Only processes files with valid EXIF dates
+• Skips files that already have matching dates
+
+<b>Supported formats:</b>
+JPG, TIFF, RAW files (CR2, NEF, ARW, etc.)
+        """)
+        info_text.setWordWrap(True)
+        layout.addWidget(info_text)
+        
+        close_btn = QPushButton("I Understand")
         close_btn.clicked.connect(dialog.accept)
         layout.addWidget(close_btn)
         dialog.exec()

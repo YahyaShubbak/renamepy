@@ -184,11 +184,11 @@ class RenameWorkerThread(QThread):
     Worker thread for file renaming to prevent UI freezing
     """
     progress_update = pyqtSignal(str)
-    finished = pyqtSignal(list, list)
+    finished = pyqtSignal(list, list, dict)  # EXTENDED: renamed_files, errors, timestamp_backup
     error = pyqtSignal(str)
     
     def __init__(self, files, camera_prefix, additional, use_camera, use_lens, 
-                 exif_method, devider, exiftool_path, custom_order, date_format="YYYY-MM-DD", use_date=True, continuous_counter=False, selected_metadata=None):
+                 exif_method, devider, exiftool_path, custom_order, date_format="YYYY-MM-DD", use_date=True, continuous_counter=False, selected_metadata=None, sync_exif_date=False):
         super().__init__()
         self.files = files
         self.camera_prefix = camera_prefix
@@ -203,6 +203,7 @@ class RenameWorkerThread(QThread):
         self.use_date = use_date
         self.continuous_counter = continuous_counter
         self.selected_metadata = selected_metadata or {}
+        self.sync_exif_date = sync_exif_date  # NEW: EXIF date synchronization flag
     
     def run(self):
         """Run the rename operation in background thread"""
@@ -210,12 +211,12 @@ class RenameWorkerThread(QThread):
             self.progress_update.emit("Starting rename operation...")
             
             # Use optimized rename function
-            renamed_files, errors = self.optimized_rename_files()
+            renamed_files, errors, timestamp_backup = self.optimized_rename_files()
             
             # IMPORTANT: Clean up global ExifTool instance after batch processing
             exif_processor.cleanup_global_exiftool()
             
-            self.finished.emit(renamed_files, errors)
+            self.finished.emit(renamed_files, errors, timestamp_backup)
         except Exception as e:
             # Clean up ExifTool instance even if there's an error
             exif_processor.cleanup_global_exiftool()
@@ -370,6 +371,44 @@ class RenameWorkerThread(QThread):
             self.progress_update.emit(f"Extracting only: {', '.join(fields_needed)}")
         else:
             self.progress_update.emit("No EXIF extraction needed - using file names only")
+        
+        # EXIF DATE SYNC: Process file date synchronization if requested
+        timestamp_backup = {}
+        
+        # Debug: Check EXIF sync status
+        print(f"🔍 EXIF Sync Debug:")
+        print(f"   sync_exif_date: {self.sync_exif_date}")
+        print(f"   exiftool_path: {self.exiftool_path}")
+        print(f"   EXIFTOOL_AVAILABLE: {getattr(exif_processor, 'EXIFTOOL_AVAILABLE', 'Unknown')}")
+        
+        if self.sync_exif_date:
+            self.progress_update.emit("Synchronizing EXIF dates to file timestamps...")
+            print("🔧 Starting EXIF date synchronization...")
+            
+            media_files = [f for f in self.files if is_media_file(f)]
+            print(f"🔍 Media files for sync: {len(media_files)}")
+            
+            # Use exiftool_path if available, otherwise let sync function handle it
+            effective_exiftool_path = self.exiftool_path if self.exiftool_path else None
+            
+            successes, sync_errors, timestamp_backup = exif_processor.batch_sync_exif_dates(
+                media_files, 
+                effective_exiftool_path, 
+                lambda msg: self.progress_update.emit(f"Date sync: {msg}")
+            )
+            
+            print(f"📊 EXIF sync results: {len(successes)} successes, {len(sync_errors)} errors")
+            
+            if successes:
+                self.progress_update.emit(f"Successfully synced dates for {len(successes)} files")
+                for file_path, message in successes:
+                    print(f"   ✅ {os.path.basename(file_path)}: {message}")
+            if sync_errors:
+                self.progress_update.emit(f"Failed to sync dates for {len(sync_errors)} files")
+                for file_path, error in sync_errors:
+                    print(f"   ❌ {os.path.basename(file_path)}: {error}")
+        else:
+            print("🔍 EXIF date sync not requested or not available")
         
         # Step 1: Group files by basename AND directory (CRITICAL FIX for identical filenames in different folders)
         file_groups = []
@@ -699,7 +738,8 @@ class RenameWorkerThread(QThread):
                 except Exception as e:
                     errors.append(f"Failed to rename {os.path.basename(file)}: {e}")
         
-        return renamed_files, errors
+        # Return results including timestamp backup for potential undo operations
+        return renamed_files, errors, timestamp_backup
 
 # Export classes and functions
 __all__ = ['RenameWorkerThread']
