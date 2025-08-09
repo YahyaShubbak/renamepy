@@ -8,6 +8,8 @@ import sys
 import re
 import datetime
 from pathlib import Path
+from .logger_util import get_logger
+log = get_logger()
 
 # Add the parent directory to the Python path to allow module imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -19,24 +21,26 @@ from PyQt6.QtWidgets import (
     QStyle, QPlainTextEdit, QScrollArea
 )
 from PyQt6.QtCore import Qt, QSettings, QThread, pyqtSignal, QMimeData, QPoint
-from PyQt6.QtGui import QIcon, QDragEnterEvent, QDropEvent, QDragMoveEvent, QFont
+from PyQt6.QtGui import QIcon, QDragEnterEvent, QDropEvent, QDragMoveEvent, QFont, QAction
 
 # Import the modular components
-from file_utilities import (
-    is_media_file, scan_directory_recursive, get_filename_components_static,
+from .file_utilities import (
+    is_media_file, scan_directory_recursive,
     rename_files, FileConstants, MEDIA_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS,
     is_image_file, is_video_file
 )
-from exif_processor import (
+from .exif_processor import (
     get_cached_exif_data, get_selective_cached_exif_data,
     extract_exif_fields, get_exiftool_metadata_shared, 
     cleanup_global_exiftool, clear_global_exif_cache,
     SimpleExifHandler, EXIFTOOL_AVAILABLE, PIL_AVAILABLE,
     extract_exif_fields_with_retry
 )
-from rename_engine import RenameWorkerThread
-from ui_components import InteractivePreviewWidget
-from theme_manager import ThemeManager
+from .rename_engine import RenameWorkerThread
+from .ui_components import InteractivePreviewWidget
+from .theme_manager import ThemeManager
+from .filename_components import build_ordered_components
+from .timestamp_options_dialog import TimestampSyncOptionsDialog
 
 class ExifToolWarningDialog(QDialog):
     """Warning dialog shown when ExifTool is not installed"""
@@ -140,64 +144,44 @@ def calculate_stats(files):
     }
 
 class SimpleExifHandler:
-    """Simple EXIF handler using the original functions"""
+    """Simple EXIF handler using original extraction functions."""
     def __init__(self):
         self.current_method = "exiftool" if EXIFTOOL_AVAILABLE else ("pillow" if PIL_AVAILABLE else None)
         self.exiftool_path = self._find_exiftool_path()
-    
+
     def _find_exiftool_path(self):
-        """Find ExifTool installation path"""
         import glob
-        
         if not EXIFTOOL_AVAILABLE:
             return None
-            
-        # Check common ExifTool installation paths
         script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        
-        # Search for exiftool in project directory
-        exiftool_candidates = [
+        candidates = [
             os.path.join(script_dir, "exiftool-13.33_64", "exiftool.exe"),
             os.path.join(script_dir, "exiftool-13.33_64", "exiftool(-k).exe"),
             os.path.join(script_dir, "exiftool-13.32_64", "exiftool.exe"),
             os.path.join(script_dir, "exiftool-13.32_64", "exiftool(-k).exe"),
         ]
-        
-        # Also search for any exiftool folder pattern
-        for filename in ["exiftool.exe", "exiftool(-k).exe"]:
-            exiftool_pattern = os.path.join(script_dir, "*exiftool*", filename)
-            exiftool_matches = glob.glob(exiftool_pattern)
-            exiftool_candidates.extend(exiftool_matches)
-        
-        for path in exiftool_candidates:
+        for filename in ("exiftool.exe", "exiftool(-k).exe"):
+            candidates.extend(glob.glob(os.path.join(script_dir, "*exiftool*", filename)))
+        for path in candidates:
             if os.path.exists(path):
-                print(f"Found ExifTool at: {path}")
+                log.debug(f"Found ExifTool at: {path}")
                 return path
-        
-        print("ExifTool not found, using system installation")
+        log.info("ExifTool not found locally; relying on system path if available")
         return None
-    
+
     def extract_exif(self, file_path):
         return get_cached_exif_data(file_path, self.current_method, self.exiftool_path)
-    
+
     def extract_raw_exif(self, file_path):
-        """Extract raw EXIF metadata using ExifTool"""
         try:
             if self.current_method == "exiftool":
-                # Use the shared ExifTool instance for raw metadata
                 return get_exiftool_metadata_shared(file_path, self.exiftool_path)
-            else:
-                # Fallback for Pillow - return basic metadata
-                date, camera, lens = get_cached_exif_data(file_path, self.current_method, self.exiftool_path)
-                return {
-                    'DateTimeOriginal': date,
-                    'Model': camera,
-                    'LensModel': lens
-                }
+            date, camera, lens = get_cached_exif_data(file_path, self.current_method, self.exiftool_path)
+            return {'DateTimeOriginal': date, 'Model': camera, 'LensModel': lens}
         except Exception as e:
-            print(f"Error extracting raw EXIF from {file_path}: {e}")
+            log.debug(f"Error extracting raw EXIF from {file_path}: {e}")
             return {}
-    
+
     def is_exiftool_available(self):
         return EXIFTOOL_AVAILABLE
 
@@ -207,7 +191,20 @@ class SimpleFilenameGenerator:
         pass
     
     def generate_filename(self, date_taken, camera_prefix, additional, camera_model, lens_model, use_camera, use_lens, num, custom_order, date_format="YYYY-MM-DD", use_date=True):
-        components = get_filename_components_static(date_taken, camera_prefix, additional, camera_model, lens_model, use_camera, use_lens, num, custom_order, date_format, use_date)
+        components = build_ordered_components(
+            date_taken=date_taken,
+            camera_prefix=camera_prefix,
+            additional=additional,
+            camera_model=camera_model,
+            lens_model=lens_model,
+            use_camera=use_camera,
+            use_lens=use_lens,
+            number=num,
+            custom_order=custom_order,
+            date_format=date_format,
+            use_date=use_date,
+            selected_metadata=None,
+        )
         return components
 
 def extract_image_number(image_path, exif_method, exiftool_path):
@@ -267,7 +264,7 @@ def extract_image_number(image_path, exif_method, exiftool_path):
         return None
         
     except Exception as e:
-        print(f"Error extracting image number from {image_path}: {e}")
+        log.debug(f"Error extracting image number from {image_path}: {e}")
         return None
 
 def is_video_file(file_path):
@@ -277,8 +274,17 @@ def is_video_file(file_path):
     return os.path.splitext(file_path)[1].lower() in video_extensions
 
 class FileRenamerApp(QMainWindow):
+    DEBUG_VERBOSE = False
     def __init__(self):
         super().__init__()
+        # Ensure log method exists early
+        if not hasattr(self, 'log'):
+            def _early_log(msg: str):
+                if getattr(self, 'DEBUG_VERBOSE', False):
+                    self.log(msg)
+            self.log = _early_log  # type: ignore
+        # Busy state flag
+        self._busy = False
         self.setWindowTitle("File Renamer")
         
         # Set application icon using custom icon.ico file
@@ -324,6 +330,42 @@ class FileRenamerApp(QMainWindow):
         # Initialize EXIF cache
         self._preview_exif_cache = {}
 
+    # ------------------------------------------------------------------
+    # Helper utilities (added for Phase 2 refactor: logging & UI state)
+    # ------------------------------------------------------------------
+    def _set_debug(self, enabled: bool):
+        self.DEBUG_VERBOSE = enabled
+        if hasattr(self, 'status'):
+            self.status.showMessage(f"Verbose logging {'on' if enabled else 'off'}", 2500)
+
+    def _update_buttons(self):
+        """Central place to update enabled state of primary buttons."""
+        if not hasattr(self, 'rename_button'):
+            return  # UI not built yet
+        has_files = bool(self.files)
+        can_undo = bool(getattr(self, 'original_filenames', {})) or bool(getattr(self, 'timestamp_backup', {}))
+        if self._busy:
+            self.rename_button.setEnabled(False)
+            self.select_files_menu_button.setEnabled(False)
+            self.select_folder_menu_button.setEnabled(False)
+            self.clear_files_menu_button.setEnabled(False)
+            self.undo_button.setEnabled(False)
+        else:
+            self.rename_button.setEnabled(has_files)
+            # Undo only if there is something to restore
+            self.undo_button.setEnabled(can_undo)
+            # File selection buttons always active when not busy
+            self.select_files_menu_button.setEnabled(True)
+            self.select_folder_menu_button.setEnabled(True)
+            self.clear_files_menu_button.setEnabled(True)
+
+    def _ui_set_busy(self, busy: bool):
+        """Toggle busy state and update button states/labels."""
+        self._busy = busy
+        if hasattr(self, 'rename_button'):
+            self.rename_button.setText('⏳ Processing...' if busy else '🚀 Rename Files')
+        self._update_buttons()
+
     def has_restore_data(self):
         """
         Check if there's anything that can be restored (filenames or timestamps)
@@ -360,6 +402,28 @@ class FileRenamerApp(QMainWindow):
     
     def setup_ui(self):
         """Setup the complete original UI design"""
+        # ----- Menu Bar (added for debug toggle & future actions) -----
+        if not hasattr(self, 'menuBar'):
+            # In unusual cases where QMainWindow menuBar is altered, guard
+            pass
+        else:
+            mb = self.menuBar() if hasattr(self, 'menuBar') else None
+            if mb:
+                tools_menu = None
+                for a in mb.actions():
+                    if a.text() == '&Tools':
+                        tools_menu = a.menu()
+                        break
+                if tools_menu is None and mb:
+                    tools_menu = mb.addMenu('&Tools')
+
+                # Debug logging toggle
+                from PyQt6.QtGui import QAction
+                self.action_toggle_debug = QAction('Enable Debug Logging', self, checkable=True)
+                self.action_toggle_debug.setStatusTip('Toggle verbose debug log output')
+                self.action_toggle_debug.toggled.connect(self._on_toggle_debug_logging)
+                tools_menu.addAction(self.action_toggle_debug)
+
         
         # Theme Switch - ganz oben
         theme_row = QHBoxLayout()
@@ -607,6 +671,13 @@ class FileRenamerApp(QMainWindow):
         sync_info_icon.setCursor(Qt.CursorShape.PointingHandCursor)
         sync_info_icon.mousePressEvent = lambda event: self.show_exif_sync_info()
         sync_date_layout.addWidget(sync_info_icon)
+        # New: Leave filenames unchanged (metadata-only mode)
+        self.checkbox_leave_names = QCheckBox("Leave file names as-is")
+        self.checkbox_leave_names.setToolTip(
+            "Skip renaming and only perform timestamp (and future metadata) operations.\n"
+            "Useful when you only want to normalize filesystem dates without changing filenames."
+        )
+        sync_date_layout.addWidget(self.checkbox_leave_names)
         sync_date_layout.addStretch()
         self.layout.addLayout(sync_date_layout)
 
@@ -879,7 +950,7 @@ class FileRenamerApp(QMainWindow):
             
             # Verify file exists
             if not os.path.exists(normalized_path):
-                print(f"show_media_info: File not found: {normalized_path}")
+                self.log(f"show_media_info: File not found: {normalized_path}")
                 return
             
             if is_video_file(file_path):
@@ -944,7 +1015,7 @@ class FileRenamerApp(QMainWindow):
             
             # Verify file exists
             if not os.path.exists(normalized_file):
-                print(f"show_exif_info: File not found: {normalized_file}")
+                self.log(f"show_exif_info: File not found: {normalized_file}")
                 self.show_exif_dialog(file_path, "File not found.")
                 return
             
@@ -976,7 +1047,7 @@ class FileRenamerApp(QMainWindow):
             self.show_exif_dialog(file_path, info_str)
             
         except Exception as e:
-            print(f"Error in show_exif_info: {e}")
+            self.log(f"Error in show_exif_info: {e}")
             file_type = "Video" if is_video_file(file_path) else "Image"
             self.show_exif_dialog(file_path, f"Error reading {file_type.lower()} metadata: {e}")
     
@@ -1470,7 +1541,7 @@ class FileRenamerApp(QMainWindow):
             self.detected_lens = lens
             
         except Exception as e:
-            print(f"Error extracting camera info from {first_media}: {e}")
+            self.log(f"Error extracting camera info from {first_media}: {e}")
             self.detected_camera = None
             self.detected_lens = None
         
@@ -1535,7 +1606,7 @@ class FileRenamerApp(QMainWindow):
             if os.path.exists(preview_file):
                 if not hasattr(self, '_preview_exif_file') or self._preview_exif_file != cache_key:
                     try:
-                        from exif_processor import get_selective_cached_exif_data
+                        from .exif_processor import get_selective_cached_exif_data
                         date_taken, camera_model, lens_model = get_selective_cached_exif_data(
                             preview_file, self.exif_method, self.exiftool_path,
                             need_date=use_date, need_camera=use_camera, need_lens=use_lens
@@ -1637,9 +1708,9 @@ class FileRenamerApp(QMainWindow):
                 if needs_real_metadata:
                     try:
                         from .exif_processor import get_all_metadata
-                        print(f"🔍 Preview: Extracting real metadata from {os.path.basename(preview_file)}")
+                        self.log(f"🔍 Preview: Extracting real metadata from {os.path.basename(preview_file)}")
                         real_metadata = get_all_metadata(preview_file, self.exif_method, self.exiftool_path)
-                        print(f"  Preview metadata: {real_metadata}")
+                        self.log(f"  Preview metadata: {real_metadata}")
                         
                         # Replace Boolean flags with real values for preview
                         for key, value in self.selected_metadata.items():
@@ -1652,9 +1723,9 @@ class FileRenamerApp(QMainWindow):
                                 if exif_key in real_metadata:
                                     old_value = preview_metadata[key]
                                     preview_metadata[key] = real_metadata[exif_key]
-                                    print(f"  Preview: {key} {old_value} -> {real_metadata[exif_key]}")
+                                    self.log(f"  Preview: {key} {old_value} -> {real_metadata[exif_key]}")
                     except Exception as e:
-                        print(f"❌ Warning: Could not extract real metadata for preview: {e}")
+                        self.log(f"❌ Warning: Could not extract real metadata for preview: {e}")
                         import traceback
                         traceback.print_exc()
             
@@ -1685,16 +1756,16 @@ class FileRenamerApp(QMainWindow):
                         active_components_order.append(meta_name)
 
         # Add components in the current, full order
-        print(f"🔍 Debug: Full component order for display: {active_components_order}")
+        self.log(f"🔍 Debug: Full component order for display: {active_components_order}")
         for component_name in active_components_order:
             value = component_mapping.get(component_name)
             if value:  # Only add non-empty and active components
                 display_components.append(value)
-        
+
         # Update the interactive preview
-        print(f"🖼️ Debug: Setting preview components: {display_components}")
-        print(f"🖼️ Debug: Selected metadata: {getattr(self, 'selected_metadata', {})}")
-        print(f"🖼️ Debug: Component mapping: {component_mapping}")
+        self.log(f"🖼️ Debug: Setting preview components: {display_components}")
+        self.log(f"🖼️ Debug: Selected metadata: {getattr(self, 'selected_metadata', {})}")
+        self.log(f"🖼️ Debug: Component mapping: {component_mapping}")
         self.interactive_preview.set_separator(devider)
         self.interactive_preview.set_components(display_components, "001")
     
@@ -1712,6 +1783,7 @@ class FileRenamerApp(QMainWindow):
             # Remove spaces and special characters from camera name
             return metadata_value.replace(' ', '-').replace('/', '-')
         elif metadata_key == 'lens':
+           
             # Simplify lens name for filename
             return metadata_value.replace(' ', '-').replace('/', '-')
         elif metadata_key == 'date':
@@ -1727,8 +1799,11 @@ class FileRenamerApp(QMainWindow):
                 return str(metadata_value).replace(' ', '')
         elif metadata_key == 'aperture':
             # Clean up aperture value (remove 'f/' if present, but keep single 'f')
+
+
+
             if metadata_value.startswith('f/'):
-                # Case: "f/9" -> "f9"
+                               # Case: "f/9" -> "f9"
                 return metadata_value.replace('f/', 'f')
             elif metadata_value.startswith('f'):
                 # Case: "f9" -> "f9" (already correct)
@@ -1744,7 +1819,7 @@ class FileRenamerApp(QMainWindow):
             # Clean up any double 's' that might occur
             if result.endswith('ss') and not result.endswith('sss'):
                 result = result[:-1]  # Remove one 's' if double
-            print(f"🔧 Debug: Formatted shutter '{metadata_value}' -> '{result}'")
+            self.log(f"🔧 Debug: Formatted shutter '{metadata_value}' -> '{result}'")
             return result
         elif metadata_key == 'focal_length':
             # Extract just the number part
@@ -1836,7 +1911,7 @@ class FileRenamerApp(QMainWindow):
                     formatted_date = f"{year}-{month}-{day}"  # Default fallback
                 
                 value_to_component[formatted_date] = "Date"
-                print(f"🔄 Debug: Mapped Date '{formatted_date}' -> 'Date'")
+                self.log(f"🔄 Debug: Mapped Date '{formatted_date}' -> 'Date'")
             
         # Map camera and lens components
         if use_camera:
@@ -1892,9 +1967,9 @@ class FileRenamerApp(QMainWindow):
                                 
                                 if exif_key in real_metadata:
                                     preview_metadata[key] = real_metadata[exif_key]
-                                    print(f"🔄 Debug: Mapped preview {key} True -> {real_metadata[exif_key]}")
+                                    self.log(f"🔄 Debug: Mapped preview {key} True -> {real_metadata[exif_key]}")
                     except Exception as e:
-                        print(f"❌ Warning: Could not extract real metadata for preview mapping: {e}")
+                        self.log(f"❌ Warning: Could not extract real metadata for preview mapping: {e}")
             
             # Now map the actual formatted values that are displayed
             for metadata_key, metadata_value in preview_metadata.items():
@@ -1908,7 +1983,7 @@ class FileRenamerApp(QMainWindow):
                 if display_value:
                     meta_component_name = f"Meta_{metadata_key}"
                     value_to_component[display_value] = meta_component_name
-                    print(f"🔄 Debug: Mapped EXIF '{display_value}' -> '{meta_component_name}'")
+                    self.log(f"🔄 Debug: Mapped EXIF '{display_value}' -> '{meta_component_name}'")
         
         # Convert display order to internal order
         new_internal_order = []
@@ -1956,6 +2031,17 @@ class FileRenamerApp(QMainWindow):
             self.exif_status_label.setStyleSheet("color: orange; font-weight: bold;")
     
     def rename_files_action(self):
+        # Defensive fallback: ensure helper methods exist (in case of partial import issues)
+        if not hasattr(self, '_ui_set_busy'):
+            def _fallback_ui_set_busy(busy: bool):
+                if hasattr(self, 'status'):
+                    self.status.showMessage('Processing...' if busy else 'Ready', 1500)
+            self._ui_set_busy = _fallback_ui_set_busy  # type: ignore
+        if not hasattr(self, '_update_buttons'):
+            def _fallback_update_buttons():
+                if hasattr(self, 'rename_button'):
+                    self.rename_button.setEnabled(bool(self.files) and not getattr(self, '_busy', False))
+            self._update_buttons = _fallback_update_buttons  # type: ignore
         if not self.files:
             QMessageBox.warning(self, "Warning", "No files selected for renaming.")
             return
@@ -1983,43 +2069,57 @@ class FileRenamerApp(QMainWindow):
             return
         
         # Disable UI during processing
-        self.rename_button.setEnabled(False)
-        self.rename_button.setText("⏳ Processing...")
-        self.select_files_menu_button.setEnabled(False)
-        self.select_folder_menu_button.setEnabled(False)
-        self.clear_files_menu_button.setEnabled(False)
+        self._ui_set_busy(True)
         
         # Get EXIF date sync setting
         sync_exif_date = getattr(self, 'checkbox_sync_exif_date', None) and self.checkbox_sync_exif_date.isChecked()
-        
-        # Show warning dialog if EXIF date sync is enabled
+        leave_file_names = getattr(self, 'checkbox_leave_names', None) and self.checkbox_leave_names.isChecked()
+
+        timestamp_options = None
         if sync_exif_date:
             reply = QMessageBox.warning(
-                self, 
+                self,
                 "⚠️ EXIF Date Sync Warning",
                 "You have enabled EXIF date synchronization.\n\n"
-                "This will modify file timestamps by setting them to match the EXIF DateTimeOriginal.\n\n"
-                "• Original timestamps will be backed up\n"
-                "• Changes can be reversed with 'Restore Original Names'\n"
-                "• Only files with valid EXIF dates will be modified\n\n"
-                "Do you want to continue?",
+                "This will modify selected file timestamps (creation / modification / access)\n"
+                "to match the EXIF DateTimeOriginal OR a custom date you specify.\n\n"
+                "Safety: Original timestamps are backed up and can be restored.\n\n"
+                "Proceed?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No
             )
             if reply != QMessageBox.StandardButton.Yes:
-                # Re-enable UI and return
-                self.rename_button.setEnabled(True)
-                self.rename_button.setText("🚀 Rename Files")
-                self.select_files_menu_button.setEnabled(True)
-                self.select_folder_menu_button.setEnabled(True)
-                self.clear_files_menu_button.setEnabled(True)
+                self._ui_set_busy(False)
                 return
-        
+            dlg = TimestampSyncOptionsDialog(self)
+            if dlg.exec() == QDialog.DialogCode.Accepted:
+                timestamp_options = dlg.get_result()
+                if not timestamp_options:
+                    self._ui_set_busy(False)
+                    return
+            else:
+                self._ui_set_busy(False)
+                return
+
         # Start worker thread for background processing
         self.worker = RenameWorkerThread(
-            media_files, camera_prefix, additional, use_camera, use_lens, 
-            self.exif_method, devider, self.exiftool_path, self.custom_order,
-            date_format, use_date, continuous_counter, self.selected_metadata, sync_exif_date
+            media_files,
+            camera_prefix,
+            additional,
+            use_camera,
+            use_lens,
+            self.exif_method,
+            devider,
+            self.exiftool_path,
+            self.custom_order,
+            date_format,
+            use_date,
+            continuous_counter,
+            self.selected_metadata,
+            sync_exif_date,
+            timestamp_options=timestamp_options,
+            leave_names=leave_file_names,
+            log_callable=self.log,
         )
         self.worker.progress_update.connect(self.update_status)
         self.worker.finished.connect(self.on_rename_finished)
@@ -2030,6 +2130,15 @@ class FileRenamerApp(QMainWindow):
         """Update status bar with progress message"""
         self.status.showMessage(message)
         QApplication.processEvents()  # Update UI
+
+    # ----------------------- Logging Controls -----------------------
+    def _on_toggle_debug_logging(self, enabled: bool):
+        from .logger_util import set_level
+        set_level('DEBUG' if enabled else 'INFO')
+        self._set_debug(enabled)
+        if hasattr(self, 'status'):
+            self.status.showMessage(f"Debug logging {'enabled' if enabled else 'disabled'}", 3000)
+
     
     def on_rename_finished(self, renamed_files, errors, timestamp_backup=None):
         """Handle completion of rename operation"""
@@ -2072,8 +2181,8 @@ class FileRenamerApp(QMainWindow):
                     
                     # SAFETY CHECK: Ensure we have the same number of files
                     if len(old_files_in_dir) != len(renamed_files_in_dir):
-                        print(f"WARNING: File count mismatch in {directory}")
-                        print(f"  Original: {len(old_files_in_dir)}, Renamed: {len(renamed_files_in_dir)}")
+                        self.log(f"WARNING: File count mismatch in {directory}")
+                        self.log(f"  Original: {len(old_files_in_dir)}, Renamed: {len(renamed_files_in_dir)}")
                         # Use minimum count to avoid index errors
                         min_count = min(len(old_files_in_dir), len(renamed_files_in_dir))
                         old_files_in_dir = old_files_in_dir[:min_count]
@@ -2091,19 +2200,19 @@ class FileRenamerApp(QMainWindow):
                                 renamed_file = renamed_files[old_index]
                                 original_filename = os.path.basename(old_file)
                                 new_original_filenames[renamed_file] = original_filename
-                                print(f"Mapping: {os.path.basename(renamed_file)} -> {original_filename}")
+                                self.log(f"Mapping: {os.path.basename(renamed_file)} -> {original_filename}")
                         except (ValueError, IndexError) as e:
-                            print(f"WARNING: Could not map {os.path.basename(old_file)}: {e}")
+                            self.log(f"WARNING: Could not map {os.path.basename(old_file)}: {e}")
             
             # CASE 2: EXIF-only sync (no renamed files, but we have timestamp backup)
             elif timestamp_backup and old_media_files:
-                print("🔄 EXIF-only sync detected - creating filename mapping for restore functionality")
+                self.log("🔄 EXIF-only sync detected - creating filename mapping for restore functionality")
                 # Create identity mapping (file -> its own basename) for files that had timestamp changes
                 for media_file in old_media_files:
                     if media_file in timestamp_backup:
                         original_filename = os.path.basename(media_file)
                         new_original_filenames[media_file] = original_filename
-                        print(f"EXIF mapping: {os.path.basename(media_file)} -> {original_filename}")
+                        self.log(f"EXIF mapping: {os.path.basename(media_file)} -> {original_filename}")
             
             # Set original_filenames for the first time
             self.original_filenames = new_original_filenames
@@ -2197,31 +2306,23 @@ class FileRenamerApp(QMainWindow):
         self.status.showMessage(f"Completed: {len(renamed_files)} files renamed", 5000)
         
         # Re-enable UI
-        self.rename_button.setEnabled(True)
-        self.rename_button.setText("🚀 Rename Files")
-        self.select_files_menu_button.setEnabled(True)
-        self.select_folder_menu_button.setEnabled(True)
-        self.clear_files_menu_button.setEnabled(True)
+        self._ui_set_busy(False)
     
     def on_rename_error(self, error_message):
-        """Handle critical error during rename operation"""
+        self._ui_set_busy(False)
         QMessageBox.critical(self, "Critical Error", f"Unexpected error during renaming:\n{error_message}")
         self.status.showMessage("Rename operation failed", 3000)
-        
-        # Re-enable UI
-        self.rename_button.setEnabled(True)
-        self.rename_button.setText("🚀 Rename Files")
     
     def undo_rename_action(self):
         """Restore files to their original names"""
-        if not self.original_filenames:
+        timestamp_backup_exists = hasattr(self, 'timestamp_backup') and bool(getattr(self, 'timestamp_backup'))
+        if (not getattr(self, 'original_filenames', None) or not self.original_filenames) and not timestamp_backup_exists:
             QMessageBox.information(
-                self, 
-                "No Undo Available", 
-                "No rename operations to undo.\n\nThe undo function is only available when:\n"
-                "• Files have been renamed in this session\n"
-                "• The file list hasn't been cleared\n"
-                "• No new files have been loaded"
+                self,
+                "No Undo Available",
+                "Nothing to restore.\n\nThe undo function becomes available when either:\n"
+                "• Files have been renamed in this session, or\n"
+                "• File timestamps were synchronized (and a backup exists)."
             )
             return
         
@@ -2232,12 +2333,59 @@ class FileRenamerApp(QMainWindow):
             if current_filename != original_filename and current_file in self.files:
                 files_to_undo.append((current_file, original_filename))
         
-        if not files_to_undo:
+        if not files_to_undo and not timestamp_backup_exists:
             QMessageBox.information(
-                self, 
-                "No Changes to Undo", 
-                "All files are already using their original names."
+                self,
+                "No Changes to Undo",
+                "All files already have their original names and no timestamp backup was found."
             )
+            return
+        elif not files_to_undo and timestamp_backup_exists:
+            # Offer timestamp-only restore
+            reply = QMessageBox.question(
+                self,
+                "Restore Original Timestamps",
+                "File names are unchanged. Restore original timestamps for these files?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            # Directly run timestamp restore path
+            self.undo_button.setEnabled(False)
+            self.undo_button.setText("⏳ Restoring...")
+            self.rename_button.setEnabled(False)
+            self.select_files_menu_button.setEnabled(False)
+            self.select_folder_menu_button.setEnabled(False)
+            self.clear_files_menu_button.setEnabled(False)
+            errors = []
+            restored_files = []  # No renames
+            if timestamp_backup_exists:
+                from .exif_processor import batch_restore_timestamps
+                try:
+                    ts_success, ts_errors = batch_restore_timestamps(
+                        self.timestamp_backup,
+                        progress_callback=lambda msg: self.status.showMessage(msg, 1000)
+                    )
+                    if ts_success:
+                        self.log(f"✅ Restored timestamps for {len(ts_success)} files")
+                    if ts_errors:
+                        for file_path, err in ts_errors:
+                            errors.append(f"Timestamp restore failed for {os.path.basename(file_path)}: {err}")
+                    self.timestamp_backup = {}
+                except Exception as e:
+                    errors.append(f"Timestamp restore error: {e}")
+            if errors:
+                QMessageBox.warning(self, "Timestamp Restore", "Some timestamp restores failed:\n" + "\n".join(errors))
+            else:
+                QMessageBox.information(self, "Timestamp Restore", "Original timestamps restored successfully.")
+            self.undo_button.setText("↶ Restore Original Names")
+            self.rename_button.setEnabled(True)
+            self.select_files_menu_button.setEnabled(True)
+            self.select_folder_menu_button.setEnabled(True)
+            self.clear_files_menu_button.setEnabled(True)
+            self.status.showMessage("Timestamps restored", 4000)
+            self.update_preview()
             return
         
         # Confirm undo operation
@@ -2296,8 +2444,9 @@ class FileRenamerApp(QMainWindow):
         
         # Restore original timestamps if EXIF sync was used
         if hasattr(self, 'timestamp_backup') and self.timestamp_backup:
-            print("🔄 Restoring original timestamps...")
-            from exif_processor import batch_restore_timestamps
+            self.log("🔄 Restoring original timestamps...")
+            # Use relative import inside package context
+            from .exif_processor import batch_restore_timestamps
             
             try:
                 timestamp_successes, timestamp_errors = batch_restore_timestamps(
@@ -2306,10 +2455,10 @@ class FileRenamerApp(QMainWindow):
                 )
                 
                 if timestamp_successes:
-                    print(f"✅ Restored timestamps for {len(timestamp_successes)} files")
+                    self.log(f"✅ Restored timestamps for {len(timestamp_successes)} files")
                 
                 if timestamp_errors:
-                    print(f"❌ Failed to restore timestamps for {len(timestamp_errors)} files")
+                    self.log(f"❌ Failed to restore timestamps for {len(timestamp_errors)} files")
                     for file_path, error_msg in timestamp_errors:
                         errors.append(f"Timestamp restore failed for {os.path.basename(file_path)}: {error_msg}")
                 
@@ -2317,7 +2466,7 @@ class FileRenamerApp(QMainWindow):
                 self.timestamp_backup = {}
                 
             except Exception as e:
-                print(f"❌ Error during timestamp restore: {e}")
+                self.log(f"❌ Error during timestamp restore: {e}")
                 errors.append(f"Timestamp restore error: {e}")
         
         # CRITICAL FIX: Clear original_filenames tracking after successful undo

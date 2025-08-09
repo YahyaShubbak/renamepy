@@ -1,72 +1,34 @@
 @echo off
-REM File Renamer Starter - Korrigierte Version
-echo Starting File Renamer...
+setlocal ENABLEDELAYEDEXPANSION
+REM ---------------------------------------------------------
+REM  File Renamer Starter (mit optionalem Conda Env)
+REM ---------------------------------------------------------
 
-REM Change to your project directory
-echo Wechsle zu Projektverzeichnis...
-cd /d "C:\Users\yshub\Documents\GitHub\renamepy"
-if %errorlevel% neq 0 (
-    echo FEHLER: Projektverzeichnis nicht gefunden!
-    pause
-    exit /b 1
-)
+set SCRIPT_DIR=%~dp0
+cd /d "%SCRIPT_DIR%" || (echo FEHLER: Projektverzeichnis nicht erreichbar & pause & exit /b 1)
 echo Projektverzeichnis: %cd%
 
-REM Initialize conda for this shell
-echo Initialisiere Conda...
-CALL "%USERPROFILE%\miniconda3\Scripts\activate.bat"
-if %errorlevel% neq 0 (
-    echo FEHLER: Conda nicht gefunden! Versuche alternative Pfade...
-    REM Alternative Pfade für Conda
-    if exist "%USERPROFILE%\anaconda3\Scripts\activate.bat" (
-        CALL "%USERPROFILE%\anaconda3\Scripts\activate.bat"
-    ) else if exist "C:\ProgramData\miniconda3\Scripts\activate.bat" (
-        CALL "C:\ProgramData\miniconda3\Scripts\activate.bat"
-    ) else (
-        echo WARNUNG: Conda nicht gefunden, verwende System-Python
-        goto skip_conda
-    )
+REM Optional: Conda aktivieren (falls vorhanden)
+set _TRY_CONDA=
+for %%A in ("%USERPROFILE%\miniconda3","%USERPROFILE%\anaconda3","C:\ProgramData\miniconda3") do (
+    if exist %%A\Scripts\activate.bat set _TRY_CONDA=%%A\Scripts\activate.bat
+)
+if defined _TRY_CONDA (
+    call "%_TRY_CONDA%" && (call conda activate renamepy 2>nul || echo (Nutze base/env nicht gefunden))
+) else (
+    echo (Conda nicht gefunden - nutze System-Python)
 )
 
-REM Activate your conda environment
-echo Aktiviere renamepy Environment...
-CALL conda activate renamepy
-if %errorlevel% neq 0 (
-    echo WARNUNG: Environment 'renamepy' nicht gefunden, verwende base
-)
+where py >nul 2>nul && (set PY_CMD=py) || (set PY_CMD=python)
+%PY_CMD% --version || (echo FEHLER: Python nicht gefunden & pause & exit /b 1)
 
-:skip_conda
-REM Show current environment
-echo Aktuelle Python-Version:
-python --version
-echo.
+if not exist RenameFiles.py (echo FEHLER: RenameFiles.py fehlt & pause & exit /b 1)
+if not exist modules\ (echo FEHLER: modules Ordner fehlt & pause & exit /b 1)
+if not exist modules\__init__.py (echo Hinweis: __init__.py fehlte - wird angelegt & > modules\__init__.py echo # auto-created)
 
-REM Check if required files exist
-if not exist "RenameFiles.py" (
-    echo FEHLER: RenameFiles.py nicht gefunden!
-    pause
-    exit /b 1
-)
-
-if not exist "modules\" (
-    echo FEHLER: modules Verzeichnis nicht gefunden!
-    pause
-    exit /b 1
-)
-
-REM Run your GUI program
-echo Starte File Renamer GUI...
-python RenameFiles.py
-
-REM Keep window open if there was an error
-if %errorlevel% neq 0 (
-    echo.
-    echo FEHLER beim Starten der Anwendung!
-    echo Fehlercode: %errorlevel%
-    pause
-)
-
-echo.
-echo Anwendung beendet.
-REM Optionally keep window open
-REM pause
+echo Starte GUI...
+%PY_CMD% RenameFiles.py
+set EXITCODE=%ERRORLEVEL%
+echo Fertig (Code %EXITCODE%)
+if %EXITCODE% neq 0 pause
+endlocal

@@ -5,6 +5,12 @@ Constants and utility functions for the RenameFiles application.
 
 import os
 import re
+from .logger_util import get_logger
+log = get_logger()
+try:
+    from .filename_components import build_ordered_components
+except ImportError:
+    from filename_components import build_ordered_components
 
 def natural_sort_key(filename):
     """
@@ -16,56 +22,22 @@ def natural_sort_key(filename):
     
     return [convert(c) for c in re.split(r'(\d+)', filename)]
 
-def get_filename_components_static(date_taken, camera_prefix, additional, camera_model, lens_model, use_camera, use_lens, num, custom_order, date_format="YYYY-MM-DD", use_date=True):
-    """
-    Static version of get_filename_components for use in worker threads.
-    Build filename components according to the selected order.
-    Sequential number is always added at the end.
-    """
-    year = date_taken[:4]
-    month = date_taken[4:6]
-    day = date_taken[6:8]
-    
-    # Format date according to selected format
-    formatted_date = None
-    if use_date and date_taken:
-        if date_format == "YYYY-MM-DD":
-            formatted_date = f"{year}-{month}-{day}"
-        elif date_format == "YYYY_MM_DD":
-            formatted_date = f"{year}_{month}_{day}"
-        elif date_format == "DD-MM-YYYY":
-            formatted_date = f"{day}-{month}-{year}"
-        elif date_format == "DD_MM_YYYY":
-            formatted_date = f"{day}_{month}_{year}"
-        elif date_format == "YYYYMMDD":
-            formatted_date = f"{year}{month}{day}"
-        elif date_format == "MM-DD-YYYY":
-            formatted_date = f"{month}-{day}-{year}"
-        elif date_format == "MM_DD_YYYY":
-            formatted_date = f"{month}_{day}_{year}"
-        else:
-            formatted_date = f"{year}-{month}-{day}"  # Default fallback
-    
-    # Define all possible components
-    components = {
-        "Date": formatted_date if (use_date and formatted_date) else None,
-        "Prefix": camera_prefix if camera_prefix else None,
-        "Additional": additional if additional else None,
-        "Camera": camera_model if (use_camera and camera_model) else None,
-        "Lens": lens_model if (use_lens and lens_model) else None
-    }
-    
-    # Build ordered list based on custom order
-    ordered_parts = []
-    for component_name in custom_order:
-        component_value = components.get(component_name)
-        if component_value:  # Only add non-empty components
-            ordered_parts.append(component_value)
-    
-    # Always add sequential number at the end
-    ordered_parts.append(f"{num:03d}")
-    
-    return ordered_parts
+# remove duplicated get_filename_components_static definition and provide thin wrapper if needed for backward compatibility
+def get_filename_components_static(date_taken, camera_prefix, additional, camera_model, lens_model, use_camera, use_lens, num, custom_order, date_format="YYYY-MM-DD", use_date=True, selected_metadata=None):
+    return build_ordered_components(
+        date_taken=date_taken,
+        camera_prefix=camera_prefix,
+        additional=additional,
+        camera_model=camera_model,
+        lens_model=lens_model,
+        use_camera=use_camera,
+        use_lens=use_lens,
+        number=num,
+        custom_order=custom_order,
+        date_format=date_format,
+        use_date=use_date,
+        selected_metadata=selected_metadata,
+    )
 
 class FileConstants:
     """Constants for file processing"""
@@ -135,7 +107,7 @@ def scan_directory_recursive(directory):
                     full_path = os.path.join(root, file)
                     media_files.append(full_path)
     except Exception as e:
-        print(f"Error scanning directory {directory}: {e}")
+        log.warning(f"Error scanning directory {directory}: {e}")
     
     return media_files
 
@@ -276,7 +248,7 @@ def scan_directory(directory, include_subdirs=False):
                     if os.path.isfile(file_path) and is_media_file(file):
                         media_files.append(file_path)
         except Exception as e:
-            print(f"Error scanning directory {directory}: {e}")
+            log.warning(f"Error scanning directory {directory}: {e}")
         
         return sorted(media_files, key=lambda x: (os.path.dirname(x), natural_sort_key(os.path.basename(x))))
 
@@ -293,7 +265,7 @@ def scan_directory_recursive(directory):
                     full_path = os.path.join(root, file)
                     media_files.append(full_path)
     except Exception as e:
-        print(f"Error scanning directory {directory}: {e}")
+        log.warning(f"Error scanning directory {directory}: {e}")
     
     return sorted(media_files, key=lambda x: (os.path.dirname(x), natural_sort_key(os.path.basename(x))))
 

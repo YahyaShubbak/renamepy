@@ -1,65 +1,63 @@
 @echo off
-REM File Renamer - Debug Version (hält Konsole offen)
-echo ===================================
-echo    FILE RENAMER - DEBUG MODUS
-echo ===================================
+setlocal ENABLEDELAYEDEXPANSION
+REM ---------------------------------------------------------
+REM  FILE RENAMER - DEBUG STARTER
+REM  Verbose diagnostics + optional conda env activation
+REM ---------------------------------------------------------
 
-REM Change to project directory
-echo Wechsle zu: C:\Users\yshub\Documents\GitHub\renamepy
-cd /d "C:\Users\yshub\Documents\GitHub\renamepy"
+set SCRIPT_DIR=%~dp0
+cd /d "%SCRIPT_DIR%" || (echo FEHLER: Script-Verzeichnis nicht erreichbar & pause & exit /b 1)
 
-REM Check if we're in the right directory
-echo Aktuelles Verzeichnis: %cd%
+echo ======================================
+echo   FILE RENAMER - DEBUG MODUS
+echo   Verzeichnis: %SCRIPT_DIR%
+echo ======================================
 
-REM Check if files exist
-if not exist "RenameFiles.py" (
-    echo.
-    echo FEHLER: RenameFiles.py nicht gefunden!
-    echo Bitte überprüfen Sie den Pfad.
-    echo.
-    pause
-    exit /b 1
+REM Try to activate conda env if available (optional)
+set USE_CONDA=1
+if defined CONDA_DEFAULT_ENV (echo (Conda bereits aktiv: %CONDA_DEFAULT_ENV%) ) else (
+    if exist "%USERPROFILE%\miniconda3\Scripts\activate.bat" (
+        call "%USERPROFILE%\miniconda3\Scripts\activate.bat" || set USE_CONDA=
+    ) else if exist "%USERPROFILE%\anaconda3\Scripts\activate.bat" (
+        call "%USERPROFILE%\anaconda3\Scripts\activate.bat" || set USE_CONDA=
+    ) else (
+        set USE_CONDA=
+    )
+    if defined USE_CONDA (
+         call conda activate renamepy 2>nul || echo (Nutze base oder System-Python)
+    )
 )
 
-if not exist "modules\" (
-    echo.
-    echo FEHLER: modules Verzeichnis nicht gefunden!
-    echo.
-    dir
-    echo.
-    pause
-    exit /b 1
+where py >nul 2>nul && (set PY_CMD=py) || (set PY_CMD=python)
+echo Python Version / Pfad:
+%PY_CMD% --version
+%PY_CMD% -c "import sys; print(sys.executable)" 2>nul
+
+echo Dateien prüfen...
+if not exist RenameFiles.py (echo FEHLER: RenameFiles.py fehlt & pause & exit /b 1)
+if not exist modules\ (echo FEHLER: modules Ordner fehlt & dir & pause & exit /b 1)
+if not exist modules\__init__.py (echo Hinweis: __init__.py fehlte - wird angelegt & > modules\__init__.py echo # auto-created)
+
+echo Inhaltsübersicht:
+dir /b RenameFiles.py
+dir /a-d /b modules | find /v "__pycache__"
+
+echo ======================================
+echo   START
+echo ======================================
+set START_TS=%time%
+%PY_CMD% RenameFiles.py
+set EXITCODE=%ERRORLEVEL%
+echo ======================================
+echo   ENDE (Code %EXITCODE%)
+echo   Startzeit : %START_TS%
+echo   Endzeit   : %time%
+echo ======================================
+
+if %EXITCODE% neq 0 (
+    echo Stacktrace (falls vorhanden):
+    REM (Trace wird bereits im Programm ausgegeben)
 )
-
-REM Show Python info
-echo.
-echo Python Informationen:
-python --version
-echo Python Pfad: 
-python -c "import sys; print(sys.executable)"
-
-REM List important files
-echo.
-echo Wichtige Dateien:
-dir RenameFiles.py
-dir modules\
-
-REM Start the application
-echo.
-echo ===================================
-echo    STARTE FILE RENAMER
-echo ===================================
-echo.
-
-python RenameFiles.py
-
-echo.
-echo ===================================
-echo    ANWENDUNG BEENDET
-echo ===================================
-echo Exit Code: %errorlevel%
-
-REM Always keep window open for debugging
-echo.
-echo Konsole bleibt für Debugging offen...
+echo Druecken Sie eine Taste zum Schliessen...
 pause
+endlocal

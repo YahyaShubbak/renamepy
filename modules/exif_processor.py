@@ -7,6 +7,8 @@ This module provides the exact same functionality as the original RenameFiles.py
 import os
 import time
 import threading
+from .logger_util import get_logger
+log = get_logger()
 
 # EXIF processing imports - exact same as original
 try:
@@ -56,7 +58,7 @@ def get_cached_exif_data(file_path, method, exiftool_path=None):
         
         return result
     except Exception as e:
-        print(f"Cached EXIF extraction failed for {file_path}: {e}")
+        log.debug(f"Cached EXIF extraction failed for {file_path}: {e}")
         return None, None, None
 
 def get_selective_cached_exif_data(file_path, method, exiftool_path=None, need_date=True, need_camera=False, need_lens=False):
@@ -81,7 +83,7 @@ def get_selective_cached_exif_data(file_path, method, exiftool_path=None, need_d
         
         # Verify file exists before processing
         if not os.path.exists(normalized_path):
-            print(f"File not found: {normalized_path}")
+            log.warning(f"File not found: {normalized_path}")
             return None, None, None
         
         # Create cache key based on file path, modification time, method AND requested fields
@@ -104,7 +106,7 @@ def get_selective_cached_exif_data(file_path, method, exiftool_path=None, need_d
         
         return result
     except Exception as e:
-        print(f"Error in get_selective_cached_exif_data for {file_path}: {e}")
+        log.debug(f"Error in get_selective_cached_exif_data for {file_path}: {e}")
         return None, None, None
 
 def extract_exif_fields(image_path, method, exiftool_path=None):
@@ -139,7 +141,7 @@ def extract_selective_exif_fields(image_path, method, exiftool_path=None, need_d
     
     # Verify file exists
     if not os.path.exists(normalized_path):
-        print(f"extract_selective_exif_fields: File not found: {normalized_path}")
+        log.warning(f"extract_selective_exif_fields: File not found: {normalized_path}")
         return None, None, None
     
     max_retries = 2  # Reduced retries for batch processing
@@ -223,7 +225,7 @@ def get_exiftool_metadata_shared(image_path, exiftool_path=None):
     
     # Verify file exists
     if not os.path.exists(normalized_path):
-        print(f"get_exiftool_metadata_shared: File not found: {normalized_path}")
+        log.warning(f"get_exiftool_metadata_shared: File not found: {normalized_path}")
         return {}
     
     # Auto-detect ExifTool path if not provided
@@ -245,10 +247,10 @@ def get_exiftool_metadata_shared(image_path, exiftool_path=None):
             # Create new instance
             if exiftool_path and os.path.exists(exiftool_path):
                 _global_exiftool_instance = exiftool.ExifToolHelper(executable=exiftool_path)
-                print(f"🔧 Created ExifTool instance with: {exiftool_path}")
+                log.info(f"Created ExifTool instance with: {exiftool_path}")
             else:
                 _global_exiftool_instance = exiftool.ExifToolHelper()
-                print("🔧 Created default ExifTool instance")
+                log.info("Created default ExifTool instance")
             
             _global_exiftool_path = exiftool_path
             
@@ -261,7 +263,7 @@ def get_exiftool_metadata_shared(image_path, exiftool_path=None):
         
     except Exception as e:
         # If the shared instance fails, fall back to a temporary instance
-        print(f"Shared ExifTool instance failed, using temporary instance: {e}")
+        log.warning(f"Shared ExifTool instance failed, using temporary instance: {e}")
         try:
             if exiftool_path and os.path.exists(exiftool_path):
                 with exiftool.ExifToolHelper(executable=exiftool_path) as et:
@@ -270,7 +272,7 @@ def get_exiftool_metadata_shared(image_path, exiftool_path=None):
                 with exiftool.ExifToolHelper() as et:
                     return et.get_metadata([normalized_path])[0]
         except Exception as e2:
-            print(f"Temporary ExifTool instance also failed: {e2}")
+            log.error(f"Temporary ExifTool instance also failed: {e2}")
             return {}
 
 def cleanup_global_exiftool():
@@ -294,7 +296,7 @@ def extract_exif_fields_with_retry(image_path, method, exiftool_path=None, max_r
     
     # Verify file exists
     if not os.path.exists(normalized_path):
-        print(f"extract_exif_fields_with_retry: File not found: {normalized_path}")
+        log.warning(f"extract_exif_fields_with_retry: File not found: {normalized_path}")
         return None, None, None
     
     for attempt in range(max_retries):
@@ -349,7 +351,7 @@ def extract_exif_fields_with_retry(image_path, method, exiftool_path=None, max_r
                 
         except Exception as e:
             if attempt == max_retries - 1:
-                print(f"EXIF extraction failed after {max_retries} attempts: {e}")
+                log.error(f"EXIF extraction failed after {max_retries} attempts: {e}")
                 return None, None, None
             else:
                 time.sleep(0.1)
@@ -388,7 +390,7 @@ def extract_image_number(image_path, method, exiftool_path=None):
             if image_number:
                 return str(image_number).zfill(3)
     except Exception as e:
-        print(f"Failed to extract image number: {e}")
+        log.debug(f"Failed to extract image number: {e}")
     
     return None
 
@@ -408,7 +410,7 @@ def get_file_timestamp(image_path, method, exiftool_path=None):
         return time.strftime("%Y%m%d", time.localtime(mtime))
         
     except Exception as e:
-        print(f"Failed to get file timestamp: {e}")
+        log.debug(f"Failed to get file timestamp: {e}")
         return None
 
 def get_safe_target_path(original_path, new_name):
@@ -592,7 +594,7 @@ def get_all_metadata(file_path, method, exiftool_path=None):
         
         return metadata
     except Exception as e:
-        print(f"Error extracting metadata from {file_path}: {e}")
+        log.error(f"Error extracting metadata from {file_path}: {e}")
         return {}
 
 def find_exiftool_path():
@@ -618,13 +620,13 @@ def find_exiftool_path():
     
     for path in possible_paths:
         if os.path.exists(path):
-            print(f"🔍 ExifTool found at: {path}")
+            log.debug(f"ExifTool located at: {path}")
             return path
     
-    print("⚠️  ExifTool not found in any expected location")
+    log.warning("ExifTool not found in expected locations")
     return None
 
-def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps=None):
+def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps=None, options=None, preexif_dt=None):
     """
     Synchronize EXIF DateTimeOriginal to file creation/modification date.
     
@@ -636,7 +638,8 @@ def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps
     Returns:
         tuple: (success: bool, message: str, original_times: dict or None)
     """
-    if not EXIFTOOL_AVAILABLE:
+    if not EXIFTOOL_AVAILABLE and not (options and options.get('use_custom')) and preexif_dt is None:
+        # Allow custom date OR externally provided EXIF datetime without local ExifTool
         return False, "ExifTool not available", None
     
     if not os.path.exists(file_path):
@@ -648,7 +651,7 @@ def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps
         if not exiftool_path:
             return False, "ExifTool executable not found", None
     
-    print(f"🔧 Using ExifTool: {exiftool_path}")
+    log.info(f"Using ExifTool executable: {exiftool_path}")
     
     try:
         # Get original file timestamps for backup
@@ -702,72 +705,96 @@ def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps
         
         except Exception as e:
             # If Windows API fails, we still have the basic timestamps
-            print(f"Warning: Could not get Windows creation time: {e}")
+            log.debug(f"Could not get Windows creation time: {e}")
         
         # Store in backup if provided
         if backup_timestamps is not None:
             backup_timestamps[file_path] = original_times
         
-        # Extract EXIF DateTimeOriginal using ExifTool
-        try:
-            # Use ExifTool to get metadata
-            if exiftool_path:
-                with exiftool.ExifToolHelper(executable=exiftool_path) as et:
-                    meta = et.get_metadata(file_path)[0]
-            else:
-                with exiftool.ExifToolHelper() as et:
-                    meta = et.get_metadata(file_path)[0]
-            
-            # Try multiple possible EXIF date fields
-            exif_date = None
-            date_fields = [
-                'EXIF:DateTimeOriginal',
-                'EXIF:DateTime', 
-                'EXIF:CreateDate',
-                'DateTimeOriginal',
-                'DateTime',
-                'CreateDate'
-            ]
-            
-            for field in date_fields:
-                if field in meta and meta[field]:
-                    exif_date = meta[field]
-                    break
-            
-            if not exif_date:
-                return False, "No EXIF date found in file", original_times
-            
-            # Parse EXIF date (format: "YYYY:MM:DD HH:MM:SS")
+        # Determine target datetime
+        dt = None
+        if options and options.get('use_custom') and options.get('custom_dt'):
+            dt = options['custom_dt']
+        elif preexif_dt is not None:
+            # Pre-fetched raw EXIF datetime string (already from allowed fields)
             try:
-                import datetime
-                # Handle both with and without time component
-                if ' ' in str(exif_date):
-                    dt = datetime.datetime.strptime(str(exif_date), '%Y:%m:%d %H:%M:%S')
+                import datetime as _dt
+                value = str(preexif_dt)
+                if ' ' in value:
+                    dt = _dt.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
                 else:
-                    dt = datetime.datetime.strptime(str(exif_date), '%Y:%m:%d')
-                
-                # Convert to timestamp
-                new_timestamp = dt.timestamp()
-                
-                # FORCE SYNC - Always update timestamps to ensure File:FileCreateDate is correct
-                print(f"🔧 Force syncing timestamps to EXIF date...")
-                print(f"📊 Current mtime: {datetime.datetime.fromtimestamp(original_times['mtime'])}")
-                print(f"📊 Target EXIF date: {dt}")
-                print(f"📊 Time difference: {abs(original_times['mtime'] - new_timestamp):.2f} seconds")
-                
-                # Apply Ultimate Windows Timestamp Sync
-                success_count = _apply_ultimate_timestamp_sync(file_path, new_timestamp, dt)
-                
-                if success_count > 0:
-                    return True, f"Successfully synced date from EXIF using {success_count} methods: {dt.strftime('%Y-%m-%d %H:%M:%S')}", original_times
+                    dt = _dt.datetime.strptime(value, '%Y:%m:%d')
+            except Exception:
+                return False, "Invalid pre-extracted EXIF date", original_times
+        else:
+            # Extract EXIF DateTimeOriginal using ExifTool (fallback path)
+            try:
+                if not EXIFTOOL_AVAILABLE:
+                    return False, "EXIF extraction not available", original_times
+                helper_exec = exiftool_path if exiftool_path else None
+                with exiftool.ExifToolHelper(executable=helper_exec) as et:
+                    meta = et.get_metadata(file_path)[0]
+                exif_date = None
+                for field in ['EXIF:DateTimeOriginal','EXIF:DateTime','EXIF:CreateDate','DateTimeOriginal','DateTime','CreateDate']:
+                    if field in meta and meta[field]:
+                        exif_date = meta[field]
+                        break
+                if not exif_date:
+                    return False, "No EXIF date found in file", original_times
+                import datetime as _dt
+                value = str(exif_date)
+                if ' ' in value:
+                    dt = _dt.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
                 else:
-                    return False, "All timestamp sync methods failed", original_times
-                
-            except ValueError as e:
-                return False, f"Could not parse EXIF date '{exif_date}': {e}", original_times
-        
+                    dt = _dt.datetime.strptime(value, '%Y:%m:%d')
+            except Exception as e:
+                return False, f"Error accessing EXIF data: {e}", original_times
+        if not dt:
+            return False, "No target date/time determined", original_times
+        new_timestamp = dt.timestamp()
+        # Selective update logic
+        set_creation = True
+        set_mod = True
+        set_access = True
+        if options:
+            set_creation = options.get('creation', True)
+            set_mod = options.get('modification', True)
+            set_access = options.get('access', True)
+        try:
+            # Always backup performed above. Now update selected fields.
+            # Basic: use os.utime for access/modification
+            atime = original_times['atime'] if not set_access else new_timestamp
+            mtime = original_times['mtime'] if not set_mod else new_timestamp
+            os.utime(file_path, (atime, mtime))
+            # Creation time (Windows) via API only if requested
+            creation_ok = True
+            if set_creation and os.name == 'nt':
+                try:
+                    import ctypes
+                    from ctypes import wintypes
+                    EPOCH_AS_FILETIME = 116444736000000000
+                    ts_100ns = int((new_timestamp * 10000000) + EPOCH_AS_FILETIME)
+                    class FILETIME(ctypes.Structure):
+                        _fields_ = [("dwLowDateTime", wintypes.DWORD),("dwHighDateTime", wintypes.DWORD)]
+                    ft = FILETIME()
+                    ft.dwLowDateTime = ts_100ns & 0xFFFFFFFF
+                    ft.dwHighDateTime = ts_100ns >> 32
+                    k32 = ctypes.windll.kernel32
+                    handle = k32.CreateFileW(
+                        file_path,0x40000000,0x00000001|0x00000002,None,3,0x80,None
+                    )
+                    if handle != -1:
+                        if not k32.SetFileTime(handle, ctypes.byref(ft), None if not set_access else ctypes.byref(ft), None if not set_mod else ctypes.byref(ft)):
+                            creation_ok = False
+                        k32.CloseHandle(handle)
+                    else:
+                        creation_ok = False
+                except Exception as e:
+                    log.debug(f"Creation time set failed: {e}")
+                    creation_ok = False
+            return True, f"Timestamps updated ({'C' if set_creation else ''}{'M' if set_mod else ''}{'A' if set_access else ''}) -> {dt.strftime('%Y-%m-%d %H:%M:%S')}", original_times
         except Exception as e:
-            return False, f"Error accessing EXIF data: {e}", original_times
+            return False, f"Failed to set timestamps: {e}", original_times
                 
     except Exception as e:
         return False, f"Error syncing date: {e}", None
@@ -776,10 +803,10 @@ def _set_file_timestamp_method1(file_path, timestamp):
     """Method 1: Standard os.utime"""
     try:
         os.utime(file_path, (timestamp, timestamp))
-        print("   ✅ Method 1: os.utime successful")
+        log.debug("Method 1 (os.utime) successful")
         return True
     except Exception as e:
-        print(f"   ❌ Method 1: os.utime failed: {e}")
+        log.debug(f"Method 1 (os.utime) failed: {e}")
         return False
 
 def _set_file_timestamp_method2(file_path, timestamp):
@@ -828,19 +855,19 @@ def _set_file_timestamp_method2(file_path, timestamp):
             kernel32.CloseHandle(handle)
             
             if result:
-                print("   ✅ Method 2: Windows SetFileTime successful")
+                log.debug("Method 2 (SetFileTime) successful")
                 return True
             else:
                 error_code = kernel32.GetLastError()
-                print(f"   ❌ Method 2: SetFileTime failed, Error: {error_code}")
+                log.debug(f"Method 2 (SetFileTime) failed, Error: {error_code}")
                 return False
         else:
             error_code = kernel32.GetLastError()
-            print(f"   ❌ Method 2: File open failed, Error: {error_code}")
+            log.debug(f"Method 2 file open failed, Error: {error_code}")
             return False
     
     except Exception as e:
-        print(f"   ❌ Method 2: Windows API failed: {e}")
+        log.debug(f"Method 2 (Windows API) exception: {e}")
         return False
 
 def _set_file_timestamp_method3(file_path, dt):
@@ -870,14 +897,14 @@ def _set_file_timestamp_method3(file_path, dt):
         ], capture_output=True, text=True, timeout=15)
         
         if result.returncode == 0:
-            print("   ✅ Method 3: PowerShell successful")
+            log.debug("Method 3 (PowerShell) successful")
             return True
         else:
-            print(f"   ❌ Method 3: PowerShell failed: {result.stderr.strip()}")
+            log.debug(f"Method 3 (PowerShell) failed: {result.stderr.strip()}")
             return False
     
     except Exception as e:
-        print(f"   ❌ Method 3: PowerShell failed: {e}")
+        log.debug(f"Method 3 (PowerShell) exception: {e}")
         return False
 
 def _apply_ultimate_timestamp_sync(file_path, new_timestamp, dt):
@@ -893,8 +920,8 @@ def _apply_ultimate_timestamp_sync(file_path, new_timestamp, dt):
         int: Number of successful methods
     """
     success_count = 0
-    print(f"🔧 Ultimate timestamp sync for: {os.path.basename(file_path)}")
-    print(f"📅 Target date: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
+    log.info(f"Ultimate timestamp sync for: {os.path.basename(file_path)}")
+    log.debug(f"Target date: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
     
     # Method 1: Standard os.utime
     if _set_file_timestamp_method1(file_path, new_timestamp):
@@ -914,160 +941,12 @@ def _apply_ultimate_timestamp_sync(file_path, new_timestamp, dt):
             import ctypes
             kernel32 = ctypes.windll.kernel32
             kernel32.FlushFileBuffers(-1)  # Flush all system buffers
-            print("   ✅ Method 4: System flush completed")
+            log.debug("Method 4 (FlushFileBuffers) successful")
     except:
         pass
     
-    print(f"📊 Result: {success_count}/3 methods successful")
+    log.info(f"Timestamp sync result: {success_count}/3 methods succeeded")
     return success_count
-
-def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps=None):
-    """
-    Synchronize EXIF DateTimeOriginal to file creation/modification date.
-    
-    Args:
-        file_path: Path to the media file
-        exiftool_path: Path to ExifTool executable
-        backup_timestamps: Dictionary to store original timestamps for undo
-        
-    Returns:
-        tuple: (success: bool, message: str, original_times: dict or None)
-    """
-    if not EXIFTOOL_AVAILABLE:
-        return False, "ExifTool not available", None
-    
-    if not os.path.exists(file_path):
-        return False, f"File not found: {file_path}", None
-    
-    # Auto-detect ExifTool path if not provided
-    if not exiftool_path:
-        exiftool_path = find_exiftool_path()
-        if not exiftool_path:
-            return False, "ExifTool executable not found", None
-    
-    print(f"🔧 Using ExifTool: {exiftool_path}")
-    
-    try:
-        # Get original file timestamps for backup
-        stat_info = os.stat(file_path)
-        original_times = {
-            'atime': stat_info.st_atime,    # Access time
-            'mtime': stat_info.st_mtime,    # Modification time
-            'ctime': stat_info.st_ctime     # Creation time (Windows) / Status change time (Unix)
-        }
-        
-        # On Windows, get the real creation time using Windows API
-        try:
-            if os.name == 'nt':  # Windows
-                import ctypes
-                from ctypes import wintypes
-                
-                # Create FILETIME structure
-                class FILETIME(ctypes.Structure):
-                    _fields_ = [("dwLowDateTime", wintypes.DWORD),
-                               ("dwHighDateTime", wintypes.DWORD)]
-                
-                # Open file to get creation time
-                kernel32 = ctypes.windll.kernel32
-                handle = kernel32.CreateFileW(
-                    file_path,
-                    0x80000000,  # GENERIC_READ
-                    0x00000001 | 0x00000002,  # FILE_SHARE_READ | FILE_SHARE_WRITE
-                    None,
-                    3,  # OPEN_EXISTING
-                    0x80,  # FILE_ATTRIBUTE_NORMAL
-                    None
-                )
-                
-                if handle != -1:  # INVALID_HANDLE_VALUE
-                    creation_time = FILETIME()
-                    access_time = FILETIME()
-                    write_time = FILETIME()
-                    
-                    # Get file times
-                    if kernel32.GetFileTime(handle, ctypes.byref(creation_time), 
-                                          ctypes.byref(access_time), ctypes.byref(write_time)):
-                        # Convert Windows FILETIME to Unix timestamp
-                        EPOCH_AS_FILETIME = 116444736000000000
-                        creation_100ns = (creation_time.dwHighDateTime << 32) + creation_time.dwLowDateTime
-                        creation_timestamp = (creation_100ns - EPOCH_AS_FILETIME) / 10000000.0
-                        
-                        # Store the real Windows creation time
-                        original_times['windows_creation_time'] = creation_timestamp
-                    
-                    kernel32.CloseHandle(handle)
-        
-        except Exception as e:
-            # If Windows API fails, we still have the basic timestamps
-            print(f"Warning: Could not get Windows creation time: {e}")
-        
-        # Store in backup if provided
-        if backup_timestamps is not None:
-            backup_timestamps[file_path] = original_times
-        
-        # Extract EXIF DateTimeOriginal using ExifTool
-        try:
-            # Use ExifTool to get metadata
-            if exiftool_path:
-                with exiftool.ExifToolHelper(executable=exiftool_path) as et:
-                    meta = et.get_metadata(file_path)[0]
-            else:
-                with exiftool.ExifToolHelper() as et:
-                    meta = et.get_metadata(file_path)[0]
-            
-            # Try multiple possible EXIF date fields
-            exif_date = None
-            date_fields = [
-                'EXIF:DateTimeOriginal',
-                'EXIF:DateTime', 
-                'EXIF:CreateDate',
-                'DateTimeOriginal',
-                'DateTime',
-                'CreateDate'
-            ]
-            
-            for field in date_fields:
-                if field in meta and meta[field]:
-                    exif_date = meta[field]
-                    break
-            
-            if not exif_date:
-                return False, "No EXIF date found in file", original_times
-            
-            # Parse EXIF date (format: "YYYY:MM:DD HH:MM:SS")
-            try:
-                import datetime
-                # Handle both with and without time component
-                if ' ' in str(exif_date):
-                    dt = datetime.datetime.strptime(str(exif_date), '%Y:%m:%d %H:%M:%S')
-                else:
-                    dt = datetime.datetime.strptime(str(exif_date), '%Y:%m:%d')
-                
-                # Convert to timestamp
-                new_timestamp = dt.timestamp()
-                
-                # FORCE SYNC - Always update timestamps to ensure File:FileCreateDate is correct
-                print(f"🔧 Force syncing timestamps to EXIF date...")
-                print(f"📊 Current mtime: {datetime.datetime.fromtimestamp(original_times['mtime'])}")
-                print(f"📊 Target EXIF date: {dt}")
-                print(f"📊 Time difference: {abs(original_times['mtime'] - new_timestamp):.2f} seconds")
-                
-                # Apply Ultimate Windows Timestamp Sync
-                success_count = _apply_ultimate_timestamp_sync(file_path, new_timestamp, dt)
-                
-                if success_count > 0:
-                    return True, f"Successfully synced date from EXIF using {success_count} methods: {dt.strftime('%Y-%m-%d %H:%M:%S')}", original_times
-                else:
-                    return False, "All timestamp sync methods failed", original_times
-                
-            except ValueError as e:
-                return False, f"Could not parse EXIF date '{exif_date}': {e}", original_times
-        
-        except Exception as e:
-            return False, f"Error accessing EXIF data: {e}", original_times
-                
-    except Exception as e:
-        return False, f"Error syncing date: {e}", None
 
 def _restore_windows_creation_time(file_path, creation_timestamp):
     """Restore Windows creation time using Windows API"""
@@ -1139,14 +1018,14 @@ def restore_file_timestamps(file_path, original_times):
             if creation_timestamp:
                 success = _restore_windows_creation_time(file_path, creation_timestamp)
                 if not success:
-                    print(f"Warning: Could not restore creation time for {file_path}")
+                    log.debug(f"Could not restore creation time for {file_path}")
         
         return True, "File timestamps restored successfully"
         
     except Exception as e:
         return False, f"Error restoring timestamps: {e}"
 
-def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None):
+def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None, options=None):
     """
     Batch synchronize EXIF dates to file dates for multiple files.
     
@@ -1161,20 +1040,53 @@ def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None
     successes = []
     errors = []
     backup_data = {}
-    
+
+    # Fast path: prefetch all EXIF datetimes in one ExifTool invocation if possible
+    prefetch_map = {}
+    use_custom = options and options.get('use_custom')
+    can_prefetch = EXIFTOOL_AVAILABLE and not use_custom and file_paths
+    if can_prefetch:
+        try:
+            helper_exec = exiftool_path if exiftool_path else None
+            with exiftool.ExifToolHelper(executable=helper_exec) as et:
+                # Chunk to avoid extremely long command lines (safety)
+                CHUNK = 100
+                for start in range(0, len(file_paths), CHUNK):
+                    subset = file_paths[start:start+CHUNK]
+                    metas = et.get_metadata(subset)
+                    for meta in metas:
+                        # meta['SourceFile'] usually contains absolute path
+                        fpath = meta.get('SourceFile')
+                        if not fpath:
+                            continue
+                        dt_value = None
+                        for field in ['EXIF:DateTimeOriginal','EXIF:DateTime','EXIF:CreateDate','DateTimeOriginal','DateTime','CreateDate']:
+                            if field in meta and meta[field]:
+                                dt_value = meta[field]
+                                break
+                        if dt_value:
+                            prefetch_map[fpath] = dt_value
+            if progress_callback:
+                progress_callback(f"Prefetched EXIF datetimes for {len(prefetch_map)} files")
+        except Exception as e:
+            if progress_callback:
+                progress_callback(f"Prefetch failed, falling back: {e}")
+            prefetch_map = {}
+
     for i, file_path in enumerate(file_paths):
         if progress_callback:
             progress_callback(f"Processing {i+1}/{len(file_paths)}: {os.path.basename(file_path)}")
-        
+
+        pre_dt = prefetch_map.get(file_path)
         success, message, original_times = sync_exif_date_to_file_date(
-            file_path, exiftool_path, backup_data
+            file_path, exiftool_path, backup_data, options=options, preexif_dt=pre_dt
         )
-        
+
         if success:
             successes.append((file_path, message))
         else:
             errors.append((file_path, message))
-    
+
     return successes, errors, backup_data
 
 def batch_restore_timestamps(backup_data, progress_callback=None):
