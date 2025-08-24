@@ -7,6 +7,9 @@ This module provides the exact same functionality as the original RenameFiles.py
 import os
 import time
 import threading
+import subprocess
+import glob
+import shutil
 from .logger_util import get_logger
 log = get_logger()
 
@@ -604,25 +607,65 @@ def find_exiftool_path():
     Returns:
         str: Path to ExifTool executable or None if not found
     """
-    # Possible ExifTool locations
-    possible_paths = [
-        # Local project ExifTool
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "exiftool-13.33_64", "exiftool(-k).exe"),
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "exiftool-13.32_64", "exiftool.exe"),
-        # System ExifTool
-        "exiftool.exe",
-        "exiftool",
-        # Common Windows locations
-        "C:\\exiftool\\exiftool.exe",
-        "C:\\Program Files\\exiftool\\exiftool.exe",
-        "C:\\Program Files (x86)\\exiftool\\exiftool.exe"
+    script_dir = os.path.dirname(os.path.dirname(__file__))
+
+    def verify_exiftool(executable_path):
+        """Quick smoke test to verify exiftool executable works and returns a version string.
+
+        Returns version string on success, None on failure.
+        """
+        try:
+            if not os.path.exists(executable_path):
+                return None
+            # Try to run the binary with -ver (short, safe)
+            proc = subprocess.run([executable_path, "-ver"], capture_output=True, text=True, timeout=2)
+            if proc.returncode == 0 and proc.stdout:
+                ver = proc.stdout.strip().splitlines()[0].strip()
+                log.debug(f"verify_exiftool: found version {ver} at {executable_path}")
+                return ver
+            return None
+        except Exception as e:
+            log.debug(f"verify_exiftool failed for {executable_path}: {e}")
+            return None
+
+    # 1) Search for project-local exiftool folders with flexible names (exiftool-*)
+    for d in glob.glob(os.path.join(script_dir, "exiftool*")):
+        if os.path.isdir(d):
+            for fname in ("exiftool(-k).exe", "exiftool.exe", "exiftool"):
+                candidate = os.path.join(d, fname)
+                if os.path.exists(candidate):
+                    if verify_exiftool(candidate):
+                        log.debug(f"ExifTool located at: {candidate}")
+                        return candidate
+
+    # 2) Check a few legacy project paths explicitly (backwards compatibility)
+    legacy_paths = [
+        os.path.join(script_dir, "exiftool-13.33_64", "exiftool(-k).exe"),
+        os.path.join(script_dir, "exiftool-13.32_64", "exiftool.exe"),
     ]
-    
-    for path in possible_paths:
-        if os.path.exists(path):
+    for path in legacy_paths:
+        if os.path.exists(path) and verify_exiftool(path):
             log.debug(f"ExifTool located at: {path}")
             return path
-    
+
+    # 3) Check system PATH using shutil.which
+    for name in ("exiftool.exe", "exiftool"):
+        which_path = shutil.which(name)
+        if which_path and verify_exiftool(which_path):
+            log.debug(f"ExifTool located on PATH: {which_path}")
+            return which_path
+
+    # 4) Common Windows locations
+    common_windows = [
+        "C:\\exiftool\\exiftool.exe",
+        "C:\\Program Files\\exiftool\\exiftool.exe",
+        "C:\\Program Files (x86)\\exiftool\\exiftool.exe",
+    ]
+    for path in common_windows:
+        if os.path.exists(path) and verify_exiftool(path):
+            log.debug(f"ExifTool located at: {path}")
+            return path
+
     log.warning("ExifTool not found in expected locations")
     return None
 

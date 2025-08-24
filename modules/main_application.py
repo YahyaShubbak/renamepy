@@ -850,19 +850,15 @@ class FileRenamerApp(QMainWindow):
     
     def get_exiftool_path(self):
         """Simple ExifTool path detection for the modular version"""
-        script_dir = os.path.dirname(os.path.dirname(__file__))  # Go up from modules to main dir
-        
-        # Check for exiftool-13.33_64 directory
-        exiftool_path = os.path.join(script_dir, "exiftool-13.33_64", "exiftool(-k).exe")
-        if os.path.exists(exiftool_path):
-            return exiftool_path
-            
-        # Fallback: check for older version
-        exiftool_path = os.path.join(script_dir, "exiftool-13.32_64", "exiftool.exe")
-        if os.path.exists(exiftool_path):
-            return exiftool_path
-            
-        return None
+        # Delegate to exif_processor.find_exiftool_path which includes flexible folder search
+        try:
+            from .exif_processor import find_exiftool_path
+            path = find_exiftool_path()
+            # Optionally log version if available using subprocess - handled inside find_exiftool_path verify
+            return path
+        except Exception as e:
+            self.log(f"Error locating ExifTool: {e}")
+            return None
     
     # Event handlers implementation
     def select_files(self):
