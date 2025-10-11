@@ -45,235 +45,11 @@ from .ui_components import InteractivePreviewWidget
 from .theme_manager import ThemeManager
 from .filename_components import build_ordered_components
 from .timestamp_options_dialog import TimestampSyncOptionsDialog
+from .dialogs import ExifToolWarningDialog
+from .handlers import SimpleExifHandler, SimpleFilenameGenerator, extract_image_number
+from .ui import FileListManager, PreviewGenerator
+from .utils.ui_helpers import calculate_stats, is_video_file as is_video_file_util
 
-class ExifToolWarningDialog(QDialog):
-    """Warning dialog shown when ExifTool is not installed"""
-    
-    def __init__(self, parent=None, current_method=None):
-        super().__init__(parent)
-        self.setWindowTitle("ExifTool Not Found - Installation Recommended")
-        self.setModal(True)
-        self.resize(600, 450)
-        
-        layout = QVBoxLayout(self)
-        
-        # Header with warning icon
-        header_layout = QHBoxLayout()
-        warning_icon = QLabel()
-        warning_icon.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning).pixmap(48, 48))
-        
-        header_text = QLabel("ExifTool Not Found")
-        header_text.setStyleSheet("font-size: 18px; font-weight: bold; color: #d83b01;")
-        
-        header_layout.addWidget(warning_icon)
-        header_layout.addWidget(header_text)
-        header_layout.addStretch()
-        layout.addLayout(header_layout)
-        
-        # Dynamic fallback text based on current method
-        if current_method == "pillow":
-            fallback_text = "<b>Current fallback:</b> Using Pillow (limited RAW support, may miss some metadata)"
-            continue_button_text = "Continue with Pillow"
-        else:
-            fallback_text = "<b>Current status:</b> No EXIF support available (basic file operations only)"
-            continue_button_text = "Continue without EXIF"
-        
-        # Main explanation text
-        info_text = QLabel(f"""
-<b>What is ExifTool?</b><br>
-ExifTool is a powerful library for reading and writing metadata in image and video files.
-
-<b>Why ExifTool is recommended:</b><br>
-• <b>Complete RAW support:</b> Works with all camera RAW formats<br>
-• <b>Video metadata:</b> Extracts date, camera, and technical data from videos<br>
-• <b>More metadata:</b> Extracts camera, lens, and date information more reliably<br>
-
-{fallback_text}
-
-<b>How to install ExifTool:</b><br>
-1. Download from: <a href="https://exiftool.org/install.html">https://exiftool.org/install.html</a><br>
-2. Extract the COMPLETE ZIP archive to your program folder<br>
-3. Restart this application<br>
-        """)
-        info_text.setWordWrap(True)
-        info_text.setOpenExternalLinks(True)
-        info_text.setStyleSheet("font-size: 11px; line-height: 1.4;")
-        
-        layout.addWidget(info_text)
-        
-        # Buttons
-        button_layout = QHBoxLayout()
-        
-        self.dont_show_again = QCheckBox("Don't show this warning again")
-        button_layout.addWidget(self.dont_show_again)
-        button_layout.addStretch()
-        
-        install_button = QPushButton("Open Download Page")
-        install_button.clicked.connect(self.open_download_page)
-        
-        continue_button = QPushButton(continue_button_text)
-        continue_button.clicked.connect(self.accept)
-        
-        button_layout.addWidget(install_button)
-        button_layout.addWidget(continue_button)
-        layout.addLayout(button_layout)
-    
-    def open_download_page(self):
-        """Open the ExifTool download page in default browser"""
-        webbrowser.open("https://exiftool.org/install.html")
-        self.accept()
-
-# Simple replacement functions for missing dependencies
-def calculate_stats(files):
-    """Calculate simple file statistics"""
-    total = len(files)
-    
-    # Count different file types
-    jpeg_count = sum(1 for f in files if f.lower().endswith(('.jpg', '.jpeg')))
-    raw_count = sum(1 for f in files if any(f.lower().endswith(ext) for ext in ['.cr2', '.nef', '.arw', '.orf', '.rw2', '.dng', '.raw', '.sr2', '.pef', '.raf', '.3fr', '.erf', '.kdc', '.mos', '.nrw', '.srw', '.x3f']))
-    other_images = sum(1 for f in files if any(f.lower().endswith(ext) for ext in ['.png', '.bmp', '.tiff', '.tif', '.gif']))
-    total_images = jpeg_count + raw_count + other_images
-    videos = total - total_images
-    
-    return {
-        'total_files': total,
-        'total_images': total_images,
-        'jpeg_count': jpeg_count,
-        'raw_count': raw_count,
-        'video_count': videos,
-        'total': total,
-        'images': total_images, 
-        'videos': videos
-    }
-
-class SimpleExifHandler:
-    """Simple EXIF handler using original extraction functions."""
-    def __init__(self):
-        self.current_method = "exiftool" if EXIFTOOL_AVAILABLE else ("pillow" if PIL_AVAILABLE else None)
-        self.exiftool_path = self._find_exiftool_path()
-
-    def _find_exiftool_path(self):
-        if not EXIFTOOL_AVAILABLE:
-            return None
-        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        candidates = [
-            os.path.join(script_dir, "exiftool-13.33_64", "exiftool.exe"),
-            os.path.join(script_dir, "exiftool-13.33_64", "exiftool(-k).exe"),
-            os.path.join(script_dir, "exiftool-13.32_64", "exiftool.exe"),
-            os.path.join(script_dir, "exiftool-13.32_64", "exiftool(-k).exe"),
-        ]
-        for filename in ("exiftool.exe", "exiftool(-k).exe"):
-            candidates.extend(glob.glob(os.path.join(script_dir, "*exiftool*", filename)))
-        for path in candidates:
-            if os.path.exists(path):
-                log.debug(f"Found ExifTool at: {path}")
-                return path
-        log.info("ExifTool not found locally; relying on system path if available")
-        return None
-
-    def extract_exif(self, file_path):
-        return get_cached_exif_data(file_path, self.current_method, self.exiftool_path)
-
-    def extract_raw_exif(self, file_path):
-        try:
-            if self.current_method == "exiftool":
-                return get_exiftool_metadata_shared(file_path, self.exiftool_path)
-            date, camera, lens = get_cached_exif_data(file_path, self.current_method, self.exiftool_path)
-            return {'DateTimeOriginal': date, 'Model': camera, 'LensModel': lens}
-        except Exception as e:
-            log.debug(f"Error extracting raw EXIF from {file_path}: {e}")
-            return {}
-
-    def is_exiftool_available(self):
-        return EXIFTOOL_AVAILABLE
-
-class SimpleFilenameGenerator:
-    """Simple filename generator using original functions"""
-    def __init__(self):
-        pass
-    
-    def generate_filename(self, date_taken, camera_prefix, additional, camera_model, lens_model, use_camera, use_lens, num, custom_order, date_format="YYYY-MM-DD", use_date=True):
-        components = build_ordered_components(
-            date_taken=date_taken,
-            camera_prefix=camera_prefix,
-            additional=additional,
-            camera_model=camera_model,
-            lens_model=lens_model,
-            use_camera=use_camera,
-            use_lens=use_lens,
-            number=num,
-            custom_order=custom_order,
-            date_format=date_format,
-            use_date=use_date,
-            selected_metadata=None,
-        )
-        return components
-
-def extract_image_number(image_path, exif_method, exiftool_path):
-    """Extract image number/shutter count from image file"""
-    try:
-        # Get raw EXIF data for detailed extraction
-        if exif_method == "exiftool" and exiftool_path:
-            exif_data = get_exiftool_metadata_shared(image_path, exiftool_path)
-        else:
-            return None
-            
-        if not exif_data:
-            return None
-        
-        # List of possible fields for image/shutter count in priority order
-        image_number_fields = [
-            'EXIF:ShutterCount',
-            'Canon:ShutterCount', 
-            'Nikon:ShutterCount',
-            'Sony:ShutterCount',
-            'Olympus:ShutterCount',
-            'Panasonic:ShutterCount',
-            'Fujifilm:ShutterCount',
-            'EXIF:ImageNumber',
-            'Canon:ImageNumber',
-            'Nikon:ImageNumber', 
-            'Sony:ImageNumber',
-            'MakerNotes:ShutterCount',
-            'MakerNotes:ImageNumber',
-            'File:FileNumber'
-        ]
-        
-        # Try each field to find image number
-        for field in image_number_fields:
-            if field in exif_data:
-                value = exif_data[field]
-                if value and str(value).isdigit():
-                    return str(value)
-                elif value and isinstance(value, (int, float)):
-                    return str(int(value))
-        
-        # If no specific image number field found, try sequential numbering fields
-        sequence_fields = [
-            'EXIF:SequenceNumber',
-            'Canon:SequenceNumber',
-            'File:SequenceNumber'
-        ]
-        
-        for field in sequence_fields:
-            if field in exif_data:
-                value = exif_data[field]
-                if value and str(value).isdigit():
-                    return str(value)
-                elif value and isinstance(value, (int, float)):
-                    return str(int(value))
-        
-        return None
-        
-    except Exception as e:
-        log.debug(f"Error extracting image number from {image_path}: {e}")
-        return None
-
-def is_video_file(file_path):
-    """Check if file is a video file"""
-    video_extensions = ['.mp4', '.mov', '.avi', '.mkv', '.m4v', '.3gp', '.wmv', 
-                       '.flv', '.webm', '.mpg', '.mpeg', '.m2v', '.mts', '.m2ts']
-    return os.path.splitext(file_path)[1].lower() in video_extensions
 
 class FileRenamerApp(QMainWindow):
     DEBUG_VERBOSE = False
@@ -317,6 +93,10 @@ class FileRenamerApp(QMainWindow):
         
         # Initialize theme manager
         self.theme_manager = ThemeManager()
+        
+        # Initialize UI managers
+        self.file_list_manager = FileListManager(self)
+        self.preview_generator = PreviewGenerator(self)
         
         # State variables
         self.files = []
@@ -862,77 +642,28 @@ class FileRenamerApp(QMainWindow):
     
     # Event handlers implementation
     def select_files(self):
-        """Select individual media files"""
-        files, _ = QFileDialog.getOpenFileNames(
-            self, "Select Media Files", "", 
-            "Media Files (*.jpg *.jpeg *.png *.cr2 *.nef *.arw *.mp4 *.mov);;All Files (*)"
-        )
-        if files:
-            # Filter to only media files
-            media_files = [f for f in files if is_media_file(f)]
-            self.files.extend(media_files)
-            self.update_file_list()
-            self.extract_camera_info()
+        """Select individual media files - delegates to FileListManager"""
+        self.file_list_manager.select_files()
     
     def select_folder(self):
-        """Select folder and scan for media files"""
-        folder = QFileDialog.getExistingDirectory(self, "Select Folder")
-        if folder:
-            media_files = scan_directory_recursive(folder)
-            self.files.extend(media_files)
-            self.update_file_list()
-            self.extract_camera_info()
+        """Select folder and scan for media files - delegates to FileListManager"""
+        self.file_list_manager.select_folder()
     
     def clear_file_list(self):
-        """Clear the file list"""
-        self.files = []
-        self.file_list.clear()
-        self.status.showMessage("Ready")
-        self.rename_button.setEnabled(False)
-        
-        # Clear camera and lens data
-        self.camera_models = {}
-        self.lens_models = {}
-        self.camera_model_label.setText("(no files selected)")
-        self.lens_model_label.setText("(no files selected)")
-        
-        self.update_file_list_placeholder()
-        self.update_file_statistics()
+        """Clear the file list - delegates to FileListManager"""
+        self.file_list_manager.clear_file_list()
     
     def update_file_list(self):
-        """Update the file list display"""
-        self.file_list.clear()
-        for file_path in self.files:
-            item = QListWidgetItem(os.path.basename(file_path))
-            item.setData(Qt.ItemDataRole.UserRole, file_path)
-            self.file_list.addItem(item)
-        
-        self.rename_button.setEnabled(len(self.files) > 0)
-        self.update_file_statistics()
-        self.update_file_list_placeholder()
+        """Update the file list display - delegates to FileListManager"""
+        self.file_list_manager.update_file_list()
     
     def update_file_list_placeholder(self):
-        """Add placeholder text when file list is empty"""
-        if self.file_list.count() == 0:
-            placeholder_item = QListWidgetItem("📁 Drag and drop folders/files here or use buttons below\n📄 Supports images (JPG, RAW) and videos (MP4, MOV, etc.)")
-            placeholder_item.setFlags(Qt.ItemFlag.NoItemFlags)  # Make it non-selectable
-            placeholder_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.file_list.addItem(placeholder_item)
+        """Add placeholder text when file list is empty - delegates to FileListManager"""
+        self.file_list_manager.update_file_list_placeholder()
     
     def update_file_statistics(self):
-        """Update file statistics display"""
-        if not self.files:
-            self.file_stats_label.setText("")
-            self.file_stats_label.hide()
-            return
-        
-        stats = calculate_stats(self.files)
-        
-        self.file_stats_label.setText(
-            f"📊 Total: {stats['total_files']} files ({stats['total_images']} images)\n"
-            f"📷 JPEG: {stats['jpeg_count']} | 📸 RAW: {stats['raw_count']}"
-        )
-        self.file_stats_label.show()
+        """Update file statistics display - delegates to FileListManager"""
+        self.file_list_manager.update_file_statistics()
     
     def show_media_info(self, item):
         """Show media info in status bar on single click"""
@@ -1567,266 +1298,12 @@ class FileRenamerApp(QMainWindow):
             self.lens_model_label.setStyleSheet("color: orange; font-style: italic;")
     
     def update_preview(self):
-        """Update the interactive preview widget with current settings"""
-        # Get current settings
-        camera_prefix = self.camera_prefix_entry.text().strip()
-        additional = self.additional_entry.text().strip()
-        use_camera = self.checkbox_camera.isChecked()
-        use_lens = self.checkbox_lens.isChecked()
-        use_date = self.checkbox_date.isChecked()
-        date_format = self.date_format_combo.currentText()
-        devider = self.devider_combo.currentText()
-        
-        # Choose first JPG file, else first media file, else dummy
-        preview_file = next((f for f in self.files if os.path.splitext(f)[1].lower() in [".jpg", ".jpeg"]), None)
-        if not preview_file:
-            preview_file = next((f for f in self.files if is_media_file(f)), None)
-        if not preview_file and self.files:
-            preview_file = self.files[0]
-        if not preview_file:
-            # Default example with video extension to show video support
-            preview_file = "20250725_DSC0001.MP4"
-
-        date_taken = None
-        camera_model = None
-        lens_model = None
-        
-        if not self.exif_method:
-            # No EXIF support - use fallback values
-            date_taken = "20250725"
-            camera_model = "ILCE-7CM2" if use_camera else None
-            lens_model = "FE-20-70mm-F4-G" if use_lens else None
-        else:
-            # EXIF cache: only extract if file changed
-            cache_key = (preview_file, self.exif_method, self.exiftool_path)
-            if os.path.exists(preview_file):
-                if not hasattr(self, '_preview_exif_file') or self._preview_exif_file != cache_key:
-                    try:
-                        date_taken, camera_model, lens_model = get_selective_cached_exif_data(
-                            preview_file, self.exif_method, self.exiftool_path,
-                            need_date=use_date, need_camera=use_camera, need_lens=use_lens
-                        )
-                        self._preview_exif_cache = {
-                            'date': date_taken,
-                            'camera': camera_model,
-                            'lens': lens_model,
-                        }
-                        self._preview_exif_file = cache_key
-                    except Exception as e:
-                        # Fallback on error
-                        self._preview_exif_cache = {'date': None, 'camera': None, 'lens': None}
-                else:
-                    # Use cached values
-                    date_taken = self._preview_exif_cache.get('date')
-                    camera_model = self._preview_exif_cache.get('camera')
-                    lens_model = self._preview_exif_cache.get('lens')
-            
-            # Fallback date extraction
-            if not date_taken:
-                m = re.search(r'(20\d{2})(\d{2})(\d{2})', os.path.basename(preview_file))
-                if m:
-                    date_taken = f"{m.group(1)}{m.group(2)}{m.group(3)}"
-            
-            if not date_taken:
-                if os.path.exists(preview_file):
-                    mtime = os.path.getmtime(preview_file)
-                    dt = datetime.datetime.fromtimestamp(mtime)
-                    date_taken = dt.strftime('%Y%m%d')
-                else:
-                    date_taken = "20250725"
-            
-            # Use fallback values for preview if not detected AND checkbox is enabled
-            if use_camera and not camera_model:
-                camera_model = "ILCE-7CM2"
-            if use_lens and not lens_model:
-                lens_model = "FE-20-70mm-F4-G"
-            
-            # Clear values if checkboxes are disabled
-            if not use_camera:
-                camera_model = None
-            if not use_lens:
-                lens_model = None
-        
-        # Format date for display using the selected format
-        if date_taken and use_date:
-            year = date_taken[:4]
-            month = date_taken[4:6]
-            day = date_taken[6:8]
-            
-            if date_format == "YYYY-MM-DD":
-                formatted_date = f"{year}-{month}-{day}"
-            elif date_format == "YYYY_MM_DD":
-                formatted_date = f"{year}_{month}_{day}"
-            elif date_format == "DD-MM-YYYY":
-                formatted_date = f"{day}-{month}-{year}"
-            elif date_format == "DD_MM_YYYY":
-                formatted_date = f"{day}_{month}_{year}"
-            elif date_format == "YYYYMMDD":
-                formatted_date = f"{year}{month}{day}"
-            elif date_format == "MM-DD-YYYY":
-                formatted_date = f"{month}-{day}-{year}"
-            elif date_format == "MM_DD_YYYY":
-                formatted_date = f"{month}_{day}_{year}"
-            else:
-                formatted_date = f"{year}-{month}-{day}"  # Default fallback
-        else:
-            formatted_date = None
-        
-        # Check if camera/lens are in selected_metadata to avoid duplicates
-        has_camera_in_metadata = hasattr(self, 'selected_metadata') and self.selected_metadata and 'camera' in self.selected_metadata
-        has_lens_in_metadata = hasattr(self, 'selected_metadata') and self.selected_metadata and 'lens' in self.selected_metadata
-        
-        # Build component list for display - only include active components
-        display_components = []
-        component_mapping = {
-            "Date": formatted_date if use_date else None,  # Only if date checkbox is checked
-            "Prefix": camera_prefix if camera_prefix else None,  # Only if text entered
-            "Additional": additional if additional else None,  # Only if text entered
-            "Camera": camera_model if (use_camera and camera_model and not has_camera_in_metadata) else None,  # Only if checkbox checked AND value exists AND not in metadata
-            "Lens": lens_model if (use_lens and lens_model and not has_lens_in_metadata) else None,  # Only if checkbox checked AND value exists AND not in metadata
-            "Number": "001"  # FLEXIBLE: Add number as draggable component
-        }
-        
-        # Add selected metadata from metadata dialog
-        if hasattr(self, 'selected_metadata') and self.selected_metadata:
-            # For preview: extract real metadata from preview file if placeholders are used
-            preview_metadata = self.selected_metadata.copy()
-            
-            # Check if we need to extract real metadata for Boolean flags
-            if self.exif_method and preview_file and os.path.exists(preview_file):
-                needs_real_metadata = any(
-                    value is True for value in self.selected_metadata.values()
-                )
-                
-                if needs_real_metadata:
-                    try:
-                        self.log(f"🔍 Preview: Extracting real metadata from {os.path.basename(preview_file)}")
-                        real_metadata = get_all_metadata(preview_file, self.exif_method, self.exiftool_path)
-                        self.log(f"  Preview metadata: {real_metadata}")
-                        
-                        # Replace Boolean flags with real values for preview
-                        for key, value in self.selected_metadata.items():
-                            if value is True:
-                                # Handle key mapping for shutter/shutter_speed
-                                exif_key = key
-                                if key == 'shutter' and 'shutter_speed' in real_metadata:
-                                    exif_key = 'shutter_speed'
-                                
-                                if exif_key in real_metadata:
-                                    old_value = preview_metadata[key]
-                                    preview_metadata[key] = real_metadata[exif_key]
-                                    self.log(f"  Preview: {key} {old_value} -> {real_metadata[exif_key]}")
-                    except Exception as e:
-                        self.log(f"❌ Warning: Could not extract real metadata for preview: {e}")
-                        traceback.print_exc()
-            
-            # Add selected metadata components using preview metadata
-            for metadata_key, metadata_value in preview_metadata.items():
-                # SAFETY CHECK: Don't add camera/lens metadata if their checkboxes are unchecked
-                if metadata_key == 'camera' and not use_camera:
-                    continue
-                if metadata_key == 'lens' and not use_lens:
-                    continue
-                    
-                # Format metadata for display
-                display_value = self.format_metadata_for_filename(metadata_key, metadata_value)
-                if display_value:
-                    component_mapping[f"Meta_{metadata_key}"] = display_value
-        
-        # Build a unified list of all active components for the preview
-        display_components = []
-        
-        # Create a dynamic, full order list for this preview update
-        # This ensures that newly selected metadata items are included and become draggable
-        active_components_order = list(self.custom_order)
-        if hasattr(self, 'selected_metadata') and self.selected_metadata:
-            for meta_key, is_selected in self.selected_metadata.items():
-                if is_selected:
-                    meta_name = f"Meta_{meta_key}"
-                    if meta_name not in active_components_order:
-                        active_components_order.append(meta_name)
-
-        # Add components in the current, full order
-        self.log(f"🔍 Debug: Full component order for display: {active_components_order}")
-        for component_name in active_components_order:
-            value = component_mapping.get(component_name)
-            if value:  # Only add non-empty and active components
-                display_components.append(value)
-
-        # Update the interactive preview
-        self.log(f"🖼️ Debug: Setting preview components: {display_components}")
-        self.log(f"🖼️ Debug: Selected metadata: {getattr(self, 'selected_metadata', {})}")
-        self.log(f"🖼️ Debug: Component mapping: {component_mapping}")
-        self.interactive_preview.set_separator(devider)
-        self.interactive_preview.set_components(display_components, "001")
+        """Update the interactive preview widget with current settings - delegates to PreviewGenerator"""
+        self.preview_generator.update_preview()
     
     def format_metadata_for_filename(self, metadata_key, metadata_value):
-        """Format metadata values for use in filenames"""
-        if not metadata_value or metadata_value == 'Unknown':
-            return None
-        
-        # CRITICAL FIX: Skip boolean flags (these indicate extraction needed)
-        if isinstance(metadata_value, bool):
-            return None  # This is a flag, not actual data
-        
-        # Clean and format different metadata types
-        if metadata_key == 'camera':
-            # Remove spaces and special characters from camera name
-            return metadata_value.replace(' ', '-').replace('/', '-')
-        elif metadata_key == 'lens':
-           
-            # Simplify lens name for filename
-            return metadata_value.replace(' ', '-').replace('/', '-')
-        elif metadata_key == 'date':
-            # Keep only date part, format as YYYY-MM-DD
-            date_part = metadata_value.split(' ')[0] if ' ' in metadata_value else metadata_value
-            return date_part.replace(':', '-')
-        elif metadata_key == 'iso':
-            # Handle ISO format: "100" -> "ISO100" or "ISO 100" -> "ISO100"
-            if str(metadata_value).isdigit():
-                return f"ISO{metadata_value}"
-            else:
-                # Remove spaces if already formatted
-                return str(metadata_value).replace(' ', '')
-        elif metadata_key == 'aperture':
-            # Clean up aperture value (remove 'f/' if present, but keep single 'f')
-
-
-
-            if metadata_value.startswith('f/'):
-                               # Case: "f/9" -> "f9"
-                return metadata_value.replace('f/', 'f')
-            elif metadata_value.startswith('f'):
-                # Case: "f9" -> "f9" (already correct)
-                return metadata_value
-            else:
-                # Case: "9" -> "f9"
-                return f"f{metadata_value}"
-        elif metadata_key in ['shutter', 'shutter_speed']:
-            # Keep shutter speed format but replace problematic characters for filename
-            # Convert 1/800s to 1_800s for filename safety while keeping it readable
-            # Also ensure we don't get double 's' (1/800s -> 1_800s, not 1_800ss)
-            result = metadata_value.replace('/', '_').replace(' ', '')
-            # Clean up any double 's' that might occur
-            if result.endswith('ss') and not result.endswith('sss'):
-                result = result[:-1]  # Remove one 's' if double
-            self.log(f"🔧 Debug: Formatted shutter '{metadata_value}' -> '{result}'")
-            return result
-        elif metadata_key == 'focal_length':
-            # Extract just the number part
-            match = re.search(r'(\d+)mm', metadata_value)
-            if match:
-                return f"{match.group(1)}mm"
-            return metadata_value.replace(' ', '-')
-        elif metadata_key == 'resolution':
-            # Simplify resolution display
-            if 'MP' in metadata_value:
-                mp_part = metadata_value.split('(')[1].split(')')[0] if '(' in metadata_value else metadata_value
-                return mp_part.replace(' ', '').replace('.', '-')
-            return metadata_value.replace(' ', '-').replace('x', 'x')
-        else:
-            # General cleanup for other metadata
-            return metadata_value.replace(' ', '-').replace('/', '-').replace(':', '-')
+        """Format metadata values for use in filenames - delegates to PreviewGenerator"""
+        return self.preview_generator.format_metadata_for_filename(metadata_key, metadata_value)
     
     def on_preview_order_changed(self, new_order):
         """Handle changes from the interactive preview widget"""
@@ -2003,8 +1480,8 @@ class FileRenamerApp(QMainWindow):
         self.update_preview()
     
     def validate_and_update_preview(self):
-        """Validate input and update preview"""
-        self.update_preview()
+        """Validate input and update preview - delegates to PreviewGenerator"""
+        self.preview_generator.validate_and_update_preview()
     
     def on_theme_changed(self, theme_name):
         """Handle theme changes using ThemeManager"""
@@ -2583,30 +2060,8 @@ Options:
         dialog.exec()
     
     def show_preview_info(self):
-        """Show interactive preview help dialog"""
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Interactive Preview Help")
-        dialog.setModal(True)
-        dialog.resize(400, 300)
-        layout = QVBoxLayout(dialog)
-        
-        info_text = QLabel("""
-Interactive Preview shows how your filenames will look.
-
-You can:
-• Drag and drop components to reorder them
-• See real-time preview of your filename format
-• Components are separated by your chosen divider
-
-The number (001) is always at the end and auto-increments.
-        """)
-        info_text.setWordWrap(True)
-        layout.addWidget(info_text)
-        
-        close_btn = QPushButton("Close")
-        close_btn.clicked.connect(dialog.accept)
-        layout.addWidget(close_btn)
-        dialog.exec()
+        """Show interactive preview help dialog - delegates to PreviewGenerator"""
+        self.preview_generator.show_preview_info()
 
     def show_exif_sync_info(self):
         """Show EXIF date synchronization help dialog"""
@@ -2653,82 +2108,20 @@ JPG, TIFF, RAW files (CR2, NEF, ARW, etc.)
 
     # Drag and drop implementation
     def dragEnterEvent(self, event: QDragEnterEvent):
-        """Handle drag enter events"""
-        if event.mimeData().hasUrls():
-            event.accept()
-        else:
-            event.ignore()
+        """Handle drag enter events - delegates to FileListManager"""
+        self.file_list_manager.handle_drag_enter(event)
 
     def dragMoveEvent(self, event: QDragMoveEvent):
-        """Handle drag move events"""
-        if event.mimeData().hasUrls():
-            event.accept()
-        else:
-            event.ignore()
+        """Handle drag move events - delegates to FileListManager"""
+        self.file_list_manager.handle_drag_move(event)
 
     def dropEvent(self, event: QDropEvent):
-        """Handle drop events"""
-        files = []
-        for url in event.mimeData().urls():
-            file_path = url.toLocalFile()
-            if os.path.isfile(file_path) and is_media_file(file_path):
-                files.append(file_path)
-            elif os.path.isdir(file_path):
-                # Scan directory for media files
-                media_files = scan_directory_recursive(file_path)
-                files.extend(media_files)
-        
-        if files:
-            self.add_files_to_list(files)
-        event.accept()
+        """Handle drop events - delegates to FileListManager"""
+        self.file_list_manager.handle_drop(event)
     
     def add_files_to_list(self, files):
-        """Add files to the file list"""
-        # Clear existing files when adding new ones
-        if files and self.files:
-            self.clear_file_list()
-        
-        # Remove placeholder if present
-        if self.file_list.count() == 1:
-            item = self.file_list.item(0)
-            if item and item.text() == "Drop files here or click 'Select Files' to begin":
-                self.file_list.clear()
-        
-        # Validate and add files
-        added_count = 0
-        inaccessible_files = []
-        
-        for file in files:
-            if is_media_file(file) and os.path.exists(file):
-                if file not in self.files:
-                    self.files.append(file)
-                    item = QListWidgetItem(file)
-                    item.setData(Qt.ItemDataRole.UserRole, file)
-                    self.file_list.addItem(item)
-                    added_count += 1
-            else:
-                inaccessible_files.append(file)
-        
-        # Show warning for inaccessible files
-        if inaccessible_files:
-            QMessageBox.warning(
-                self, 
-                "Inaccessible Files", 
-                f"Some files could not be accessed:\n" + "\n".join(inaccessible_files[:5])
-            )
-        
-        # Update status
-        if added_count > 0:
-            self.status.showMessage(f"Added {added_count} files", 3000)
-        
-        # Update preview and extract camera info when files are added
-        self.update_preview()
-        self.extract_camera_info()  # This will call update_camera_lens_labels() at the end
-        self.update_file_statistics()
-        
-        # CRITICAL FIX: Enable rename button when files are present
-        # This ensures the button is properly enabled after clearing and adding new files
-        self.rename_button.setEnabled(len(self.files) > 0)
+        """Add files to the file list - delegates to FileListManager"""
+        self.file_list_manager.add_files_to_list(files)
     
     def eventFilter(self, obj, event):
         """Event filter for tooltips and other events"""
