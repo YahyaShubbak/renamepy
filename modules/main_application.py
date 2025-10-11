@@ -7,8 +7,11 @@ import os
 import sys
 import re
 import datetime
+import glob
+import webbrowser
+import traceback
 from pathlib import Path
-from .logger_util import get_logger
+from .logger_util import get_logger, set_level
 log = get_logger()
 
 # Add the parent directory to the Python path to allow module imports
@@ -34,7 +37,8 @@ from .exif_processor import (
     extract_exif_fields, get_exiftool_metadata_shared, 
     cleanup_global_exiftool, clear_global_exif_cache,
     SimpleExifHandler, EXIFTOOL_AVAILABLE, PIL_AVAILABLE,
-    extract_exif_fields_with_retry
+    extract_exif_fields_with_retry, find_exiftool_path,
+    get_all_metadata, batch_restore_timestamps
 )
 from .rename_engine import RenameWorkerThread
 from .ui_components import InteractivePreviewWidget
@@ -116,7 +120,6 @@ ExifTool is a powerful library for reading and writing metadata in image and vid
     
     def open_download_page(self):
         """Open the ExifTool download page in default browser"""
-        import webbrowser
         webbrowser.open("https://exiftool.org/install.html")
         self.accept()
 
@@ -150,7 +153,6 @@ class SimpleExifHandler:
         self.exiftool_path = self._find_exiftool_path()
 
     def _find_exiftool_path(self):
-        import glob
         if not EXIFTOOL_AVAILABLE:
             return None
         script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -418,7 +420,6 @@ class FileRenamerApp(QMainWindow):
                     tools_menu = mb.addMenu('&Tools')
 
                 # Debug logging toggle
-                from PyQt6.QtGui import QAction
                 self.action_toggle_debug = QAction('Enable Debug Logging', self, checkable=True)
                 self.action_toggle_debug.setStatusTip('Toggle verbose debug log output')
                 self.action_toggle_debug.toggled.connect(self._on_toggle_debug_logging)
@@ -852,7 +853,6 @@ class FileRenamerApp(QMainWindow):
         """Simple ExifTool path detection for the modular version"""
         # Delegate to exif_processor.find_exiftool_path which includes flexible folder search
         try:
-            from .exif_processor import find_exiftool_path
             path = find_exiftool_path()
             # Optionally log version if available using subprocess - handled inside find_exiftool_path verify
             return path
@@ -1602,7 +1602,6 @@ class FileRenamerApp(QMainWindow):
             if os.path.exists(preview_file):
                 if not hasattr(self, '_preview_exif_file') or self._preview_exif_file != cache_key:
                     try:
-                        from .exif_processor import get_selective_cached_exif_data
                         date_taken, camera_model, lens_model = get_selective_cached_exif_data(
                             preview_file, self.exif_method, self.exiftool_path,
                             need_date=use_date, need_camera=use_camera, need_lens=use_lens
@@ -1624,14 +1623,12 @@ class FileRenamerApp(QMainWindow):
             
             # Fallback date extraction
             if not date_taken:
-                import re
                 m = re.search(r'(20\d{2})(\d{2})(\d{2})', os.path.basename(preview_file))
                 if m:
                     date_taken = f"{m.group(1)}{m.group(2)}{m.group(3)}"
             
             if not date_taken:
                 if os.path.exists(preview_file):
-                    import datetime
                     mtime = os.path.getmtime(preview_file)
                     dt = datetime.datetime.fromtimestamp(mtime)
                     date_taken = dt.strftime('%Y%m%d')
@@ -1703,7 +1700,6 @@ class FileRenamerApp(QMainWindow):
                 
                 if needs_real_metadata:
                     try:
-                        from .exif_processor import get_all_metadata
                         self.log(f"🔍 Preview: Extracting real metadata from {os.path.basename(preview_file)}")
                         real_metadata = get_all_metadata(preview_file, self.exif_method, self.exiftool_path)
                         self.log(f"  Preview metadata: {real_metadata}")
@@ -1722,7 +1718,6 @@ class FileRenamerApp(QMainWindow):
                                     self.log(f"  Preview: {key} {old_value} -> {real_metadata[exif_key]}")
                     except Exception as e:
                         self.log(f"❌ Warning: Could not extract real metadata for preview: {e}")
-                        import traceback
                         traceback.print_exc()
             
             # Add selected metadata components using preview metadata
@@ -1819,7 +1814,6 @@ class FileRenamerApp(QMainWindow):
             return result
         elif metadata_key == 'focal_length':
             # Extract just the number part
-            import re
             match = re.search(r'(\d+)mm', metadata_value)
             if match:
                 return f"{match.group(1)}mm"
@@ -1950,7 +1944,6 @@ class FileRenamerApp(QMainWindow):
                 
                 if needs_real_metadata:
                     try:
-                        from .exif_processor import get_all_metadata
                         real_metadata = get_all_metadata(preview_file, self.exif_method, self.exiftool_path)
                         
                         # Replace Boolean flags with real values for preview
@@ -2129,7 +2122,6 @@ class FileRenamerApp(QMainWindow):
 
     # ----------------------- Logging Controls -----------------------
     def _on_toggle_debug_logging(self, enabled: bool):
-        from .logger_util import set_level
         set_level('DEBUG' if enabled else 'INFO')
         self._set_debug(enabled)
         if hasattr(self, 'status'):
@@ -2357,7 +2349,6 @@ class FileRenamerApp(QMainWindow):
             errors = []
             restored_files = []  # No renames
             if timestamp_backup_exists:
-                from .exif_processor import batch_restore_timestamps
                 try:
                     ts_success, ts_errors = batch_restore_timestamps(
                         self.timestamp_backup,
@@ -2441,8 +2432,6 @@ class FileRenamerApp(QMainWindow):
         # Restore original timestamps if EXIF sync was used
         if hasattr(self, 'timestamp_backup') and self.timestamp_backup:
             self.log("🔄 Restoring original timestamps...")
-            # Use relative import inside package context
-            from .exif_processor import batch_restore_timestamps
             
             try:
                 timestamp_successes, timestamp_errors = batch_restore_timestamps(

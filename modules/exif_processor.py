@@ -10,6 +10,14 @@ import threading
 import subprocess
 import glob
 import shutil
+# Pre-import commonly used modules (performance optimization)
+try:
+    import ctypes
+    from ctypes import wintypes
+    CTYPES_AVAILABLE = True
+except ImportError:
+    CTYPES_AVAILABLE = False
+    
 from .logger_util import get_logger
 log = get_logger()
 
