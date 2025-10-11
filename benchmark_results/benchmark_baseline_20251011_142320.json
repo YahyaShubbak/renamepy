@@ -1,0 +1,106 @@
+{
+  "version": "baseline",
+  "timestamp": "2025-10-11T14:23:20.150906",
+  "results": [
+    {
+      "scenario": "Small Batch (30 files)",
+      "file_count": 30,
+      "duration_seconds": 0.008457183837890625,
+      "memory_mb": 0.0,
+      "success_rate": 1.0,
+      "throughput_files_per_sec": 3547.280108254398,
+      "errors_count": 0,
+      "warnings_count": 0,
+      "errors": [],
+      "warnings": [],
+      "timestamp": "2025-10-11T14:23:17.125327",
+      "version": "baseline"
+    },
+    {
+      "scenario": "Medium Batch (250 files, 5 subdirs)",
+      "file_count": 250,
+      "duration_seconds": 0.05453014373779297,
+      "memory_mb": 0.0,
+      "success_rate": 1.0,
+      "throughput_files_per_sec": 4584.620227705976,
+      "errors_count": 0,
+      "warnings_count": 0,
+      "errors": [],
+      "warnings": [],
+      "timestamp": "2025-10-11T14:23:17.249333",
+      "version": "baseline"
+    },
+    {
+      "scenario": "Large Batch (1500 files, 20 subdirs)",
+      "file_count": 1500,
+      "duration_seconds": 0.2998476028442383,
+      "memory_mb": 0.0,
+      "success_rate": 1.0,
+      "throughput_files_per_sec": 5002.541243523646,
+      "errors_count": 0,
+      "warnings_count": 0,
+      "errors": [],
+      "warnings": [],
+      "timestamp": "2025-10-11T14:23:17.906345",
+      "version": "baseline"
+    },
+    {
+      "scenario": "Mixed File Types (200 files, 7 types)",
+      "file_count": 200,
+      "duration_seconds": 0.04548907279968262,
+      "memory_mb": 0.0,
+      "success_rate": 1.0,
+      "throughput_files_per_sec": 4396.6602898398805,
+      "errors_count": 0,
+      "warnings_count": 0,
+      "errors": [],
+      "warnings": [],
+      "timestamp": "2025-10-11T14:23:18.000382",
+      "version": "baseline"
+    },
+    {
+      "scenario": "Edge Case Filenames",
+      "file_count": 14,
+      "duration_seconds": 0.0030655860900878906,
+      "memory_mb": 0.0,
+      "success_rate": 0.9285714285714286,
+      "throughput_files_per_sec": 4566.826567117748,
+      "errors_count": 0,
+      "warnings_count": 1,
+      "errors": [],
+      "warnings": [
+        "Only 92.9% success rate with edge cases"
+      ],
+      "timestamp": "2025-10-11T14:23:18.009647",
+      "version": "baseline"
+    },
+    {
+      "scenario": "EXIF Cache Stress (500 files × 3 passes)",
+      "file_count": 500,
+      "duration_seconds": 0.011972188949584961,
+      "memory_mb": 0.0,
+      "success_rate": 1.0,
+      "throughput_files_per_sec": 125290.37140296724,
+      "errors_count": 0,
+      "warnings_count": 0,
+      "errors": [],
+      "warnings": [],
+      "timestamp": "2025-10-11T14:23:18.148544",
+      "version": "baseline"
+    },
+    {
+      "scenario": "Deep Directory Scan (4 levels, 7800 files)",
+      "file_count": 10294,
+      "duration_seconds": 0.11319684982299805,
+      "memory_mb": 0.0,
+      "success_rate": 1.3197435897435899,
+      "throughput_files_per_sec": 90938.9264462427,
+      "errors_count": 0,
+      "warnings_count": 0,
+      "errors": [],
+      "warnings": [],
+      "timestamp": "2025-10-11T14:23:20.145280",
+      "version": "baseline"
+    }
+  ]
+}

@@ -293,6 +293,7 @@ def cleanup_global_exiftool():
 def extract_exif_fields_with_retry(image_path, method, exiftool_path=None, max_retries=3):
     """
     Extracts EXIF fields with retry mechanism for reliability.
+    OPTIMIZATION: Now uses shared ExifTool instance for better performance!
     """
     # CRITICAL FIX: Normalize path to prevent double backslashes
     normalized_path = os.path.normpath(image_path)
@@ -305,14 +306,8 @@ def extract_exif_fields_with_retry(image_path, method, exiftool_path=None, max_r
     for attempt in range(max_retries):
         try:
             if method == "exiftool":
-                # Use exiftool with or without explicit path
-                if exiftool_path and os.path.exists(exiftool_path):
-                    with exiftool.ExifToolHelper(executable=exiftool_path) as et:
-                        meta = et.get_metadata([normalized_path])[0]
-                else:
-                    # Try to use system exiftool or let exiftool package find it
-                    with exiftool.ExifToolHelper() as et:
-                        meta = et.get_metadata([normalized_path])[0]
+                # PERFORMANCE OPTIMIZATION: Use shared ExifTool instance instead of creating new process
+                meta = get_exiftool_metadata_shared(normalized_path, exiftool_path)
                 
                 # Extract date
                 date = meta.get('EXIF:DateTimeOriginal')

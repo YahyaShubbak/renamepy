@@ -1,0 +1,5378 @@
+{
+  "total_files": 596,
+  "successful": 596,
+  "failed": 0,
+  "exif_data": [
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-001.ARW",
+      "extension": ".ARW",
+      "size_mb": 21.875,
+      "extraction_time_ms": 288.64359999897715,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-001.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.057403564453125,
+      "extraction_time_ms": 235.02000000007683,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-002.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.4765625,
+      "extraction_time_ms": 248.835099999269,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-002.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.5450239181518555,
+      "extraction_time_ms": 245.77639999915846,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-003.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.4765625,
+      "extraction_time_ms": 253.01219999892055,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-003.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.5230579376220703,
+      "extraction_time_ms": 248.63750000076834,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-004.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.453125,
+      "extraction_time_ms": 247.5310999998328,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-004.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.560544967651367,
+      "extraction_time_ms": 242.66089999946416,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-005.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.48046875,
+      "extraction_time_ms": 248.4948000001168,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-005.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.6543359756469727,
+      "extraction_time_ms": 243.76759999904607,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-006.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.578125,
+      "extraction_time_ms": 244.37059999945632,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-006.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.56239128112793,
+      "extraction_time_ms": 244.16010000095412,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-007.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.48828125,
+      "extraction_time_ms": 250.70810000033816,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-007.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.6458892822265625,
+      "extraction_time_ms": 246.8128999989858,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-008.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.890625,
+      "extraction_time_ms": 249.63840000054915,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-008.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.109457015991211,
+      "extraction_time_ms": 246.94430000090506,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-009.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.1484375,
+      "extraction_time_ms": 257.04310000037367,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-009.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.249279022216797,
+      "extraction_time_ms": 244.57369999981893,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-010.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.2734375,
+      "extraction_time_ms": 246.9234999989567,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-010.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.227843284606934,
+      "extraction_time_ms": 242.93609999949695,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-011.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.17578125,
+      "extraction_time_ms": 249.1264999989653,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-011.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.06178092956543,
+      "extraction_time_ms": 244.69150000004447,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-012.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.1875,
+      "extraction_time_ms": 246.4799999997922,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-012.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.003923416137695,
+      "extraction_time_ms": 245.9923999995226,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-013.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.7578125,
+      "extraction_time_ms": 248.8732000001619,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-013.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.7930707931518555,
+      "extraction_time_ms": 246.78170000152022,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-014.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.99609375,
+      "extraction_time_ms": 259.8627999996097,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-014.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.116208076477051,
+      "extraction_time_ms": 252.2769999995944,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-015.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.78125,
+      "extraction_time_ms": 265.9094000009645,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-015.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.013365745544434,
+      "extraction_time_ms": 245.9746999993513,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-016.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.51171875,
+      "extraction_time_ms": 257.5823000006494,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-016.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.992534637451172,
+      "extraction_time_ms": 247.0604000009189,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-017.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.1015625,
+      "extraction_time_ms": 267.40069999868865,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-017.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.283760070800781,
+      "extraction_time_ms": 245.6331000012142,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-018.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.9296875,
+      "extraction_time_ms": 260.1551000007021,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-018.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.468867301940918,
+      "extraction_time_ms": 244.18259999947622,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-019.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.08203125,
+      "extraction_time_ms": 258.22150000021793,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-019.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.188726425170898,
+      "extraction_time_ms": 246.56209999920975,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-020.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.16796875,
+      "extraction_time_ms": 259.8175999992236,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-020.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.329519271850586,
+      "extraction_time_ms": 245.76410000008764,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-021.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.359375,
+      "extraction_time_ms": 259.37039999917033,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-10-Northern-Spain-Bilbao-021.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.546151161193848,
+      "extraction_time_ms": 245.01770000097167,
+      "date": "20250910",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-001.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.46875,
+      "extraction_time_ms": 260.7856000013271,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-001.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.194108009338379,
+      "extraction_time_ms": 245.85660000047938,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-002.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.203125,
+      "extraction_time_ms": 259.4195000001491,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-002.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.979761123657227,
+      "extraction_time_ms": 241.63339999904565,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-003.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.50390625,
+      "extraction_time_ms": 265.93879999927594,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-003.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.111218452453613,
+      "extraction_time_ms": 245.51570000039646,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-004.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.20703125,
+      "extraction_time_ms": 262.9460999996809,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-004.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.917501449584961,
+      "extraction_time_ms": 246.49630000021716,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-005.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.02734375,
+      "extraction_time_ms": 258.5735000011482,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-005.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.328921318054199,
+      "extraction_time_ms": 249.75830000039423,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-006.ARW",
+      "extension": ".ARW",
+      "size_mb": 21.734375,
+      "extraction_time_ms": 264.4726999988052,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-006.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.199240684509277,
+      "extraction_time_ms": 246.45260000033886,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-007.ARW",
+      "extension": ".ARW",
+      "size_mb": 29.1015625,
+      "extraction_time_ms": 261.0485000004701,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-007.JPG",
+      "extension": ".JPG",
+      "size_mb": 12.039143562316895,
+      "extraction_time_ms": 247.34589999934542,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-008.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.94921875,
+      "extraction_time_ms": 273.2126999999309,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-008.JPG",
+      "extension": ".JPG",
+      "size_mb": 10.751059532165527,
+      "extraction_time_ms": 246.6638999994757,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-009.ARW",
+      "extension": ".ARW",
+      "size_mb": 27.2421875,
+      "extraction_time_ms": 262.3676000002888,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-009.JPG",
+      "extension": ".JPG",
+      "size_mb": 12.779646873474121,
+      "extraction_time_ms": 246.6284000001906,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-010.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.45703125,
+      "extraction_time_ms": 264.5964000003005,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-010.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.517786026000977,
+      "extraction_time_ms": 247.79940000007628,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-011.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.93359375,
+      "extraction_time_ms": 260.85739999871294,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-011.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.654128074645996,
+      "extraction_time_ms": 246.187299999292,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-012.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.4453125,
+      "extraction_time_ms": 262.824699999328,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-012.JPG",
+      "extension": ".JPG",
+      "size_mb": 10.145018577575684,
+      "extraction_time_ms": 245.3907999988587,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-013.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.66796875,
+      "extraction_time_ms": 261.4568999997573,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-013.JPG",
+      "extension": ".JPG",
+      "size_mb": 10.234171867370605,
+      "extraction_time_ms": 245.8612999998877,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-014.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.26171875,
+      "extraction_time_ms": 262.884199999462,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-014.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.570635795593262,
+      "extraction_time_ms": 246.30249999972875,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-015.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.98046875,
+      "extraction_time_ms": 263.5659999996278,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-015.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.257251739501953,
+      "extraction_time_ms": 247.94789999941713,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-016.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.33203125,
+      "extraction_time_ms": 268.7855000003765,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-016.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.672163963317871,
+      "extraction_time_ms": 246.10050000046613,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-017.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.91796875,
+      "extraction_time_ms": 264.55799999894225,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-017.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.9974260330200195,
+      "extraction_time_ms": 246.21180000031018,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-018.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.1328125,
+      "extraction_time_ms": 270.8464000006643,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-018.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.912928581237793,
+      "extraction_time_ms": 245.80219999916153,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-019.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.81640625,
+      "extraction_time_ms": 264.69039999938104,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-019.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.521685600280762,
+      "extraction_time_ms": 246.51009999979578,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-020.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.78125,
+      "extraction_time_ms": 265.2287000000797,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-020.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.091651916503906,
+      "extraction_time_ms": 246.05109999902197,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-021.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.02734375,
+      "extraction_time_ms": 265.07200000014564,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-021.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.883652687072754,
+      "extraction_time_ms": 248.69480000052135,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-022.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.234375,
+      "extraction_time_ms": 259.2756999983976,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-022.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.346219062805176,
+      "extraction_time_ms": 248.45289999939268,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-023.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.3125,
+      "extraction_time_ms": 259.19359999898006,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-023.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.427282333374023,
+      "extraction_time_ms": 246.95129999963683,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-024.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.52734375,
+      "extraction_time_ms": 269.65170000039507,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-024.JPG",
+      "extension": ".JPG",
+      "size_mb": 13.55190658569336,
+      "extraction_time_ms": 247.14180000046326,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-025.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.5078125,
+      "extraction_time_ms": 260.28150000092865,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-025.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.383110046386719,
+      "extraction_time_ms": 250.77179999971122,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-026.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.34765625,
+      "extraction_time_ms": 262.11330000114685,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-026.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.020598411560059,
+      "extraction_time_ms": 244.3466000004264,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-027.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.08203125,
+      "extraction_time_ms": 264.64390000001004,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-027.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.995542526245117,
+      "extraction_time_ms": 250.75730000025942,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-028.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.4609375,
+      "extraction_time_ms": 267.64530000036757,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-028.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.992485046386719,
+      "extraction_time_ms": 246.30400000023656,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-029.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.90625,
+      "extraction_time_ms": 246.3473999996495,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-029.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.283337593078613,
+      "extraction_time_ms": 253.7675000003219,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-030.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.03125,
+      "extraction_time_ms": 259.0526999993017,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-030.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.762402534484863,
+      "extraction_time_ms": 252.62219999967783,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-031.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.78125,
+      "extraction_time_ms": 297.5072999997792,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-031.JPG",
+      "extension": ".JPG",
+      "size_mb": 9.357388496398926,
+      "extraction_time_ms": 250.83450000056473,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-032.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.4140625,
+      "extraction_time_ms": 261.81929999984277,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-032.JPG",
+      "extension": ".JPG",
+      "size_mb": 9.463894844055176,
+      "extraction_time_ms": 245.45190000026196,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-033.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.2421875,
+      "extraction_time_ms": 258.4974000001239,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-033.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.7357282638549805,
+      "extraction_time_ms": 250.24719999964873,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-034.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.00390625,
+      "extraction_time_ms": 261.3616999988153,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-034.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.376883506774902,
+      "extraction_time_ms": 248.02359999921464,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-035.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.78125,
+      "extraction_time_ms": 261.4006000003428,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-035.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.247404098510742,
+      "extraction_time_ms": 252.0198000001983,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-036.ARW",
+      "extension": ".ARW",
+      "size_mb": 27.15625,
+      "extraction_time_ms": 260.89820000015607,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-036.JPG",
+      "extension": ".JPG",
+      "size_mb": 9.370606422424316,
+      "extraction_time_ms": 249.67090000063763,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-037.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.58203125,
+      "extraction_time_ms": 259.7416999997222,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-037.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.228119850158691,
+      "extraction_time_ms": 251.7714999994496,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-038.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.35546875,
+      "extraction_time_ms": 260.6532000008883,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-038.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.635990142822266,
+      "extraction_time_ms": 245.695199999318,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-039.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.1640625,
+      "extraction_time_ms": 260.7657999997173,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-039.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.900604248046875,
+      "extraction_time_ms": 250.39579999975103,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-040.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.96484375,
+      "extraction_time_ms": 259.611200001018,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-040.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.337766647338867,
+      "extraction_time_ms": 247.5014999999985,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-041.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.4296875,
+      "extraction_time_ms": 262.8223000010621,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-041.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.745205879211426,
+      "extraction_time_ms": 252.21999999848776,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-042.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.12890625,
+      "extraction_time_ms": 265.998099999706,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-042.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.157155990600586,
+      "extraction_time_ms": 247.32400000175403,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-043.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.2109375,
+      "extraction_time_ms": 262.7080999991449,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-043.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.270639419555664,
+      "extraction_time_ms": 246.7400000005,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-044.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.48828125,
+      "extraction_time_ms": 260.8700000000681,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-044.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.6516876220703125,
+      "extraction_time_ms": 249.24800000007963,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-045.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.44140625,
+      "extraction_time_ms": 268.6615000002348,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-045.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.51934814453125,
+      "extraction_time_ms": 248.4853000005387,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-046.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.5078125,
+      "extraction_time_ms": 262.0461999995314,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-046.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.135751724243164,
+      "extraction_time_ms": 248.20870000075956,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-047.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.9453125,
+      "extraction_time_ms": 280.8478999995714,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-047.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.726876258850098,
+      "extraction_time_ms": 254.95039999987057,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-048.ARW",
+      "extension": ".ARW",
+      "size_mb": 27.578125,
+      "extraction_time_ms": 262.41620000109833,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-048.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.998394012451172,
+      "extraction_time_ms": 260.8311000003596,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-049.ARW",
+      "extension": ".ARW",
+      "size_mb": 31.1953125,
+      "extraction_time_ms": 263.89519999975164,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-049.JPG",
+      "extension": ".JPG",
+      "size_mb": 11.335280418395996,
+      "extraction_time_ms": 248.66020000081335,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-050.ARW",
+      "extension": ".ARW",
+      "size_mb": 27.7109375,
+      "extraction_time_ms": 261.44619999831775,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-050.JPG",
+      "extension": ".JPG",
+      "size_mb": 9.386502265930176,
+      "extraction_time_ms": 247.57270000009157,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-051.ARW",
+      "extension": ".ARW",
+      "size_mb": 29.06640625,
+      "extraction_time_ms": 272.68700000058743,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-051.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.49153995513916,
+      "extraction_time_ms": 249.02609999844572,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-052.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.08203125,
+      "extraction_time_ms": 266.2127999992663,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-052.JPG",
+      "extension": ".JPG",
+      "size_mb": 10.454322814941406,
+      "extraction_time_ms": 246.492300000682,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-053.ARW",
+      "extension": ".ARW",
+      "size_mb": 27.984375,
+      "extraction_time_ms": 264.84290000007604,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-053.JPG",
+      "extension": ".JPG",
+      "size_mb": 10.764667510986328,
+      "extraction_time_ms": 249.8052999999345,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-054.ARW",
+      "extension": ".ARW",
+      "size_mb": 27.6640625,
+      "extraction_time_ms": 259.07849999930477,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-054.JPG",
+      "extension": ".JPG",
+      "size_mb": 11.0186767578125,
+      "extraction_time_ms": 252.55250000009255,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-055.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.34765625,
+      "extraction_time_ms": 266.39959999920393,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-055.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.383359909057617,
+      "extraction_time_ms": 249.91580000096292,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-056.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.28515625,
+      "extraction_time_ms": 264.3213999999716,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-056.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.073657989501953,
+      "extraction_time_ms": 249.13000000015018,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-057.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.8046875,
+      "extraction_time_ms": 264.43140000083076,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-057.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.433098793029785,
+      "extraction_time_ms": 250.21560000095633,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-058.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.44921875,
+      "extraction_time_ms": 257.27680000090913,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-058.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.566234588623047,
+      "extraction_time_ms": 248.42790000002424,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-059.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.1328125,
+      "extraction_time_ms": 264.29690000077244,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-059.JPG",
+      "extension": ".JPG",
+      "size_mb": 9.0118989944458,
+      "extraction_time_ms": 251.28509999922244,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-060.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.15625,
+      "extraction_time_ms": 263.38980000036827,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-060.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.316094398498535,
+      "extraction_time_ms": 255.16830000015034,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-061.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.375,
+      "extraction_time_ms": 262.44000000042433,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-061.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.783495903015137,
+      "extraction_time_ms": 246.9942000006995,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-062.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.234375,
+      "extraction_time_ms": 266.0789000001387,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-062.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.402234077453613,
+      "extraction_time_ms": 254.99459999991814,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-063.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.390625,
+      "extraction_time_ms": 262.60499999989406,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-063.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.772136688232422,
+      "extraction_time_ms": 246.64359999951557,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-064.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.14453125,
+      "extraction_time_ms": 266.8340999989596,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-064.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.744257926940918,
+      "extraction_time_ms": 251.85249999958614,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-065.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.38671875,
+      "extraction_time_ms": 263.1796999994549,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-065.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.030243873596191,
+      "extraction_time_ms": 246.9046000005619,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-066.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.046875,
+      "extraction_time_ms": 262.8156000009767,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-066.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.9771881103515625,
+      "extraction_time_ms": 253.39030000031926,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-067.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.578125,
+      "extraction_time_ms": 265.8580000006623,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-067.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.0526762008667,
+      "extraction_time_ms": 250.94610000087414,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-068.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.5,
+      "extraction_time_ms": 261.2958999998227,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-068.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.608532905578613,
+      "extraction_time_ms": 250.59049999981653,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-069.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.0,
+      "extraction_time_ms": 263.53070000004664,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-069.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.017816543579102,
+      "extraction_time_ms": 248.80780000057712,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-070.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.1015625,
+      "extraction_time_ms": 258.32660000014585,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-070.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.025923728942871,
+      "extraction_time_ms": 253.43849999990198,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-071.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.109375,
+      "extraction_time_ms": 265.54829999986396,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-071.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.106625556945801,
+      "extraction_time_ms": 246.96399999993446,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-072.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.55078125,
+      "extraction_time_ms": 262.97019999947224,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-072.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.41152286529541,
+      "extraction_time_ms": 250.82860000111395,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-073.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.80078125,
+      "extraction_time_ms": 264.0590999999404,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-073.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.5981035232543945,
+      "extraction_time_ms": 247.54700000084995,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-074.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.49609375,
+      "extraction_time_ms": 264.7481999993033,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-074.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.519288063049316,
+      "extraction_time_ms": 252.27070000073581,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-075.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.94140625,
+      "extraction_time_ms": 262.17259999975795,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-075.JPG",
+      "extension": ".JPG",
+      "size_mb": 10.76366138458252,
+      "extraction_time_ms": 248.91329999991285,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-076.ARW",
+      "extension": ".ARW",
+      "size_mb": 21.49609375,
+      "extraction_time_ms": 259.6326000002591,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-076.JPG",
+      "extension": ".JPG",
+      "size_mb": 2.9976024627685547,
+      "extraction_time_ms": 248.0349000015849,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-077.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.7109375,
+      "extraction_time_ms": 264.9725999999646,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-11-Northern-Spain-Bilbao-077.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.497405052185059,
+      "extraction_time_ms": 248.2503999999608,
+      "date": "20250911",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-001.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.5390625,
+      "extraction_time_ms": 261.9184999985009,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-001.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.1822195053100586,
+      "extraction_time_ms": 254.83399999939138,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-002.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.6953125,
+      "extraction_time_ms": 265.52079999964917,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-002.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.165990829467773,
+      "extraction_time_ms": 253.93799999983457,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-003.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.21875,
+      "extraction_time_ms": 262.5561999993806,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-003.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.156370162963867,
+      "extraction_time_ms": 258.23230000059993,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-004.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.61328125,
+      "extraction_time_ms": 265.5372000008356,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-004.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.14061164855957,
+      "extraction_time_ms": 250.4054000000906,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-005.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.3125,
+      "extraction_time_ms": 266.4788000001863,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-005.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.896137237548828,
+      "extraction_time_ms": 251.6378000000259,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-006.ARW",
+      "extension": ".ARW",
+      "size_mb": 29.3828125,
+      "extraction_time_ms": 264.19300000088697,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-006.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.281685829162598,
+      "extraction_time_ms": 251.37480000012147,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-007.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.2734375,
+      "extraction_time_ms": 264.2212999999174,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-007.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.737127304077148,
+      "extraction_time_ms": 250.00370000088878,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-008.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.6640625,
+      "extraction_time_ms": 266.00060000055237,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-008.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.188774108886719,
+      "extraction_time_ms": 246.5981000004831,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-009.ARW",
+      "extension": ".ARW",
+      "size_mb": 29.1328125,
+      "extraction_time_ms": 267.65460000024177,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-009.JPG",
+      "extension": ".JPG",
+      "size_mb": 9.073797225952148,
+      "extraction_time_ms": 254.02310000026773,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-010.ARW",
+      "extension": ".ARW",
+      "size_mb": 30.34375,
+      "extraction_time_ms": 265.9770000009303,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-010.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.801082611083984,
+      "extraction_time_ms": 248.4649999987596,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-011.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.19140625,
+      "extraction_time_ms": 260.77389999954903,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-011.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.127357482910156,
+      "extraction_time_ms": 246.06630000016594,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-012.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.12109375,
+      "extraction_time_ms": 262.00409999910335,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-012.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.323980331420898,
+      "extraction_time_ms": 247.42390000028536,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-013.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.01171875,
+      "extraction_time_ms": 261.2785999990592,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-013.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.615472793579102,
+      "extraction_time_ms": 248.56259999978647,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-014.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.1015625,
+      "extraction_time_ms": 264.7422000009101,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-014.JPG",
+      "extension": ".JPG",
+      "size_mb": 9.374361038208008,
+      "extraction_time_ms": 248.10900000011316,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-015.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.015625,
+      "extraction_time_ms": 264.4036999990931,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-015.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.773712158203125,
+      "extraction_time_ms": 249.3864999996731,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-016.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.71484375,
+      "extraction_time_ms": 263.27630000014324,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-016.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.546323776245117,
+      "extraction_time_ms": 248.11490000138292,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-017.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.6796875,
+      "extraction_time_ms": 263.3080000014161,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-017.JPG",
+      "extension": ".JPG",
+      "size_mb": 13.12026596069336,
+      "extraction_time_ms": 247.73579999964568,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-018.ARW",
+      "extension": ".ARW",
+      "size_mb": 27.66796875,
+      "extraction_time_ms": 263.1065999994462,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-018.JPG",
+      "extension": ".JPG",
+      "size_mb": 12.234179496765137,
+      "extraction_time_ms": 252.6902000008704,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-019.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.0234375,
+      "extraction_time_ms": 263.90859999992244,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-019.JPG",
+      "extension": ".JPG",
+      "size_mb": 12.077255249023438,
+      "extraction_time_ms": 251.88970000090194,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-020.ARW",
+      "extension": ".ARW",
+      "size_mb": 27.5703125,
+      "extraction_time_ms": 262.4556000009761,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-020.JPG",
+      "extension": ".JPG",
+      "size_mb": 11.147753715515137,
+      "extraction_time_ms": 249.60149999969872,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-021.ARW",
+      "extension": ".ARW",
+      "size_mb": 31.03515625,
+      "extraction_time_ms": 260.49480000074254,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-021.JPG",
+      "extension": ".JPG",
+      "size_mb": 9.109289169311523,
+      "extraction_time_ms": 249.34750000102213,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-022.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.93359375,
+      "extraction_time_ms": 261.01869999911287,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-022.JPG",
+      "extension": ".JPG",
+      "size_mb": 10.411625862121582,
+      "extraction_time_ms": 247.19980000008945,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-023.ARW",
+      "extension": ".ARW",
+      "size_mb": 31.421875,
+      "extraction_time_ms": 258.5358999986056,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-023.JPG",
+      "extension": ".JPG",
+      "size_mb": 9.336806297302246,
+      "extraction_time_ms": 257.7819999987696,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-024.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.0625,
+      "extraction_time_ms": 259.0892999996868,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-024.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.052227020263672,
+      "extraction_time_ms": 253.7278999989212,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-025.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.30078125,
+      "extraction_time_ms": 260.5018000012933,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-025.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.604870796203613,
+      "extraction_time_ms": 245.23760000010952,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-026.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.21484375,
+      "extraction_time_ms": 260.2158000008785,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-026.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.858196258544922,
+      "extraction_time_ms": 248.98669999856793,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-027.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.16015625,
+      "extraction_time_ms": 264.92030000008526,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-027.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.70603084564209,
+      "extraction_time_ms": 251.58789999841247,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-028.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.1640625,
+      "extraction_time_ms": 256.7659999986063,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-028.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.146528244018555,
+      "extraction_time_ms": 257.0130000003701,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-029.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.22265625,
+      "extraction_time_ms": 271.60019999973883,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-029.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.653882026672363,
+      "extraction_time_ms": 252.7146000011271,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-030.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.68359375,
+      "extraction_time_ms": 264.42390000011073,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-030.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.416383743286133,
+      "extraction_time_ms": 249.66020000101707,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-031.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.515625,
+      "extraction_time_ms": 259.28860000021814,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-031.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.386040687561035,
+      "extraction_time_ms": 247.70969999917725,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-032.ARW",
+      "extension": ".ARW",
+      "size_mb": 27.0625,
+      "extraction_time_ms": 260.0739000008616,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-032.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.307382583618164,
+      "extraction_time_ms": 252.04309999935504,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-033.ARW",
+      "extension": ".ARW",
+      "size_mb": 29.046875,
+      "extraction_time_ms": 260.3584000007686,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-033.JPG",
+      "extension": ".JPG",
+      "size_mb": 11.674578666687012,
+      "extraction_time_ms": 258.21429999996326,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-034.ARW",
+      "extension": ".ARW",
+      "size_mb": 27.86328125,
+      "extraction_time_ms": 263.23469999988447,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-034.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.745577812194824,
+      "extraction_time_ms": 253.5950999990746,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-035.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.9921875,
+      "extraction_time_ms": 264.4940999998653,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-035.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.274044036865234,
+      "extraction_time_ms": 249.412699999084,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-036.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.2734375,
+      "extraction_time_ms": 266.8396000008215,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-036.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.333517074584961,
+      "extraction_time_ms": 258.5798000000068,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-037.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.0,
+      "extraction_time_ms": 259.2142000012245,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-037.JPG",
+      "extension": ".JPG",
+      "size_mb": 12.01577091217041,
+      "extraction_time_ms": 247.37780000032217,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-038.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.484375,
+      "extraction_time_ms": 261.07000000047265,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-038.JPG",
+      "extension": ".JPG",
+      "size_mb": 10.83765697479248,
+      "extraction_time_ms": 251.25479999951494,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-039.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.80859375,
+      "extraction_time_ms": 259.4518000005337,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-039.JPG",
+      "extension": ".JPG",
+      "size_mb": 11.764829635620117,
+      "extraction_time_ms": 248.61969999983557,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-040.ARW",
+      "extension": ".ARW",
+      "size_mb": 29.125,
+      "extraction_time_ms": 264.4161999996868,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-040.JPG",
+      "extension": ".JPG",
+      "size_mb": 11.12161636352539,
+      "extraction_time_ms": 246.40480000016396,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-041.ARW",
+      "extension": ".ARW",
+      "size_mb": 27.3125,
+      "extraction_time_ms": 265.0520000006509,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-041.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.250471115112305,
+      "extraction_time_ms": 248.39059999976598,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-042.ARW",
+      "extension": ".ARW",
+      "size_mb": 30.27734375,
+      "extraction_time_ms": 261.6539999999077,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-042.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.421329498291016,
+      "extraction_time_ms": 247.31710000014573,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-043.ARW",
+      "extension": ".ARW",
+      "size_mb": 29.3984375,
+      "extraction_time_ms": 261.35269999940647,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-043.JPG",
+      "extension": ".JPG",
+      "size_mb": 12.959138870239258,
+      "extraction_time_ms": 250.6214999993972,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-044.ARW",
+      "extension": ".ARW",
+      "size_mb": 29.515625,
+      "extraction_time_ms": 264.18829999965965,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-12-Northern-Spain-Bilbao-044.JPG",
+      "extension": ".JPG",
+      "size_mb": 11.367666244506836,
+      "extraction_time_ms": 247.88270000135526,
+      "date": "20250912",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-001.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.875,
+      "extraction_time_ms": 262.2029999984079,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-001.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.559978485107422,
+      "extraction_time_ms": 247.38780000006955,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-002.ARW",
+      "extension": ".ARW",
+      "size_mb": 27.296875,
+      "extraction_time_ms": 265.68700000098033,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-002.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.261678695678711,
+      "extraction_time_ms": 248.9451999990706,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-003.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.1328125,
+      "extraction_time_ms": 265.4499999989639,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-003.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.1134443283081055,
+      "extraction_time_ms": 248.4070000009524,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-004.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.81640625,
+      "extraction_time_ms": 266.16960000137624,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-004.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.1397552490234375,
+      "extraction_time_ms": 253.22679999953834,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-005.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.93359375,
+      "extraction_time_ms": 263.504999998986,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-005.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.648006439208984,
+      "extraction_time_ms": 251.13880000026256,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-006.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.08984375,
+      "extraction_time_ms": 262.731700000586,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-006.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.628107070922852,
+      "extraction_time_ms": 250.18920000002254,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-007.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.0703125,
+      "extraction_time_ms": 263.12309999957506,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-007.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.634650230407715,
+      "extraction_time_ms": 249.60289999944507,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-008.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.0234375,
+      "extraction_time_ms": 265.4012999992119,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-008.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.2497034072875977,
+      "extraction_time_ms": 254.92950000079873,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-009.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.3828125,
+      "extraction_time_ms": 261.18529999985185,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-009.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.219024658203125,
+      "extraction_time_ms": 249.03319999975793,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-010.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.23046875,
+      "extraction_time_ms": 264.98130000072706,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-010.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.416055679321289,
+      "extraction_time_ms": 252.8254000008019,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-011.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.16796875,
+      "extraction_time_ms": 262.5950000001467,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-011.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.290253639221191,
+      "extraction_time_ms": 245.3270000005432,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-012.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.8203125,
+      "extraction_time_ms": 267.4262999989878,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-012.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.109100341796875,
+      "extraction_time_ms": 251.33260000075097,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-013.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.59375,
+      "extraction_time_ms": 264.0326000000641,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-013.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.915605545043945,
+      "extraction_time_ms": 248.2067000000825,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-014.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.48046875,
+      "extraction_time_ms": 263.06230000045616,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-014.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.92008113861084,
+      "extraction_time_ms": 250.64490000113437,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-015.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.125,
+      "extraction_time_ms": 263.4351999986393,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-015.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.616428375244141,
+      "extraction_time_ms": 256.8767000011576,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-016.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.765625,
+      "extraction_time_ms": 264.9113000006764,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-016.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.807562828063965,
+      "extraction_time_ms": 248.41009999909147,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-017.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.02734375,
+      "extraction_time_ms": 258.0781999986357,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-017.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.616510391235352,
+      "extraction_time_ms": 248.95899999864923,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-018.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.55078125,
+      "extraction_time_ms": 266.436199999589,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-018.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.8617610931396484,
+      "extraction_time_ms": 247.99060000077588,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-019.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.7578125,
+      "extraction_time_ms": 261.9228999992629,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-019.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.099669456481934,
+      "extraction_time_ms": 254.59829999999783,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-020.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.6953125,
+      "extraction_time_ms": 257.6835999989271,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-020.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.105320930480957,
+      "extraction_time_ms": 249.84369999947376,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-021.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.17578125,
+      "extraction_time_ms": 266.7567999997118,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-021.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.538400650024414,
+      "extraction_time_ms": 253.66199999916716,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-022.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.0,
+      "extraction_time_ms": 264.42100000167557,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-022.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.6125688552856445,
+      "extraction_time_ms": 249.6735999993689,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-023.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.03125,
+      "extraction_time_ms": 264.341099999001,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-023.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.442190170288086,
+      "extraction_time_ms": 251.52669999988575,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-024.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.1328125,
+      "extraction_time_ms": 263.5081000007631,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-024.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.605864524841309,
+      "extraction_time_ms": 249.72299999899406,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-025.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.5859375,
+      "extraction_time_ms": 260.78510000115784,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-025.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.710633277893066,
+      "extraction_time_ms": 253.2498000000487,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-026.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.48046875,
+      "extraction_time_ms": 261.70429999910994,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-026.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.592995643615723,
+      "extraction_time_ms": 250.79989999903773,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-027.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.2578125,
+      "extraction_time_ms": 289.6096000004036,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-027.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.409363746643066,
+      "extraction_time_ms": 251.50759999996808,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-028.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.5859375,
+      "extraction_time_ms": 264.4371999995201,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-028.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.645205497741699,
+      "extraction_time_ms": 249.48100000074191,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-029.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.8515625,
+      "extraction_time_ms": 263.6643000005279,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-029.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.1934003829956055,
+      "extraction_time_ms": 247.03760000011243,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-030.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.7109375,
+      "extraction_time_ms": 262.41920000029495,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-030.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.207583427429199,
+      "extraction_time_ms": 247.88429999898653,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-031.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.06640625,
+      "extraction_time_ms": 260.7564999998431,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-031.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.018684387207031,
+      "extraction_time_ms": 249.04419999984384,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-032.ARW",
+      "extension": ".ARW",
+      "size_mb": 30.2890625,
+      "extraction_time_ms": 266.449200000352,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-032.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.82742691040039,
+      "extraction_time_ms": 248.44320000011066,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-033.ARW",
+      "extension": ".ARW",
+      "size_mb": 30.8359375,
+      "extraction_time_ms": 258.5275000001275,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-033.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.241357803344727,
+      "extraction_time_ms": 254.14810000074795,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-034.ARW",
+      "extension": ".ARW",
+      "size_mb": 29.04296875,
+      "extraction_time_ms": 261.6232000000309,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-034.JPG",
+      "extension": ".JPG",
+      "size_mb": 9.190271377563477,
+      "extraction_time_ms": 250.99860000045737,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-035.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.875,
+      "extraction_time_ms": 269.0762000001996,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-035.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.201828956604004,
+      "extraction_time_ms": 249.8517999993055,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-036.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.4765625,
+      "extraction_time_ms": 262.25309999972524,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-036.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.6378231048583984,
+      "extraction_time_ms": 250.40699999954086,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-037.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.2578125,
+      "extraction_time_ms": 266.8759999996837,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-037.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.030122756958008,
+      "extraction_time_ms": 247.740500000873,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-038.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.49609375,
+      "extraction_time_ms": 262.1338000008109,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-038.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.470592498779297,
+      "extraction_time_ms": 249.49829999968642,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-039.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.8671875,
+      "extraction_time_ms": 262.38980000016454,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-039.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.835176467895508,
+      "extraction_time_ms": 252.07760000012058,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-040.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.16796875,
+      "extraction_time_ms": 268.64650000061374,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-040.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.228884696960449,
+      "extraction_time_ms": 250.0239999990299,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-041.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.0546875,
+      "extraction_time_ms": 262.930699998833,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-041.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.102801322937012,
+      "extraction_time_ms": 247.90939999911643,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-042.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.1328125,
+      "extraction_time_ms": 262.6735000012559,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-042.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.833502769470215,
+      "extraction_time_ms": 249.69979999877978,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-043.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.91015625,
+      "extraction_time_ms": 267.2623999987991,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-043.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.53325080871582,
+      "extraction_time_ms": 253.65120000060415,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-044.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.34765625,
+      "extraction_time_ms": 265.7278000006045,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-044.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.76784610748291,
+      "extraction_time_ms": 248.8783999997395,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-045.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.34765625,
+      "extraction_time_ms": 262.291400000322,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-045.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.225695610046387,
+      "extraction_time_ms": 247.6305999989563,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-046.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.85546875,
+      "extraction_time_ms": 263.6512999997649,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-046.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.239943504333496,
+      "extraction_time_ms": 252.61409999984608,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-047.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.3359375,
+      "extraction_time_ms": 267.3310999998648,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-047.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.707636833190918,
+      "extraction_time_ms": 249.99100000059116,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-048.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.80078125,
+      "extraction_time_ms": 262.4900999999227,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-048.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.759620666503906,
+      "extraction_time_ms": 249.2232000004151,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-049.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.5625,
+      "extraction_time_ms": 268.5996999989584,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-049.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.704633712768555,
+      "extraction_time_ms": 250.47079999967536,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-050.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.33203125,
+      "extraction_time_ms": 261.61189999947965,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-050.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.3627567291259766,
+      "extraction_time_ms": 250.16469999900437,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-051.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.8984375,
+      "extraction_time_ms": 264.5135000002483,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-051.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.413454055786133,
+      "extraction_time_ms": 250.0359000005119,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-052.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.52734375,
+      "extraction_time_ms": 266.3511999999173,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-052.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.3115978240966797,
+      "extraction_time_ms": 252.04570000096282,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-053.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.0546875,
+      "extraction_time_ms": 266.669799999363,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-053.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.4303970336914062,
+      "extraction_time_ms": 248.8499999999476,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-054.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.37890625,
+      "extraction_time_ms": 262.59439999921597,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-054.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.5202512741088867,
+      "extraction_time_ms": 253.71369999993476,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-055.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.6953125,
+      "extraction_time_ms": 265.15440000002855,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-055.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.471384048461914,
+      "extraction_time_ms": 250.79149999874062,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-056.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.15625,
+      "extraction_time_ms": 254.04789999993227,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-056.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.496447563171387,
+      "extraction_time_ms": 252.51860000025772,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-057.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.0625,
+      "extraction_time_ms": 267.6174999996874,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-057.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.578157424926758,
+      "extraction_time_ms": 251.7604000004212,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-058.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.3046875,
+      "extraction_time_ms": 266.4518000001408,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-058.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.545282363891602,
+      "extraction_time_ms": 255.05139999950188,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-059.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.25390625,
+      "extraction_time_ms": 264.56990000042424,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-059.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.594416618347168,
+      "extraction_time_ms": 248.58920000042417,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-060.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.23828125,
+      "extraction_time_ms": 272.69149999847286,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-060.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.559811592102051,
+      "extraction_time_ms": 247.54079999911482,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-061.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.15234375,
+      "extraction_time_ms": 262.83520000106364,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-061.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.466184616088867,
+      "extraction_time_ms": 249.58199999855424,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-062.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.64453125,
+      "extraction_time_ms": 256.0438000000431,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-062.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.544766426086426,
+      "extraction_time_ms": 244.87760000010894,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-063.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.6171875,
+      "extraction_time_ms": 255.77089999933378,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-063.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.886789321899414,
+      "extraction_time_ms": 254.51260000045295,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-064.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.25390625,
+      "extraction_time_ms": 264.5673999995779,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-064.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.289238929748535,
+      "extraction_time_ms": 256.37989999995625,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-065.ARW",
+      "extension": ".ARW",
+      "size_mb": 21.98828125,
+      "extraction_time_ms": 257.87769999988086,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-065.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.090155601501465,
+      "extraction_time_ms": 247.87689999902796,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-066.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.11328125,
+      "extraction_time_ms": 263.1440000004659,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-066.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.419722557067871,
+      "extraction_time_ms": 251.13099999907718,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-067.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.265625,
+      "extraction_time_ms": 257.6246999997238,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-067.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.4509477615356445,
+      "extraction_time_ms": 251.78560000131256,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-068.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.390625,
+      "extraction_time_ms": 264.26899999933084,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-068.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.6532697677612305,
+      "extraction_time_ms": 253.53259999974398,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-069.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.31640625,
+      "extraction_time_ms": 272.64540000032866,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-069.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.5627756118774414,
+      "extraction_time_ms": 262.71880000058445,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-070.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.20703125,
+      "extraction_time_ms": 266.87629999833007,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-070.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.400099754333496,
+      "extraction_time_ms": 250.60920000032638,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-071.ARW",
+      "extension": ".ARW",
+      "size_mb": 21.9453125,
+      "extraction_time_ms": 263.2437000011123,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-071.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.1418886184692383,
+      "extraction_time_ms": 256.7490999990696,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-072.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.34375,
+      "extraction_time_ms": 279.59849999933795,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-072.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.7402477264404297,
+      "extraction_time_ms": 267.06820000072184,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-073.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.58984375,
+      "extraction_time_ms": 283.851299998787,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-073.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.625284194946289,
+      "extraction_time_ms": 287.0978000009927,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-074.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.51953125,
+      "extraction_time_ms": 276.2033999988489,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-074.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.589567184448242,
+      "extraction_time_ms": 253.03549999989627,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-075.ARW",
+      "extension": ".ARW",
+      "size_mb": 30.80078125,
+      "extraction_time_ms": 268.73689999956696,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-075.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.879915237426758,
+      "extraction_time_ms": 248.45400000049267,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-076.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.22265625,
+      "extraction_time_ms": 273.329300000114,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-076.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.5795793533325195,
+      "extraction_time_ms": 257.2678000015003,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-077.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.68359375,
+      "extraction_time_ms": 267.8128999996261,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-077.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.31472110748291,
+      "extraction_time_ms": 245.4180999993696,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-078.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.3203125,
+      "extraction_time_ms": 266.799600000013,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-078.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.24836540222168,
+      "extraction_time_ms": 246.73249999977998,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-079.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.17578125,
+      "extraction_time_ms": 264.321700000437,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-079.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.7038116455078125,
+      "extraction_time_ms": 249.69599999894854,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-080.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.74609375,
+      "extraction_time_ms": 264.08360000095854,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-080.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.475159645080566,
+      "extraction_time_ms": 250.21879999985686,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-081.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.4140625,
+      "extraction_time_ms": 261.3241000017297,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-081.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.5108795166015625,
+      "extraction_time_ms": 252.7458000004117,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-082.ARW",
+      "extension": ".ARW",
+      "size_mb": 27.02734375,
+      "extraction_time_ms": 265.3105000008509,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-082.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.304095268249512,
+      "extraction_time_ms": 251.3053000002401,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-083.ARW",
+      "extension": ".ARW",
+      "size_mb": 27.02734375,
+      "extraction_time_ms": 265.9733000000415,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-083.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.54588508605957,
+      "extraction_time_ms": 254.22749999961525,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-084.ARW",
+      "extension": ".ARW",
+      "size_mb": 27.1171875,
+      "extraction_time_ms": 259.8304000002827,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-084.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.846796035766602,
+      "extraction_time_ms": 261.6582999999082,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-085.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.0625,
+      "extraction_time_ms": 265.97039999978733,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-085.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.229048728942871,
+      "extraction_time_ms": 248.83829999998852,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-086.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.72265625,
+      "extraction_time_ms": 266.39129999966826,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-086.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.689830780029297,
+      "extraction_time_ms": 252.12479999936477,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-087.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.4453125,
+      "extraction_time_ms": 259.10900000053516,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-087.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.20053768157959,
+      "extraction_time_ms": 254.222600000503,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-088.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.83984375,
+      "extraction_time_ms": 263.1323000005068,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-088.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.332244873046875,
+      "extraction_time_ms": 242.96510000021954,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-089.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.125,
+      "extraction_time_ms": 256.7474999996193,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-089.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.249173164367676,
+      "extraction_time_ms": 244.48200000006182,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-090.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.671875,
+      "extraction_time_ms": 257.6681999998982,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-090.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.061464309692383,
+      "extraction_time_ms": 254.37109999984386,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-091.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.53515625,
+      "extraction_time_ms": 261.310500000036,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-091.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.960071563720703,
+      "extraction_time_ms": 250.8176999999705,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-092.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.484375,
+      "extraction_time_ms": 267.2039999997651,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-092.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.9272336959838867,
+      "extraction_time_ms": 248.4626000004937,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-093.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.51171875,
+      "extraction_time_ms": 261.2705999999889,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-093.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.148487091064453,
+      "extraction_time_ms": 256.56720000006317,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-094.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.58984375,
+      "extraction_time_ms": 256.32450000011886,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-094.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.106241226196289,
+      "extraction_time_ms": 247.88359999911336,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-095.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.4921875,
+      "extraction_time_ms": 258.00449999951525,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-095.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.087306022644043,
+      "extraction_time_ms": 246.73239999901853,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-096.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.46875,
+      "extraction_time_ms": 260.95059999897785,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-096.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.75244140625,
+      "extraction_time_ms": 253.76179999875603,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-097.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.67578125,
+      "extraction_time_ms": 264.56099999995786,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-097.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.255237579345703,
+      "extraction_time_ms": 250.74820000008913,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-098.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.03125,
+      "extraction_time_ms": 269.29089999975986,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-098.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.642703056335449,
+      "extraction_time_ms": 248.05770000057237,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-099.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.30859375,
+      "extraction_time_ms": 261.22919999943406,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-099.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.05211067199707,
+      "extraction_time_ms": 252.5409000008949,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-100.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.421875,
+      "extraction_time_ms": 258.25869999971474,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-100.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.117382049560547,
+      "extraction_time_ms": 248.18609999965702,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-101.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.55859375,
+      "extraction_time_ms": 258.67960000141466,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-101.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.400333404541016,
+      "extraction_time_ms": 252.03919999876234,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-102.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.9453125,
+      "extraction_time_ms": 259.0679999993881,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-102.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.023812294006348,
+      "extraction_time_ms": 245.4070000003412,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-103.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.890625,
+      "extraction_time_ms": 265.9578999991936,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-103.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.332403182983398,
+      "extraction_time_ms": 268.88899999903515,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-104.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.296875,
+      "extraction_time_ms": 266.70109999940905,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-104.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.18475341796875,
+      "extraction_time_ms": 251.834400000007,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-105.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.27734375,
+      "extraction_time_ms": 260.2843999993638,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-105.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.255614280700684,
+      "extraction_time_ms": 253.11560000045574,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-106.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.16796875,
+      "extraction_time_ms": 270.8516000002419,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-106.JPG",
+      "extension": ".JPG",
+      "size_mb": 10.032184600830078,
+      "extraction_time_ms": 244.562699999733,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-107.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.79296875,
+      "extraction_time_ms": 267.3895999996603,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-107.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.509243011474609,
+      "extraction_time_ms": 253.72649999917485,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-108.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.05859375,
+      "extraction_time_ms": 261.49179999993066,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-108.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.714787483215332,
+      "extraction_time_ms": 254.9791000001278,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-109.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.703125,
+      "extraction_time_ms": 262.76470000084373,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-109.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.976926803588867,
+      "extraction_time_ms": 251.03409999974247,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-110.ARW",
+      "extension": ".ARW",
+      "size_mb": 27.41796875,
+      "extraction_time_ms": 256.58950000070035,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-110.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.791342735290527,
+      "extraction_time_ms": 244.4193000010273,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-111.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.03515625,
+      "extraction_time_ms": 265.2660999992804,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-111.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.052984237670898,
+      "extraction_time_ms": 251.0513000015635,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-112.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.328125,
+      "extraction_time_ms": 265.5804999994871,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-112.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.927260398864746,
+      "extraction_time_ms": 257.9172000005201,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-113.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.3203125,
+      "extraction_time_ms": 268.85629999924276,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-113.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.798473358154297,
+      "extraction_time_ms": 254.73880000026838,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-114.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.41796875,
+      "extraction_time_ms": 263.30719999896246,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-114.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.327751159667969,
+      "extraction_time_ms": 265.86929999939457,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-115.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.8046875,
+      "extraction_time_ms": 268.30899999913527,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-115.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.890486717224121,
+      "extraction_time_ms": 253.05630000002566,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-116.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.625,
+      "extraction_time_ms": 259.1403000005812,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-116.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.259011268615723,
+      "extraction_time_ms": 251.11889999971027,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-117.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.08203125,
+      "extraction_time_ms": 257.4131999990641,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-117.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.891925811767578,
+      "extraction_time_ms": 247.74359999901208,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-118.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.82421875,
+      "extraction_time_ms": 260.81449999946926,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-118.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.706938743591309,
+      "extraction_time_ms": 251.2845000001107,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-119.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.4921875,
+      "extraction_time_ms": 270.228400000633,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-119.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.91729736328125,
+      "extraction_time_ms": 253.85180000012042,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-120.ARW",
+      "extension": ".ARW",
+      "size_mb": 29.50390625,
+      "extraction_time_ms": 268.3467999995628,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-120.JPG",
+      "extension": ".JPG",
+      "size_mb": 8.852914810180664,
+      "extraction_time_ms": 255.91329999951995,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-121.ARW",
+      "extension": ".ARW",
+      "size_mb": 28.71484375,
+      "extraction_time_ms": 278.43860000029963,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-121.JPG",
+      "extension": ".JPG",
+      "size_mb": 7.641416549682617,
+      "extraction_time_ms": 264.6845999988727,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-122.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.37109375,
+      "extraction_time_ms": 273.0683999998291,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-122.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.648426055908203,
+      "extraction_time_ms": 249.90270000125747,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-123.ARW",
+      "extension": ".ARW",
+      "size_mb": 26.04296875,
+      "extraction_time_ms": 268.98889999938547,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-123.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.121006011962891,
+      "extraction_time_ms": 248.4893999990163,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-124.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.0234375,
+      "extraction_time_ms": 263.9432999985729,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-124.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.124188423156738,
+      "extraction_time_ms": 252.79890000092564,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-125.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.5703125,
+      "extraction_time_ms": 264.6305000016582,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-125.JPG",
+      "extension": ".JPG",
+      "size_mb": 6.334973335266113,
+      "extraction_time_ms": 256.7829999989044,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-126.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.078125,
+      "extraction_time_ms": 260.9965999999986,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-126.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.442509651184082,
+      "extraction_time_ms": 250.63010000121722,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-127.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.98046875,
+      "extraction_time_ms": 263.375200000155,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-127.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.558988571166992,
+      "extraction_time_ms": 253.47160000092117,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-128.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.546875,
+      "extraction_time_ms": 261.07819999924686,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-128.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.719045639038086,
+      "extraction_time_ms": 252.23469999946246,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-129.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.9140625,
+      "extraction_time_ms": 262.5742000000173,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-129.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.244467735290527,
+      "extraction_time_ms": 253.48359999952663,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-130.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.87109375,
+      "extraction_time_ms": 268.5633000000962,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-130.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.37092399597168,
+      "extraction_time_ms": 253.69540000065172,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-131.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.69921875,
+      "extraction_time_ms": 262.2738999998546,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-131.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.250160217285156,
+      "extraction_time_ms": 257.4328999999125,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-132.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.7578125,
+      "extraction_time_ms": 263.83110000097076,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-132.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.880605697631836,
+      "extraction_time_ms": 245.77010000029986,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-133.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.93359375,
+      "extraction_time_ms": 262.3772999995708,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-133.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.321837425231934,
+      "extraction_time_ms": 256.75050000063493,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-134.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.71875,
+      "extraction_time_ms": 261.8086999991647,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-134.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.809283256530762,
+      "extraction_time_ms": 254.39560000086203,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-135.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.078125,
+      "extraction_time_ms": 266.6246000007959,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-135.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.94482421875,
+      "extraction_time_ms": 246.86880000081146,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-136.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.984375,
+      "extraction_time_ms": 262.5841999997647,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-136.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.052027702331543,
+      "extraction_time_ms": 254.11840000015218,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-137.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.2421875,
+      "extraction_time_ms": 265.22920000024897,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-137.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.196413993835449,
+      "extraction_time_ms": 249.65709999924002,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-138.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.31640625,
+      "extraction_time_ms": 263.2577999993373,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-138.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.299162864685059,
+      "extraction_time_ms": 248.64349999916158,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-139.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.19921875,
+      "extraction_time_ms": 266.2018999999418,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-139.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.319748878479004,
+      "extraction_time_ms": 249.26699999923585,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-140.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.90625,
+      "extraction_time_ms": 262.64459999947576,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-140.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.044724464416504,
+      "extraction_time_ms": 245.53590000141412,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-141.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.95703125,
+      "extraction_time_ms": 267.06969999941066,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-141.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.149355888366699,
+      "extraction_time_ms": 253.30719999874418,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-142.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.3359375,
+      "extraction_time_ms": 258.7569000006624,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-142.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.228533744812012,
+      "extraction_time_ms": 253.5013999986404,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-143.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.953125,
+      "extraction_time_ms": 291.461500000878,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-143.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.155135154724121,
+      "extraction_time_ms": 251.34580000121787,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-144.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.9609375,
+      "extraction_time_ms": 267.4771999991208,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-144.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.226381301879883,
+      "extraction_time_ms": 249.60099999952945,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-145.ARW",
+      "extension": ".ARW",
+      "size_mb": 25.29296875,
+      "extraction_time_ms": 264.24969999970926,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-145.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.716729164123535,
+      "extraction_time_ms": 249.75170000107028,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-146.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.609375,
+      "extraction_time_ms": 258.8183999996545,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-146.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.171570777893066,
+      "extraction_time_ms": 246.4272000015626,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-147.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.60546875,
+      "extraction_time_ms": 263.7563999996928,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-147.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.171672821044922,
+      "extraction_time_ms": 248.4081000002334,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-148.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.625,
+      "extraction_time_ms": 265.1373999997304,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-148.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.111863136291504,
+      "extraction_time_ms": 244.5052000002761,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-149.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.5,
+      "extraction_time_ms": 260.1240999993024,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-149.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.454830169677734,
+      "extraction_time_ms": 244.95459999889135,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-150.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.4921875,
+      "extraction_time_ms": 266.19580000078713,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-150.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.64009952545166,
+      "extraction_time_ms": 248.38049999925715,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-151.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.828125,
+      "extraction_time_ms": 257.28199999866774,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-151.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.692505836486816,
+      "extraction_time_ms": 257.09459999961837,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-152.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.94921875,
+      "extraction_time_ms": 259.7014000002673,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-152.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.86848258972168,
+      "extraction_time_ms": 252.06079999952635,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-153.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.671875,
+      "extraction_time_ms": 263.65959999930055,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-153.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.2052507400512695,
+      "extraction_time_ms": 243.76520000078017,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-154.ARW",
+      "extension": ".ARW",
+      "size_mb": 23.328125,
+      "extraction_time_ms": 260.0870999995095,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-154.JPG",
+      "extension": ".JPG",
+      "size_mb": 4.620597839355469,
+      "extraction_time_ms": 256.12179999916407,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-155.ARW",
+      "extension": ".ARW",
+      "size_mb": 24.3671875,
+      "extraction_time_ms": 259.80060000074445,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-18-Northern-Spain-Bilbao-155.JPG",
+      "extension": ".JPG",
+      "size_mb": 5.7569074630737305,
+      "extraction_time_ms": 247.49340000016673,
+      "date": "20250918",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-19-Northern-Spain-Bilbao-001.ARW",
+      "extension": ".ARW",
+      "size_mb": 22.08984375,
+      "extraction_time_ms": 267.94490000065707,
+      "date": "20250919",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    },
+    {
+      "file": "2025-09-19-Northern-Spain-Bilbao-001.JPG",
+      "extension": ".JPG",
+      "size_mb": 3.338258743286133,
+      "extraction_time_ms": 251.15390000064508,
+      "date": "20250919",
+      "camera": "ILCE-7CM2",
+      "lens": "FE-20-70mm-F4-G"
+    }
+  ],
+  "errors": [],
+  "timing": {
+    "total": 153.10677140000007,
+    "per_file_avg": 0.2568236535234485,
+    "per_file_min": 0.23502000000007683,
+    "per_file_max": 0.2975072999997792
+  }
+}
