@@ -276,15 +276,74 @@ class RenameWorkerThread(QThread):
 
         self.progress_update.emit(f"Processing {len(file_groups)} file groups...")
 
-        # When not ordering by date, provide deterministic ordering via earliest timestamp
-        if not self.use_date:
-            def earliest(group):
+        # ALWAYS sort by EXIF timestamp for chronological ordering
+        # This ensures files are numbered in the order they were actually taken
+        self.progress_update.emit("Sorting files by capture time...")
+        
+        def get_exif_sort_key(group):
+            """
+            Sort key based on EXIF DateTimeOriginal (down to seconds).
+            Falls back to mtime, then filename number.
+            """
+            first_file = group[0]
+            
+            # Try to get EXIF timestamp
+            exif_datetime = None
+            if self.exif_method:
                 try:
-                    mtimes = [os.path.getmtime(p) for p in group]
-                    return min(mtimes)
+                    date_str, _, _ = exif_processor.get_selective_cached_exif_data(
+                        first_file, self.exif_method, self.exiftool_path,
+                        need_date=True, need_camera=False, need_lens=False
+                    )
+                    if date_str:
+                        # Convert YYYYMMDD to full timestamp if we have it
+                        # Try to get full datetime from raw EXIF
+                        raw_meta = exif_processor.get_exiftool_metadata_shared(first_file, self.exiftool_path)
+                        if raw_meta:
+                            # Look for DateTimeOriginal with time
+                            datetime_fields = [
+                                'EXIF:DateTimeOriginal',
+                                'EXIF:CreateDate', 
+                                'QuickTime:CreateDate',
+                                'QuickTime:CreationDate'
+                            ]
+                            for field in datetime_fields:
+                                if field in raw_meta:
+                                    dt_str = raw_meta[field]
+                                    # Parse format: "2024:01:15 10:30:45"
+                                    try:
+                                        import datetime as dt_module
+                                        if ':' in dt_str:
+                                            # Handle both "2024:01:15 10:30:45" and "2024-01-15 10:30:45"
+                                            dt_str_clean = dt_str.replace(':', '-', 2)  # Replace first 2 colons
+                                            exif_datetime = dt_module.datetime.strptime(dt_str_clean, "%Y-%m-%d %H:%M:%S")
+                                            break
+                                    except Exception:
+                                        pass
                 except Exception:
-                    return 0
-            file_groups.sort(key=earliest)
+                    pass
+            
+            # Fallback to file modification time
+            if not exif_datetime:
+                try:
+                    import datetime as dt_module
+                    mtime = os.path.getmtime(first_file)
+                    exif_datetime = dt_module.datetime.fromtimestamp(mtime)
+                except Exception:
+                    import datetime as dt_module
+                    exif_datetime = dt_module.datetime(1970, 1, 1)
+            
+            # Extract number from filename as tiebreaker
+            basename = os.path.basename(first_file)
+            match = re.search(r'(\d+)', basename)
+            file_number = int(match.group(1)) if match else 0
+            
+            # Return tuple: (datetime, file_number, filename)
+            # This ensures chronological order with filename as tiebreaker
+            return (exif_datetime, file_number, first_file)
+        
+        file_groups.sort(key=get_exif_sort_key)
+        self.progress_update.emit("Files sorted chronologically")
 
         renamed_files = []
         errors = []
