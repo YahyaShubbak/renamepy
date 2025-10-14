@@ -40,6 +40,11 @@ class FileListManager:
             media_files = [f for f in files if is_media_file(f)]
             self.parent.files.extend(media_files)
             self.update_file_list()
+            
+            # Clear EXIF cache when loading new files
+            from ..exif_processor import clear_global_exif_cache
+            clear_global_exif_cache()
+            
             self.parent.extract_camera_info()
     
     def select_folder(self):
@@ -49,6 +54,11 @@ class FileListManager:
             media_files = scan_directory_recursive(folder)
             self.parent.files.extend(media_files)
             self.update_file_list()
+            
+            # Clear EXIF cache when loading new folder
+            from ..exif_processor import clear_global_exif_cache
+            clear_global_exif_cache()
+            
             self.parent.extract_camera_info()
     
     def clear_file_list(self):
@@ -63,6 +73,10 @@ class FileListManager:
         self.parent.lens_models = {}
         self.parent.camera_model_label.setText("(no files selected)")
         self.parent.lens_model_label.setText("(no files selected)")
+        
+        # Clear EXIF cache when clearing files
+        from ..exif_processor import clear_global_exif_cache
+        clear_global_exif_cache()
         
         self.update_file_list_placeholder()
         self.update_file_statistics()
@@ -118,6 +132,10 @@ class FileListManager:
             item = self.parent.file_list.item(0)
             if item and item.text() == "Drop files here or click 'Select Files' to begin":
                 self.parent.file_list.clear()
+        
+        # Clear EXIF cache when adding new files
+        from ..exif_processor import clear_global_exif_cache
+        clear_global_exif_cache()
         
         # Validate and add files
         added_count = 0

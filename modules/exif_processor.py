@@ -1164,3 +1164,89 @@ def batch_restore_timestamps(backup_data, progress_callback=None):
             errors.append((file_path, message))
     
     return successes, errors
+
+
+def restore_exif_timestamps(file_path, original_exif, exiftool_path):
+    """
+    Restore original EXIF timestamps from backup.
+    
+    Args:
+        file_path: Path to the file
+        original_exif: Dictionary with original EXIF date fields
+        exiftool_path: Path to ExifTool executable
+        
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    import subprocess
+    
+    try:
+        if not os.path.exists(file_path):
+            return False, f"File not found: {file_path}"
+        
+        if not original_exif:
+            return False, "No backup EXIF data available"
+        
+        if not exiftool_path:
+            exiftool_path = find_exiftool_path()
+            if not exiftool_path:
+                return False, "ExifTool executable not found"
+        
+        # Build ExifTool command to restore all backed-up fields
+        cmd = [exiftool_path, "-overwrite_original"]
+        
+        # Add each backed-up field
+        for field, value in original_exif.items():
+            # Format: -EXIF:DateTimeOriginal="2024:01:15 10:30:45"
+            cmd.append(f'-{field}={value}')
+        
+        cmd.append(file_path)
+        
+        # Execute ExifTool
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        )
+        
+        if result.returncode == 0:
+            return True, "EXIF timestamps restored successfully"
+        else:
+            return False, f"ExifTool error: {result.stderr}"
+        
+    except Exception as e:
+        return False, f"Error restoring EXIF timestamps: {e}"
+
+
+def batch_restore_exif_timestamps(backup_data, exiftool_path, progress_callback=None):
+    """
+    Batch restore original EXIF timestamps for multiple files.
+    
+    Args:
+        backup_data: Dictionary mapping file paths to original EXIF data
+        exiftool_path: Path to ExifTool executable
+        progress_callback: Optional callback function for progress updates
+        
+    Returns:
+        tuple: (successes: list, errors: list)
+    """
+    successes = []
+    errors = []
+    
+    file_paths = list(backup_data.keys())
+    
+    for i, file_path in enumerate(file_paths):
+        if progress_callback:
+            progress_callback(f"Restoring EXIF {i+1}/{len(file_paths)}: {os.path.basename(file_path)}")
+        
+        original_exif = backup_data[file_path]
+        success, message = restore_exif_timestamps(file_path, original_exif, exiftool_path)
+        
+        if success:
+            successes.append((file_path, message))
+        else:
+            errors.append((file_path, message))
+    
+    return successes, errors
+

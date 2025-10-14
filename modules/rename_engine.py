@@ -27,8 +27,34 @@ except ImportError:
         return safe_name.strip('_')
     
     def get_safe_target_path(original_file, new_filename):
+        """
+        Generate safe target path, avoiding conflicts.
+        Ignores the source file itself to allow same-name "renames".
+        """
         directory = os.path.dirname(original_file)
-        return os.path.join(directory, new_filename)
+        new_path = os.path.join(directory, new_filename)
+        
+        # If target is the same as source (case-insensitive on Windows), it's safe
+        if os.path.normcase(original_file) == os.path.normcase(new_path):
+            return new_path
+        
+        # Check if target already exists
+        if not os.path.exists(new_path):
+            return new_path
+        
+        # Generate alternative name if conflict exists
+        base, ext = os.path.splitext(new_filename)
+        attempt = 1
+        
+        while os.path.exists(new_path) and attempt <= 999:
+            new_name_attempt = f"{base}({attempt}){ext}"
+            new_path = os.path.join(directory, new_name_attempt)
+            attempt += 1
+        
+        if attempt > 999:
+            raise RuntimeError(f"Cannot generate unique filename for {new_filename}")
+        
+        return new_path
     
     def validate_path_length(path):
         return len(path) <= 260
@@ -467,6 +493,17 @@ class RenameWorkerThread(QThread):
                     sep = '' if self.devider == 'None' else self.devider
                     new_name = sanitize_final_filename(sep.join(parts) + os.path.splitext(path)[1])
                     target = get_safe_target_path(path, new_name)
+                    
+                    # Check if name conflict occurred (suffix was added)
+                    if '(' in os.path.basename(target) and ')' in os.path.basename(target):
+                        # Extract the intended name without suffix
+                        intended_target = os.path.join(os.path.dirname(path), new_name)
+                        if os.path.normcase(path) != os.path.normcase(intended_target) and os.path.exists(intended_target):
+                            # Real conflict: another file exists with this name
+                            conflict_msg = f"Name conflict: '{new_name}' already exists, renamed to '{os.path.basename(target)}'"
+                            if conflict_msg not in errors:  # Avoid duplicates
+                                errors.append(conflict_msg)
+                    
                     if not validate_path_length(target):
                         # Attempt shorten
                         directory = os.path.dirname(path)

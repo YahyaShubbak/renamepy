@@ -206,9 +206,14 @@ def check_file_access(file_path):
 def get_safe_target_path(original_path, new_name):
     """
     Generate a safe target path, avoiding conflicts with existing files.
+    Ignores the source file itself to allow same-name "renames".
     """
     directory = os.path.dirname(original_path)
     new_path = os.path.join(directory, new_name)
+    
+    # If target is the same as source (case-insensitive on Windows), it's safe
+    if os.path.normcase(original_path) == os.path.normcase(new_path):
+        return new_path
     
     # Check if target already exists
     if not os.path.exists(new_path):
