@@ -1,53 +1,98 @@
 @echo off
 setlocal ENABLEDELAYEDEXPANSION
-REM ---------------------------------------------------------
-REM  FILE RENAMER - DEBUG STARTER
-REM  Verbose diagnostics + optional conda env activation
-REM ---------------------------------------------------------
+REM ============================================================================
+REM  RenamePy - DEBUG STARTER
+REM ============================================================================
+REM Startet die Anwendung mit Debugging und Conda Environment
 
 set SCRIPT_DIR=%~dp0
-cd /d "%SCRIPT_DIR%" || (echo FEHLER: Script-Verzeichnis nicht erreichbar & pause & exit /b 1)
+cd /d "%SCRIPT_DIR%" || (
+    echo FEHLER: Skript-Verzeichnis nicht erreichbar
+    pause
+    exit /b 1
+)
 
 echo ======================================
 echo   FILE RENAMER - DEBUG MODUS
 echo   Verzeichnis: %SCRIPT_DIR%
 echo ======================================
+echo.
 
-REM Try to activate conda env if available (optional)
-set USE_CONDA=1
-if defined CONDA_DEFAULT_ENV (echo (Conda bereits aktiv: %CONDA_DEFAULT_ENV%) ) else (
-    if exist "%USERPROFILE%\miniconda3\Scripts\activate.bat" (
-        call "%USERPROFILE%\miniconda3\Scripts\activate.bat" || set USE_CONDA=
-    ) else if exist "%USERPROFILE%\anaconda3\Scripts\activate.bat" (
-        call "%USERPROFILE%\anaconda3\Scripts\activate.bat" || set USE_CONDA=
-    ) else (
-        set USE_CONDA=
+REM Aktiviere Conda Environment
+if exist "%USERPROFILE%\miniconda3\Scripts\activate.bat" (
+    echo [1] Aktiviere Conda Environment 'renamepy'...
+    call "%USERPROFILE%\miniconda3\Scripts\activate.bat" renamepy
+    if errorlevel 1 (
+        echo FEHLER: Conda Environment konnte nicht aktiviert werden
+        pause
+        exit /b 1
     )
-    if defined USE_CONDA (
-         call conda activate renamepy 2>nul || echo (Nutze base oder System-Python)
-    )
+    echo [OK] Conda Environment aktiviert
+) else (
+    echo FEHLER: Conda nicht gefunden
+    echo Installation erforderlich: .\install.bat
+    pause
+    exit /b 1
 )
 
-where py >nul 2>nul && (set PY_CMD=py) || (set PY_CMD=python)
-echo Python Version / Pfad:
-%PY_CMD% --version
-%PY_CMD% -c "import sys; print(sys.executable)" 2>nul
+echo.
+echo [2] Python Verzeichnis und Version pruefen...
+python --version
+python -c "import sys; print('Python Pfad: ' + sys.executable)"
 
-echo Dateien prüfen...
-if not exist RenameFiles.py (echo FEHLER: RenameFiles.py fehlt & pause & exit /b 1)
-if not exist modules\ (echo FEHLER: modules Ordner fehlt & dir & pause & exit /b 1)
-if not exist modules\__init__.py (echo Hinweis: __init__.py fehlte - wird angelegt & > modules\__init__.py echo # auto-created)
+echo.
+echo [3] Dateien pruefen...
+if not exist RenameFiles.py (
+    echo FEHLER: RenameFiles.py fehlt
+    pause
+    exit /b 1
+)
+if not exist modules\ (
+    echo FEHLER: modules Ordner fehlt
+    dir
+    pause
+    exit /b 1
+)
+if not exist modules\__init__.py (
+    echo Hinweis: modules\__init__.py wird erstellt
+    > modules\__init__.py echo # auto-created
+)
 
-echo Inhaltsübersicht:
-dir /b RenameFiles.py
-dir /a-d /b modules | find /v "__pycache__"
+echo [OK] Alle Dateien vorhanden
 
+echo.
+echo [4] Pruefen auf erforderliche Module...
+python -c "import PyQt6; print('PyQt6: OK')" 2>nul || echo "PyQt6: FEHLER"
+python -c "import PIL; print('Pillow: OK')" 2>nul || echo "Pillow: FEHLER"
+python -c "import exiftool; print('PyExifTool: OK')" 2>nul || echo "PyExifTool: FEHLER"
+
+echo.
 echo ======================================
-echo   START
+echo   START ANWENDUNG
 echo ======================================
 set START_TS=%time%
-%PY_CMD% RenameFiles.py
+python RenameFiles.py
 set EXITCODE=%ERRORLEVEL%
+set END_TS=%time%
+
+echo.
+echo ======================================
+echo   DEBUG INFO
+echo ======================================
+echo Startzeit: %START_TS%
+echo Endzeit:   %END_TS%
+echo Exit Code: %EXITCODE%
+if %EXITCODE% neq 0 (
+    echo Status: FEHLER
+    echo Loesung: Fuehre zuerst .\install.ps1 aus
+) else (
+    echo Status: OK
+)
+echo ======================================
+
+pause
+endlocal
+exit /b %EXITCODE%
 echo ======================================
 echo   ENDE (Code %EXITCODE%)
 echo   Startzeit : %START_TS%

@@ -1,33 +1,76 @@
 @echo off
 setlocal ENABLEDELAYEDEXPANSION
-REM ---------------------------------------------------------
-REM  File Renamer Starter (mit optionalem Conda Env)
-REM ---------------------------------------------------------
+REM ============================================================================
+REM  RenamePy - File Renamer GUI Starter
+REM ============================================================================
+REM Startet die Anwendung mit korrektem Conda Environment
 
 set SCRIPT_DIR=%~dp0
-cd /d "%SCRIPT_DIR%" || (echo FEHLER: Projektverzeichnis nicht erreichbar & pause & exit /b 1)
-echo Projektverzeichnis: %cd%
-
-REM Optional: Conda aktivieren (falls vorhanden)
-set _TRY_CONDA=
-for %%A in ("%USERPROFILE%\miniconda3","%USERPROFILE%\anaconda3","C:\ProgramData\miniconda3") do (
-    if exist %%A\Scripts\activate.bat set _TRY_CONDA=%%A\Scripts\activate.bat
+cd /d "%SCRIPT_DIR%" || (
+    echo FEHLER: Projektverzeichnis nicht erreichbar
+    pause
+    exit /b 1
 )
-if defined _TRY_CONDA (
-    call "%_TRY_CONDA%" && (call conda activate renamepy 2>nul || echo (Nutze base/env nicht gefunden))
+
+echo ======================================
+echo   FILE RENAMER - GUI START
+echo   Pfad: %cd%
+echo ======================================
+echo.
+
+REM Prüfe auf renamepy Conda Environment
+set CONDA_ENV="%USERPROFILE%\miniconda3\envs\renamepy"
+set CONDA_SCRIPTS="%USERPROFILE%\miniconda3\Scripts"
+
+if exist "%USERPROFILE%\miniconda3\Scripts\activate.bat" (
+    echo Aktiviere Conda Environment 'renamepy'...
+    call "%USERPROFILE%\miniconda3\Scripts\activate.bat" renamepy
+    if errorlevel 1 (
+        echo FEHLER: Conda Environment konnte nicht aktiviert werden
+        echo Loesung: .\install.ps1
+        pause
+        exit /b 1
+    )
 ) else (
-    echo (Conda nicht gefunden - nutze System-Python)
+    echo WARNUNG: Conda nicht gefunden
+    echo Installation empfohlen: .\install.bat
 )
 
-where py >nul 2>nul && (set PY_CMD=py) || (set PY_CMD=python)
-%PY_CMD% --version || (echo FEHLER: Python nicht gefunden & pause & exit /b 1)
+REM Prüfe Python
+python --version >nul 2>nul
+if errorlevel 1 (
+    echo FEHLER: Python nicht verfuegbar
+    pause
+    exit /b 1
+)
 
-if not exist RenameFiles.py (echo FEHLER: RenameFiles.py fehlt & pause & exit /b 1)
-if not exist modules\ (echo FEHLER: modules Ordner fehlt & pause & exit /b 1)
-if not exist modules\__init__.py (echo Hinweis: __init__.py fehlte - wird angelegt & > modules\__init__.py echo # auto-created)
+REM Prüfe erforderliche Dateien
+if not exist RenameFiles.py (
+    echo FEHLER: RenameFiles.py nicht gefunden
+    pause
+    exit /b 1
+)
 
-echo Starte GUI...
-%PY_CMD% RenameFiles.py
+if not exist modules\ (
+    echo FEHLER: modules Ordner nicht gefunden
+    pause
+    exit /b 1
+)
+
+echo Python verfuegbar
+echo Starte Anwendung...
+echo.
+
+python RenameFiles.py
+
+if errorlevel 1 (
+    echo.
+    echo FEHLER: Anwendung wurde mit Fehler beendet
+    echo Loesung: Fuehre zuerst .\install.ps1 aus
+)
+
+pause
+exit /b %errorlevel%
 set EXITCODE=%ERRORLEVEL%
 echo Fertig (Code %EXITCODE%)
 if %EXITCODE% neq 0 pause
