@@ -225,7 +225,12 @@ class PreviewGenerator:
                 if is_selected:
                     meta_name = f"Meta_{meta_key}"
                     if meta_name not in active_components_order:
-                        active_components_order.append(meta_name)
+                        # CRITICAL FIX: Insert new components BEFORE "Number", not at the end
+                        if "Number" in active_components_order:
+                            number_index = active_components_order.index("Number")
+                            active_components_order.insert(number_index, meta_name)
+                        else:
+                            active_components_order.append(meta_name)
         
         # Add components in the current order
         for component_name in active_components_order:
