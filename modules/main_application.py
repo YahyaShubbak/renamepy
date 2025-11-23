@@ -32,11 +32,12 @@ from .file_utilities import (
     rename_files, FileConstants, MEDIA_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS,
     is_image_file, is_video_file
 )
+from .exif_service_new import ExifService, EXIFTOOL_AVAILABLE, PIL_AVAILABLE
 from .exif_processor import (
     get_cached_exif_data, get_selective_cached_exif_data,
     extract_exif_fields, get_exiftool_metadata_shared, 
     cleanup_global_exiftool, clear_global_exif_cache,
-    SimpleExifHandler, EXIFTOOL_AVAILABLE, PIL_AVAILABLE,
+    SimpleExifHandler,
     extract_exif_fields_with_retry, find_exiftool_path,
     get_all_metadata, batch_restore_timestamps
 )
@@ -47,12 +48,52 @@ from .filename_components import build_ordered_components
 from .timestamp_options_dialog import TimestampSyncOptionsDialog
 from .dialogs import ExifToolWarningDialog
 from .handlers import SimpleExifHandler, SimpleFilenameGenerator, extract_image_number
-from .ui import FileListManager, PreviewGenerator
+from .ui import FileListManager, PreviewGenerator, MainWindowUI
 from .utils.ui_helpers import calculate_stats, is_video_file as is_video_file_util
+from .state_model import RenamerState
+from .settings_manager import SettingsManager
 
 
 class FileRenamerApp(QMainWindow):
     DEBUG_VERBOSE = False
+
+    # --- State Model Delegation Properties ---
+    @property
+    def files(self): return self.state.files
+    @files.setter
+    def files(self, value): self.state.files = value
+
+    @property
+    def camera_models(self): return self.state.camera_models
+    @camera_models.setter
+    def camera_models(self, value): self.state.camera_models = value
+
+    @property
+    def lens_models(self): return self.state.lens_models
+    @lens_models.setter
+    def lens_models(self, value): self.state.lens_models = value
+
+    @property
+    def original_filenames(self): return self.state.original_filenames
+    @original_filenames.setter
+    def original_filenames(self, value): self.state.original_filenames = value
+
+    @property
+    def timestamp_backup(self): return self.state.timestamp_backup
+    @timestamp_backup.setter
+    def timestamp_backup(self, value): self.state.timestamp_backup = value
+
+    @property
+    def exif_backup(self): return self.state.exif_backup
+    @exif_backup.setter
+    def exif_backup(self, value): self.state.exif_backup = value
+
+    @property
+    def selected_metadata(self): return self.state.selected_metadata
+    @selected_metadata.setter
+    def selected_metadata(self, value): self.state.selected_metadata = value
+    # -----------------------------------------
+
     def __init__(self):
         super().__init__()
         # Ensure log method exists early
@@ -84,6 +125,9 @@ class FileRenamerApp(QMainWindow):
         # EXIF method setup (copied from original)
         self.exiftool_path = self.get_exiftool_path()
         
+        # Initialize ExifService (NEW: replaces global cache and exiftool instance)
+        self.exif_service = ExifService(self.exiftool_path)
+        
         if EXIFTOOL_AVAILABLE and self.exiftool_path:
             self.exif_method = "exiftool"
         elif PIL_AVAILABLE:
@@ -98,17 +142,15 @@ class FileRenamerApp(QMainWindow):
         self.file_list_manager = FileListManager(self)
         self.preview_generator = PreviewGenerator(self)
         
-        # State variables
-        self.files = []
+        # State variables (Managed by RenamerState)
+        self.state = RenamerState()
+        self.settings_manager = SettingsManager()
         self.current_order = ["Date", "Prefix", "Additional", "Camera", "Lens"]
-        self.camera_models = {}
-        self.lens_models = {}
-        self.original_filenames = {}  # Track original filenames for undo
-        self.selected_metadata = {}  # Store metadata selected from EXIF dialog
-        self.timestamp_backup = {}  # Store original timestamps for EXIF date sync undo
-        self.exif_backup = {}  # Store original EXIF timestamps for EXIF time shift undo
         
         self.setup_ui()
+        
+        # Restore settings
+        self.restore_settings()
         
         # Initialize EXIF cache
         self._preview_exif_cache = {}
@@ -185,457 +227,49 @@ class FileRenamerApp(QMainWindow):
     
     def setup_ui(self):
         """Setup the complete original UI design"""
-        # ----- Menu Bar (added for debug toggle & future actions) -----
-        if not hasattr(self, 'menuBar'):
-            # In unusual cases where QMainWindow menuBar is altered, guard
-            pass
-        else:
-            mb = self.menuBar() if hasattr(self, 'menuBar') else None
-            if mb:
-                tools_menu = None
-                for a in mb.actions():
-                    if a.text() == '&Tools':
-                        tools_menu = a.menu()
-                        break
-                if tools_menu is None and mb:
-                    tools_menu = mb.addMenu('&Tools')
-
-                # Debug logging toggle
-                self.action_toggle_debug = QAction('Enable Debug Logging', self, checkable=True)
-                self.action_toggle_debug.setStatusTip('Toggle verbose debug log output')
-                self.action_toggle_debug.toggled.connect(self._on_toggle_debug_logging)
-                tools_menu.addAction(self.action_toggle_debug)
-                
-                # EXIF Time Shift
-                tools_menu.addSeparator()
-                self.action_time_shift = QAction('⏰ EXIF Time Shift...', self)
-                self.action_time_shift.setStatusTip('Adjust EXIF timestamps when camera clock was set incorrectly')
-                self.action_time_shift.triggered.connect(self.show_time_shift_dialog)
-                tools_menu.addAction(self.action_time_shift)
-
+        # Delegate UI setup to MainWindowUI
+        self.ui = MainWindowUI()
+        self.ui.setup_ui(self)
         
-        # Theme Switch - ganz oben
-        theme_row = QHBoxLayout()
-        theme_label = QLabel("Theme:")
-        self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["System", "Light", "Dark"])
-        self.theme_combo.setCurrentText("System")
-        self.theme_combo.currentTextChanged.connect(self.on_theme_changed)
-        theme_row.addWidget(theme_label)
-        theme_row.addWidget(self.theme_combo)
-        theme_row.addStretch()
-        self.layout.addLayout(theme_row)
-
-        # File Selection Menu Bar
-        file_menu_row = QHBoxLayout()
-        file_menu_row.setSpacing(10)
+        # Connect callbacks after UI is created
+        self._connect_ui_callbacks()
         
-        # File selection buttons styled as menu bar
-        self.select_files_menu_button = QPushButton("📄 Select Media Files")
-        self.select_files_menu_button.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 6px;
-                font-weight: bold;
-                min-width: 120px;
-            }
-            QPushButton:hover {
-                background-color: #106ebe;
-            }
-            QPushButton:pressed {
-                background-color: #005a9e;
-            }
-        """)
-        self.select_files_menu_button.clicked.connect(self.select_files)
-        
-        self.select_folder_menu_button = QPushButton("📁 Select Folder")
-        self.select_folder_menu_button.setStyleSheet("""
-            QPushButton {
-                background-color: #107c10;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 6px;
-                font-weight: bold;
-                min-width: 120px;
-            }
-            QPushButton:hover {
-                background-color: #0e6e0e;
-            }
-            QPushButton:pressed {
-                background-color: #0c5a0c;
-            }
-        """)
-        self.select_folder_menu_button.clicked.connect(self.select_folder)
-        
-        self.clear_files_menu_button = QPushButton("🗑️ Clear Files")
-        self.clear_files_menu_button.setStyleSheet("""
-            QPushButton {
-                background-color: #d83b01;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 6px;
-                font-weight: bold;
-                min-width: 120px;
-            }
-            QPushButton:hover {
-                background-color: #c73401;
-            }
-            QPushButton:pressed {
-                background-color: #a72d01;
-            }
-        """)
-        self.clear_files_menu_button.clicked.connect(self.clear_file_list)
-        
-        file_menu_row.addWidget(self.select_files_menu_button)
-        file_menu_row.addWidget(self.select_folder_menu_button)
-        file_menu_row.addWidget(self.clear_files_menu_button)
-        file_menu_row.addStretch()
-        self.layout.addLayout(file_menu_row)
-
-        # Date options
-        date_options_row = QHBoxLayout()
-        self.checkbox_date = QCheckBox("Include date in filename")
-        self.checkbox_date.setChecked(True)  # Default: aktiviert
-        self.checkbox_date.stateChanged.connect(self.update_preview)
-        
-        date_format_label = QLabel("Date Format:")
-        self.date_format_combo = QComboBox()
-        self.date_format_combo.addItems([
-            "YYYY-MM-DD", "YYYY_MM_DD", "DD-MM-YYYY", "DD_MM_YYYY", 
-            "YYYYMMDD", "MM-DD-YYYY", "MM_DD_YYYY"
-        ])
-        self.date_format_combo.setCurrentText("YYYY-MM-DD")  # Default
-        self.date_format_combo.currentTextChanged.connect(self.update_preview)
-        
-        date_options_row.addWidget(self.checkbox_date)
-        date_options_row.addWidget(date_format_label)
-        date_options_row.addWidget(self.date_format_combo)
-        date_options_row.addStretch()
-        self.layout.addLayout(date_options_row)
-
-        # Continuous Counter Checkbox (vacation scenario)
-        continuous_counter_row = QHBoxLayout()
-        self.checkbox_continuous_counter = QCheckBox("Continuous counter for vacation/multi-day shoots")
-        self.checkbox_continuous_counter.setChecked(False)  # Default: disabled
-        # Remove custom styling to match other checkboxes
-        self.checkbox_continuous_counter.setToolTip(
-            "Enable for vacation scenarios where you want continuous numbering across dates:\n"
-            "• Day 1: 2025-07-20_001, 2025-07-20_002, 2025-07-20_003\n"
-            "• Day 2: 2025-07-21_004, 2025-07-21_005, 2025-07-21_006\n"
-            "Instead of restarting at 001 each day"
-        )
-        self.checkbox_continuous_counter.stateChanged.connect(self.on_continuous_counter_changed)
-        
-        continuous_counter_row.addWidget(self.checkbox_continuous_counter)
-        continuous_counter_row.addStretch()
-        self.layout.addLayout(continuous_counter_row)
-
-        # Camera Prefix with clickable info icon
-        camera_row = QHBoxLayout()
-        camera_label = QLabel("Camera Prefix:")
-        camera_info = QLabel()
-        camera_info.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16))
-        camera_info.setToolTip("Click for detailed info about camera prefix")
-        camera_info.setCursor(Qt.CursorShape.PointingHandCursor)
-        camera_info.mousePressEvent = lambda event: self.show_camera_prefix_info()
-        camera_row.addWidget(camera_label)
-        camera_row.addWidget(camera_info)
-        camera_row.addStretch()
-        self.layout.addLayout(camera_row)
-        
-        self.camera_prefix_entry = QLineEdit()
-        self.camera_prefix_entry.setPlaceholderText("e.g. A7R3, D850")
-        self.camera_prefix_entry.textChanged.connect(self.validate_and_update_preview)
-        self.layout.addWidget(self.camera_prefix_entry)
-
-        # Additional with clickable info icon
-        additional_row = QHBoxLayout()
-        additional_label = QLabel("Additional:")
-        additional_info = QLabel()
-        additional_info.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16))
-        additional_info.setToolTip("Click for detailed info about additional field")
-        additional_info.setCursor(Qt.CursorShape.PointingHandCursor)
-        additional_info.mousePressEvent = lambda event: self.show_additional_info()
-        additional_row.addWidget(additional_label)
-        additional_row.addWidget(additional_info)
-        additional_row.addStretch()
-        self.layout.addLayout(additional_row)
-        
-        self.additional_entry = QLineEdit()
-        self.additional_entry.setPlaceholderText("e.g. vacation, wedding")
-        self.additional_entry.textChanged.connect(self.validate_and_update_preview)
-        self.layout.addWidget(self.additional_entry)
-
-        # Separator with clickable info icon
-        separator_row = QHBoxLayout()
-        separator_label = QLabel("Devider:")
-        separator_info = QLabel()
-        separator_info.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16))
-        separator_info.setToolTip("Click for detailed info about separators")
-        separator_info.setCursor(Qt.CursorShape.PointingHandCursor)
-        separator_info.mousePressEvent = lambda event: self.show_separator_info()
-        separator_row.addWidget(separator_label)
-        separator_row.addWidget(separator_info)
-        separator_row.addStretch()
-        self.layout.addLayout(separator_row)
-        
-        self.devider_combo = QComboBox()
-        self.devider_combo.addItems(["-", "_", ""])
-        self.devider_combo.setCurrentText("-")
-        self.layout.addWidget(self.devider_combo)
-        self.devider_combo.currentIndexChanged.connect(self.update_preview)
-        self.devider_combo.currentIndexChanged.connect(self.on_devider_changed)
-
-        # Interactive Preview section with clickable info icon
-        preview_row = QHBoxLayout()
-        preview_label = QLabel("Interactive Preview:")
-        preview_info = QLabel()
-        preview_info.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16))
-        preview_info.setToolTip("Click for detailed info about interactive preview")
-        preview_info.setCursor(Qt.CursorShape.PointingHandCursor)
-        preview_info.mousePressEvent = lambda event: self.show_preview_info()
-        preview_row.addWidget(preview_label)
-        preview_row.addWidget(preview_info)
-        preview_row.addStretch()
-        self.layout.addLayout(preview_row)
-        
-        self.interactive_preview = InteractivePreviewWidget()
-        self.interactive_preview.order_changed.connect(self.on_preview_order_changed)
-        self.layout.addWidget(self.interactive_preview)
-
-        # Camera checkbox with model display
-        camera_checkbox_layout = QHBoxLayout()
-        self.checkbox_camera = QCheckBox("Include camera model in filename")
-        self.camera_model_label = QLabel("(detecting...)")
-        self.camera_model_label.setStyleSheet("color: gray; font-style: italic;")
-        camera_checkbox_layout.addWidget(self.checkbox_camera)
-        camera_checkbox_layout.addWidget(self.camera_model_label)
-        camera_checkbox_layout.addStretch()
-        self.layout.addLayout(camera_checkbox_layout)
-        self.checkbox_camera.stateChanged.connect(self.on_camera_checkbox_changed)
-        
-        # Lens checkbox with model display
-        lens_checkbox_layout = QHBoxLayout()
-        self.checkbox_lens = QCheckBox("Include lens in filename")
-        self.lens_model_label = QLabel("(detecting...)")
-        self.lens_model_label.setStyleSheet("color: gray; font-style: italic;")
-        lens_checkbox_layout.addWidget(self.checkbox_lens)
-        lens_checkbox_layout.addWidget(self.lens_model_label)
-        lens_checkbox_layout.addStretch()
-        self.layout.addLayout(lens_checkbox_layout)
-        self.checkbox_lens.stateChanged.connect(self.on_lens_checkbox_changed)
-
-        # EXIF Date to File Date Sync Feature
-        sync_date_layout = QHBoxLayout()
-        self.checkbox_sync_exif_date = QCheckBox("Sync EXIF date to file creation date")
-        self.checkbox_sync_exif_date.setStyleSheet("""
-            QCheckBox {
-                color: #ff6b35;
-                font-weight: bold;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #ff6b35;
-                border: 2px solid #e55a2b;
-            }
-        """)
-        self.checkbox_sync_exif_date.setToolTip(
-            "⚠️ WARNING: This will modify file metadata!\n\n"
-            "• Extracts DateTimeOriginal from EXIF\n"
-            "• Sets it as file creation/modification date\n"
-            "• Useful for cloud services that use file dates\n"
-            "• Can be undone with restore function\n\n"
-            "Only works if ExifTool is available."
-        )
-        sync_date_layout.addWidget(self.checkbox_sync_exif_date)
-        
-        # Info icon for EXIF sync
-        sync_info_icon = QLabel()
-        sync_info_icon.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning).pixmap(16, 16))
-        sync_info_icon.setToolTip("Click for detailed info about EXIF date synchronization")
-        sync_info_icon.setCursor(Qt.CursorShape.PointingHandCursor)
-        sync_info_icon.mousePressEvent = lambda event: self.show_exif_sync_info()
-        sync_date_layout.addWidget(sync_info_icon)
-        # New: Leave filenames unchanged (metadata-only mode)
-        self.checkbox_leave_names = QCheckBox("Leave file names as-is")
-        self.checkbox_leave_names.setToolTip(
-            "Skip renaming and only perform timestamp (and future metadata) operations.\n"
-            "Useful when you only want to normalize filesystem dates without changing filenames."
-        )
-        sync_date_layout.addWidget(self.checkbox_leave_names)
-        sync_date_layout.addStretch()
-        self.layout.addLayout(sync_date_layout)
-
-        # Drag & Drop File List with dashed border and info text
-        self.file_list = QListWidget()
-        self.file_list.setStyleSheet("""
-            QListWidget {
-                border: 2px dashed #cccccc;
-                border-radius: 8px;
-                background-color: #fafafa;
-                padding: 20px;
-                min-height: 120px;
-            }
-            QListWidget::item {
-                padding: 4px;
-                border-bottom: 1px solid #eeeeee;
-                background-color: white;
-                border-radius: 3px;
-                margin: 1px;
-            }
-            QListWidget::item:selected {
-                background-color: #0078d4;
-                color: white;
-            }
-            QListWidget::item:hover {
-                background-color: #f0f6ff;
-            }
-        """)
-        
-        # Add placeholder text when empty
+        # Initialize placeholder and stats (since they are called in setup_ui but methods are on self)
         self.update_file_list_placeholder()
-        
-        self.layout.addWidget(self.file_list)
-        self.file_list.itemDoubleClicked.connect(self.show_selected_exif)
-        self.file_list.itemClicked.connect(self.show_media_info)
-        
-        # File Statistics Info Panel
-        self.file_stats_label = QLabel()
-        self.file_stats_label.setStyleSheet("""
-            QLabel {
-                background-color: #e8f4fd;
-                border: 2px solid #b3d9ff;
-                border-radius: 6px;
-                padding: 8px 12px;
-                color: #0066cc;
-                font-size: 11px;
-                font-weight: bold;
-                text-align: left;
-            }
-        """)
-        self.file_stats_label.setAlignment(Qt.AlignmentFlag.AlignLeft)
-        self.file_stats_label.setWordWrap(True)
         self.update_file_statistics()
-        self.layout.addWidget(self.file_stats_label)
         
-        # Enhanced info for media clicking with visual indicator
-        file_list_info = QLabel("💡Single click = Media info in status bar | Double click = Essential metadata dialog")
-        file_list_info.setStyleSheet("""
-            QLabel {
-                border: 1px solid palette(mid);
-                border-radius: 4px;
-                padding: 6px;
-                color: palette(text);
-                background-color: palette(base);
-                font-size: 11px;
-                font-weight: normal;
-            }
-        """)
-        file_list_info.setWordWrap(True)
-        file_list_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.layout.addWidget(file_list_info)
-        
-        self.file_list.setToolTip("Single click: Media info | Double click: Essential metadata")
-        self.file_list.installEventFilter(self)
-
-        self.setAcceptDrops(True)
-
-        # Prominenter Rename Button
-        self.rename_button = QPushButton("🚀 Rename Files")
-        self.rename_button.setStyleSheet("""
-            QPushButton {
-                background-color: #28a745;
-                color: white;
-                border: none;
-                padding: 12px 24px;
-                border-radius: 8px;
-                font-weight: bold;
-                font-size: 14px;
-                min-height: 20px;
-            }
-            QPushButton:hover {
-                background-color: #218838;
-            }
-            QPushButton:pressed {
-                background-color: #1e7e34;
-            }
-            QPushButton:disabled {
-                background-color: #6c757d;
-                color: #ffffff;
-            }
-        """)
-        self.rename_button.clicked.connect(self.rename_files_action)
-        self.layout.addWidget(self.rename_button)
-
-        # Undo Button - weniger prominent aber sichtbar
-        self.undo_button = QPushButton("↶ Restore Original Names")
-        self.undo_button.setStyleSheet("""
-            QPushButton {
-                background-color: #ffc107;
-                color: #212529;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 6px;
-                font-weight: bold;
-                font-size: 12px;
-                min-height: 16px;
-            }
-            QPushButton:hover {
-                background-color: #e0a800;
-            }
-            QPushButton:pressed {
-                background-color: #d39e00;
-            }
-            QPushButton:disabled {
-                background-color: #6c757d;
-                color: #ffffff;
-            }
-        """)
-        self.undo_button.clicked.connect(self.undo_rename_action)
-        self.undo_button.setEnabled(False)  # Initially disabled
-        self.undo_button.setToolTip("Restore all files to their original names (only available after renaming)")
-        self.layout.addWidget(self.undo_button)
-        
-        # Statusbar für Info unten rechts
-        self.status = QStatusBar()
-        self.setStatusBar(self.status)
-        # Label für Methode und ggf. Info-Icon
-        self.exif_status_label = QLabel()
-        self.status.addPermanentWidget(self.exif_status_label)
-        
-        # Initialize custom ordering BEFORE calling update_preview
-        self.custom_order = ["Date", "Camera", "Lens", "Prefix", "Additional", "Number"]  # FLEXIBLE: Number is now draggable
+        # Initialize custom ordering
+        self.custom_order = ["Date", "Camera", "Lens", "Prefix", "Additional", "Number"]
         
         self.update_exif_status()
         self.update_preview()
-        self.update_file_list_placeholder()  # Add initial placeholder
-        self.update_file_statistics()  # Initialize file statistics display
-
-        # Update camera and lens labels initially
         self.update_camera_lens_labels()
         
-        # CRITICAL FIX: Ensure rename button starts disabled (no files initially)
+        # Ensure rename button starts disabled
         self.rename_button.setEnabled(False)
         
-        # Show ExifTool warning if needed (after UI is fully initialized)
-        QApplication.processEvents()  # Ensure UI is rendered first
+        # Show ExifTool warning if needed
+        QApplication.processEvents()
+        self.check_exiftool_warning()
+    
+    def _connect_ui_callbacks(self):
+        """Connect UI widget callbacks to application logic"""
+        # File selection buttons
+        self.select_files_menu_button.clicked.connect(self.select_files)
+        self.select_folder_menu_button.clicked.connect(self.select_folder)
+        self.clear_files_menu_button.clicked.connect(self.clear_file_list)
 
     def check_exiftool_warning(self):
         """Check if ExifTool warning should be shown"""
         if not (EXIFTOOL_AVAILABLE and self.exiftool_path):
-            settings = QSettings("FileRenamer", "Settings")
-            show_warning = settings.value("show_exiftool_warning", True, type=bool)
+            show_warning = self.settings_manager.get_show_exiftool_warning()
             
             if show_warning:
                 dialog = ExifToolWarningDialog(self, self.exif_method)
                 dialog.exec()
                 
                 if not dialog.should_show_again():
-                    settings.setValue("show_exiftool_warning", False)
+                    self.settings_manager.set_show_exiftool_warning(False)
     
     def get_exiftool_path(self):
         """Simple ExifTool path detection for the modular version"""
@@ -1501,6 +1135,7 @@ class FileRenamerApp(QMainWindow):
     def on_theme_changed(self, theme_name):
         """Handle theme changes using ThemeManager"""
         self.theme_manager.apply_theme(theme_name, self)
+        self.settings_manager.set_theme(theme_name)
     
     def update_exif_status(self):
         """Update EXIF method status in status bar"""
@@ -1601,6 +1236,7 @@ class FileRenamerApp(QMainWindow):
             timestamp_options=timestamp_options,
             leave_names=leave_file_names,
             log_callable=self.log,
+            exif_service=self.exif_service,  # NEW: Pass ExifService instance
         )
         self.worker.progress_update.connect(self.update_status)
         self.worker.finished.connect(self.on_rename_finished)
@@ -1656,7 +1292,7 @@ class FileRenamerApp(QMainWindow):
                 self.undo_button.setText("↶ Restore Original EXIF & Names")
             
             # Clear EXIF cache to reload updated data
-            clear_global_exif_cache()
+            self.exif_service.clear_cache()
             
             # Update preview with new times
             self.update_preview()
@@ -1950,7 +1586,7 @@ class FileRenamerApp(QMainWindow):
                     if exif_success:
                         self.log(f"✅ Restored EXIF timestamps for {len(exif_success)} files")
                         # Clear EXIF cache after restore
-                        clear_global_exif_cache()
+                        self.exif_service.clear_cache()
                     if exif_errors:
                         for file_path, err in exif_errors:
                             errors.append(f"EXIF timestamp restore failed for {os.path.basename(file_path)}: {err}")
@@ -2065,7 +1701,7 @@ class FileRenamerApp(QMainWindow):
                 if exif_successes:
                     self.log(f"✅ Restored EXIF timestamps for {len(exif_successes)} files")
                     # Clear EXIF cache after restore
-                    clear_global_exif_cache()
+                    self.exif_service.clear_cache()
                 
                 if exif_errors:
                     self.log(f"❌ Failed to restore EXIF timestamps for {len(exif_errors)} files")
@@ -2254,6 +1890,37 @@ JPG, TIFF, RAW files (CR2, NEF, ARW, etc.)
         layout.addWidget(close_btn)
         dialog.exec()
 
+    def restore_settings(self):
+        """Restore application settings"""
+        # Restore window geometry and state
+        geometry = self.settings_manager.get_window_geometry()
+        if geometry:
+            self.restoreGeometry(geometry)
+            
+        state = self.settings_manager.get_window_state()
+        if state:
+            self.restoreState(state)
+            
+        # Restore theme
+        theme = self.settings_manager.get_theme()
+        if theme:
+            self.theme_combo.setCurrentText(theme)
+            self.theme_manager.apply_theme(theme, self)
+            
+        # Restore last directory
+        last_dir = self.settings_manager.get_last_directory()
+        if last_dir and os.path.exists(last_dir):
+            # We don't automatically load files, but we could set the default dir for dialogs
+            pass
+
+    def closeEvent(self, event):
+        """Handle application close event"""
+        # Save window geometry and state
+        self.settings_manager.set_window_geometry(self.saveGeometry())
+        self.settings_manager.set_window_state(self.saveState())
+        self.settings_manager.sync()
+        super().closeEvent(event)
+    
     # Drag and drop implementation
     def dragEnterEvent(self, event: QDragEnterEvent):
         """Handle drag enter events - delegates to FileListManager"""
@@ -2267,10 +1934,6 @@ JPG, TIFF, RAW files (CR2, NEF, ARW, etc.)
         """Handle drop events - delegates to FileListManager"""
         self.file_list_manager.handle_drop(event)
     
-    def add_files_to_list(self, files):
-        """Add files to the file list - delegates to FileListManager"""
-        self.file_list_manager.add_files_to_list(files)
-    
     def eventFilter(self, obj, event):
         """Event filter for tooltips and other events"""
         if obj == self.file_list and event.type() == event.Type.ToolTip:
@@ -2282,22 +1945,6 @@ JPG, TIFF, RAW files (CR2, NEF, ARW, etc.)
                     file_info = f"File: {os.path.basename(file_path)}\nPath: {file_path}"
                     item.setToolTip(file_info)
         return super().eventFilter(obj, event)
-    
-    def check_and_show_exiftool_warning(self):
-        """Check if ExifTool warning should be shown and display it"""
-        # Show warning if ExifTool is not available (regardless of Pillow status)
-        exiftool_available = EXIFTOOL_AVAILABLE and self.exiftool_path
-        
-        if not exiftool_available:
-            settings = QSettings()
-            show_warning = settings.value("show_exiftool_warning", True, type=bool)
-            
-            if show_warning:
-                dialog = ExifToolWarningDialog(self, self.exif_method)
-                dialog.exec()
-                
-                if not dialog.should_show_again():
-                    settings.setValue("show_exiftool_warning", False)
 
 
 def analyze_file_statistics(files):

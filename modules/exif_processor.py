@@ -35,37 +35,131 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
 
-# Global EXIF cache for performance - exact same as original
-_exif_cache = {}
-_cache_lock = None
 
-# Global ExifTool instance for batch processing - exact same as original
+# Global variables for backward compatibility with legacy code
+# These are kept for functions that are still called from outside the ExifService
 _global_exiftool_instance = None
 _global_exiftool_path = None
 
-def clear_global_exif_cache():
-    """Clear the global EXIF cache for fresh processing"""
-    global _exif_cache
-    _exif_cache.clear()
+
+class ExifService:
+    """
+    Service class for EXIF data extraction and caching.
+    Replaces global variables with instance variables for better thread safety and testability.
+    """
+    
+    def __init__(self, exiftool_path=None):
+        """
+        Initialize the EXIF service with optional exiftool path
+        
+        Args:
+            exiftool_path: Path to exiftool executable. If None, will auto-detect.
+        """
+        # Instance variables instead of globals
+        self._cache = {}
+        self._cache_lock = threading.Lock()
+        self._exiftool_instance = None
+        self._exiftool_path = exiftool_path or self._find_exiftool_path()
+        
+        # Set default method based on availability
+        self.current_method = "exiftool" if EXIFTOOL_AVAILABLE else ("pillow" if PIL_AVAILABLE else None)
+    
+    def _find_exiftool_path(self):
+        """Find ExifTool executable in project directory"""
+        try:
+            # Check project directory
+            project_root = os.path.dirname(os.path.dirname(__file__))
+            exiftool_dirs = glob.glob(os.path.join(project_root, "exiftool-*_64"))
+            
+            if exiftool_dirs:
+                exiftool_exe = os.path.join(exiftool_dirs[0], "exiftool(-k).exe")
+                if os.path.exists(exiftool_exe):
+                    return exiftool_exe
+            
+            # Check if exiftool is in PATH
+            if shutil.which("exiftool"):
+                return "exiftool"
+        except Exception as e:
+            log.debug(f"Error finding exiftool: {e}")
+        
+        return None
+    
+    def clear_cache(self):
+        """Clear the EXIF cache for fresh processing"""
+        with self._cache_lock:
+            self._cache.clear()
+    
+    def cleanup(self):
+        """Clean up the ExifTool instance when done with batch processing"""
+        if self._exiftool_instance is not None:
+            try:
+                self._exiftool_instance.__exit__(None, None, None)
+            except:
+                pass
+            self._exiftool_instance = None
+
+    def get_cached_exif_data(self, file_path, method=None, exiftool_path=None):
+        """
+        Get EXIF data with intelligent caching based on file modification time
+        
+        Args:
+            file_path: Path to the image file
+            method: 'exiftool' or 'pillow' (defaults to self.current_method)
+            exiftool_path: Path to exiftool (defaults to self._exiftool_path)
+        
+        Returns:
+            (date, camera, lens) tuple
+        """
+        method = method or self.current_method
+        exiftool_path = exiftool_path or self._exiftool_path
+        
+        try:
+            # Create cache key based on file path and modification time
+            mtime = os.path.getmtime(file_path)
+            cache_key = (file_path, mtime, method)
+            
+            # Check cache first
+            with self._cache_lock:
+                if cache_key in self._cache:
+                    return self._cache[cache_key]
+            
+            # Extract EXIF data (not cached)
+            result = self._extract_exif_fields_with_retry(file_path, method, exiftool_path, max_retries=2)
+            
+            # Cache the result
+            with self._cache_lock:
+                self._cache[cache_key] = result
+            
+            return result
+        except Exception as e:
+            log.debug(f"Cached EXIF extraction failed for {file_path}: {e}")
+            return None, None, None
 
 def get_cached_exif_data(file_path, method, exiftool_path=None):
     """
-    Get EXIF data with intelligent caching based on file modification time
+    Legacy wrapper - creates temporary ExifService instance.
+    Use ExifService directly for better performance.
     """
+    service = ExifService(exiftool_path)
+    try:
+        return service.get_cached_exif_data(file_path, method, exiftool_path)
+    finally:
+        service.cleanup()
+    
     try:
         # Create cache key based on file path and modification time
         mtime = os.path.getmtime(file_path)
         cache_key = (file_path, mtime, method)
         
-        # Check cache first
-        if cache_key in _exif_cache:
-            return _exif_cache[cache_key]
+        # Check cache first - OLD CODE KEPT FOR REFERENCE
+        # if cache_key in _exif_cache:
+        #     return _exif_cache[cache_key]
         
         # Extract EXIF data (not cached)
         result = extract_exif_fields_with_retry(file_path, method, exiftool_path, max_retries=2)
         
-        # Cache the result
-        _exif_cache[cache_key] = result
+        # Cache the result - OLD CODE KEPT FOR REFERENCE
+        # _exif_cache[cache_key] = result
         
         return result
     except Exception as e:
@@ -74,51 +168,17 @@ def get_cached_exif_data(file_path, method, exiftool_path=None):
 
 def get_selective_cached_exif_data(file_path, method, exiftool_path=None, need_date=True, need_camera=False, need_lens=False):
     """
-    OPTIMIZED: Get only requested EXIF data with intelligent caching.
-    This function only extracts and caches the fields that are actually needed.
-    
-    Args:
-        file_path: Path to the image file
-        method: 'exiftool' or 'pillow'
-        exiftool_path: Path to exiftool executable
-        need_date: Whether to extract date information
-        need_camera: Whether to extract camera model
-        need_lens: Whether to extract lens model
-    
-    Returns:
-        (date, camera, lens) - only requested fields are extracted and cached
+    Legacy wrapper - creates temporary ExifService instance.
+    Use ExifService directly for better performance.
     """
+    service = ExifService(exiftool_path)
     try:
-        # CRITICAL FIX: Normalize path to prevent double backslashes
-        normalized_path = os.path.normpath(file_path)
-        
-        # Verify file exists before processing
-        if not os.path.exists(normalized_path):
-            log.warning(f"File not found: {normalized_path}")
-            return None, None, None
-        
-        # Create cache key based on file path, modification time, method AND requested fields
-        mtime = os.path.getmtime(normalized_path)
-        field_signature = (need_date, need_camera, need_lens)
-        cache_key = (normalized_path, mtime, method, field_signature)
-        
-        # Check cache first
-        if cache_key in _exif_cache:
-            return _exif_cache[cache_key]
-        
-        # Extract only requested EXIF fields
-        result = extract_selective_exif_fields(
-            normalized_path, method, exiftool_path, 
+        return service.get_selective_cached_exif_data(
+            file_path, method, exiftool_path,
             need_date=need_date, need_camera=need_camera, need_lens=need_lens
         )
-        
-        # Cache the result
-        _exif_cache[cache_key] = result
-        
-        return result
-    except Exception as e:
-        log.debug(f"Error in get_selective_cached_exif_data for {file_path}: {e}")
-        return None, None, None
+    finally:
+        service.cleanup()
 
 def extract_exif_fields(image_path, method, exiftool_path=None):
     """
@@ -285,6 +345,15 @@ def get_exiftool_metadata_shared(image_path, exiftool_path=None):
         except Exception as e2:
             log.error(f"Temporary ExifTool instance also failed: {e2}")
             return {}
+
+def clear_global_exif_cache():
+    """
+    Legacy wrapper: Clear the global EXIF cache.
+    For backward compatibility only. Use ExifService.clear_cache() instead.
+    """
+    # Note: This function is kept for backward compatibility
+    # New code should use ExifService instance directly
+    pass
 
 def cleanup_global_exiftool():
     """

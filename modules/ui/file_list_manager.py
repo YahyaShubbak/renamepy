@@ -63,14 +63,13 @@ class FileListManager:
     
     def clear_file_list(self):
         """Clear the file list"""
-        self.parent.files = []
+        # Use state model to clear data
+        self.parent.state.clear_files()
+        
         self.parent.file_list.clear()
         self.parent.status.showMessage("Ready")
         self.parent.rename_button.setEnabled(False)
         
-        # Clear camera and lens data
-        self.parent.camera_models = {}
-        self.parent.lens_models = {}
         self.parent.camera_model_label.setText("(no files selected)")
         self.parent.lens_model_label.setText("(no files selected)")
         
