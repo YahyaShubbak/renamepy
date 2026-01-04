@@ -1,0 +1,1 @@
+C:\Users\yshub\miniconda3\envs\renamepy\python.exe: No module named pytest

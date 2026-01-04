@@ -113,18 +113,6 @@ def scan_directory_recursive(directory):
     
     return media_files
 
-def is_video_file(filename):
-    """
-    Returns True if the file is a video file based on its extension.
-    """
-    return os.path.splitext(filename)[1].lower() in VIDEO_EXTENSIONS
-
-def is_media_file(filename):
-    """
-    Returns True if the file is a media file (image, RAW, or video) based on its extension.
-    """
-    return os.path.splitext(filename)[1].lower() in MEDIA_EXTENSIONS
-
 def sanitize_filename(filename):
     """
     Sanitize filename by removing/replacing invalid characters and ensuring compatibility.

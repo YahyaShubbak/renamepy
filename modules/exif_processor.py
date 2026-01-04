@@ -35,6 +35,8 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
 
+# Import ExifService from the new dedicated module
+from .exif_service_new import ExifService
 
 # Global variables for backward compatibility with legacy code
 # These are kept for functions that are still called from outside the ExifService
@@ -42,99 +44,7 @@ _global_exiftool_instance = None
 _global_exiftool_path = None
 
 
-class ExifService:
-    """
-    Service class for EXIF data extraction and caching.
-    Replaces global variables with instance variables for better thread safety and testability.
-    """
-    
-    def __init__(self, exiftool_path=None):
-        """
-        Initialize the EXIF service with optional exiftool path
-        
-        Args:
-            exiftool_path: Path to exiftool executable. If None, will auto-detect.
-        """
-        # Instance variables instead of globals
-        self._cache = {}
-        self._cache_lock = threading.Lock()
-        self._exiftool_instance = None
-        self._exiftool_path = exiftool_path or self._find_exiftool_path()
-        
-        # Set default method based on availability
-        self.current_method = "exiftool" if EXIFTOOL_AVAILABLE else ("pillow" if PIL_AVAILABLE else None)
-    
-    def _find_exiftool_path(self):
-        """Find ExifTool executable in project directory"""
-        try:
-            # Check project directory
-            project_root = os.path.dirname(os.path.dirname(__file__))
-            exiftool_dirs = glob.glob(os.path.join(project_root, "exiftool-*_64"))
-            
-            if exiftool_dirs:
-                exiftool_exe = os.path.join(exiftool_dirs[0], "exiftool(-k).exe")
-                if os.path.exists(exiftool_exe):
-                    return exiftool_exe
-            
-            # Check if exiftool is in PATH
-            if shutil.which("exiftool"):
-                return "exiftool"
-        except Exception as e:
-            log.debug(f"Error finding exiftool: {e}")
-        
-        return None
-    
-    def clear_cache(self):
-        """Clear the EXIF cache for fresh processing"""
-        with self._cache_lock:
-            self._cache.clear()
-    
-    def cleanup(self):
-        """Clean up the ExifTool instance when done with batch processing"""
-        if self._exiftool_instance is not None:
-            try:
-                self._exiftool_instance.__exit__(None, None, None)
-            except:
-                pass
-            self._exiftool_instance = None
-
-    def get_cached_exif_data(self, file_path, method=None, exiftool_path=None):
-        """
-        Get EXIF data with intelligent caching based on file modification time
-        
-        Args:
-            file_path: Path to the image file
-            method: 'exiftool' or 'pillow' (defaults to self.current_method)
-            exiftool_path: Path to exiftool (defaults to self._exiftool_path)
-        
-        Returns:
-            (date, camera, lens) tuple
-        """
-        method = method or self.current_method
-        exiftool_path = exiftool_path or self._exiftool_path
-        
-        try:
-            # Create cache key based on file path and modification time
-            mtime = os.path.getmtime(file_path)
-            cache_key = (file_path, mtime, method)
-            
-            # Check cache first
-            with self._cache_lock:
-                if cache_key in self._cache:
-                    return self._cache[cache_key]
-            
-            # Extract EXIF data (not cached)
-            result = self._extract_exif_fields_with_retry(file_path, method, exiftool_path, max_retries=2)
-            
-            # Cache the result
-            with self._cache_lock:
-                self._cache[cache_key] = result
-            
-            return result
-        except Exception as e:
-            log.debug(f"Cached EXIF extraction failed for {file_path}: {e}")
-            return None, None, None
-
+# Legacy wrapper functions for backward compatibility
 def get_cached_exif_data(file_path, method, exiftool_path=None):
     """
     Legacy wrapper - creates temporary ExifService instance.
@@ -145,26 +55,6 @@ def get_cached_exif_data(file_path, method, exiftool_path=None):
         return service.get_cached_exif_data(file_path, method, exiftool_path)
     finally:
         service.cleanup()
-    
-    try:
-        # Create cache key based on file path and modification time
-        mtime = os.path.getmtime(file_path)
-        cache_key = (file_path, mtime, method)
-        
-        # Check cache first - OLD CODE KEPT FOR REFERENCE
-        # if cache_key in _exif_cache:
-        #     return _exif_cache[cache_key]
-        
-        # Extract EXIF data (not cached)
-        result = extract_exif_fields_with_retry(file_path, method, exiftool_path, max_retries=2)
-        
-        # Cache the result - OLD CODE KEPT FOR REFERENCE
-        # _exif_cache[cache_key] = result
-        
-        return result
-    except Exception as e:
-        log.debug(f"Cached EXIF extraction failed for {file_path}: {e}")
-        return None, None, None
 
 def get_selective_cached_exif_data(file_path, method, exiftool_path=None, need_date=True, need_camera=False, need_lens=False):
     """
@@ -487,34 +377,6 @@ def get_file_timestamp(image_path, method, exiftool_path=None):
     except Exception as e:
         log.debug(f"Failed to get file timestamp: {e}")
         return None
-
-def get_safe_target_path(original_path, new_name):
-    """
-    Generate a safe target path, avoiding conflicts with existing files.
-    """
-    directory = os.path.dirname(original_path)
-    new_path = os.path.join(directory, new_name)
-    
-    # Check if target already exists
-    if not os.path.exists(new_path):
-        return new_path
-    
-    # Generate alternative name if conflict exists
-    base, ext = os.path.splitext(new_name)
-    attempt = 1
-    
-    while os.path.exists(new_path) and attempt <= 999:
-        alternative_name = f"{base}_conflict_{attempt:03d}{ext}"
-        new_path = os.path.join(directory, alternative_name)
-        attempt += 1
-    
-    if attempt > 999:
-        # Fallback: add timestamp
-        timestamp = int(time.time())
-        alternative_name = f"{base}_conflict_{timestamp}{ext}"
-        new_path = os.path.join(directory, alternative_name)
-    
-    return new_path
 
 def validate_path_length(file_path):
     """
