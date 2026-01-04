@@ -33,15 +33,14 @@ setup(
         "Topic :: System :: Filesystems",
         "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
         "Operating System :: OS Independent",
         "Environment :: X11 Applications :: Qt",
     ],
-    python_requires=">=3.8",
+    python_requires=">=3.10",  # Required for modern type hints (PEP 604: Union with |)
     install_requires=read_requirements(),
     extras_require={
         "dev": [

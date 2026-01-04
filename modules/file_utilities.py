@@ -99,7 +99,7 @@ def scan_directory_recursive(directory):
     """
     OPTIMIZED: Recursively scan directory for media files (images and videos) in all subdirectories.
     Uses followlinks=False to prevent symlink loops and duplicate counting.
-    Returns a list of all media file paths found.
+    Returns a sorted list of all media file paths found.
     """
     media_files = []
     try:
@@ -112,7 +112,7 @@ def scan_directory_recursive(directory):
     except Exception as e:
         log.warning(f"Error scanning directory {directory}: {e}")
     
-    return media_files
+    return sorted(media_files, key=lambda x: (os.path.dirname(x), natural_sort_key(os.path.basename(x))))
 
 def sanitize_filename(filename):
     """
@@ -247,23 +247,6 @@ def scan_directory(directory, include_subdirs=False):
             log.warning(f"Error scanning directory {directory}: {e}")
         
         return sorted(media_files, key=lambda x: (os.path.dirname(x), natural_sort_key(os.path.basename(x))))
-
-def scan_directory_recursive(directory):
-    """
-    Recursively scan directory for media files (images and videos) in all subdirectories.
-    Returns a list of all media file paths found.
-    """
-    media_files = []
-    try:
-        for root, dirs, files in os.walk(directory):
-            for file in files:
-                if is_media_file(file):
-                    full_path = os.path.join(root, file)
-                    media_files.append(full_path)
-    except Exception as e:
-        log.warning(f"Error scanning directory {directory}: {e}")
-    
-    return sorted(media_files, key=lambda x: (os.path.dirname(x), natural_sort_key(os.path.basename(x))))
 
 def get_safe_filename(directory, new_name):
     """

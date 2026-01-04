@@ -1,47 +1,47 @@
 @echo off
 REM ============================================================================
-REM RenamePy - Robuste Installations-Datei (Batch Version fuer Windows)
+REM RenamePy - Robust Installation File (Batch Version for Windows)
 REM ============================================================================
-REM Diese Datei startet die PowerShell Installation, falls PowerShell nicht
-REM erreichbar ist, bietet sie auch eine manuelle Installationsoption
+REM This file starts the PowerShell installation. If PowerShell is not
+REM available, it also offers a manual installation option.
 REM ============================================================================
 
 setlocal enabledelayedexpansion
 
 echo.
-echo Installation wird vorbereitet...
+echo Preparing installation...
 echo.
 
-REM Pruefen ob PowerShell verfuegbar ist
+REM Check if PowerShell is available
 powershell -Command "exit" >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] PowerShell ist nicht verfuegbar!
+    echo [ERROR] PowerShell is not available!
     echo.
-    echo Manuelle Installationsoption:
-    echo 1. Oeffne PowerShell als Administrator
-    echo 2. Fuehre diesen Befehl aus:
+    echo Manual Installation Option:
+    echo 1. Open PowerShell as Administrator
+    echo 2. Run this command:
     echo    Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-    echo 3. Fuehre dann aus:
+    echo 3. Then execute:
     echo    .\install.ps1
     echo.
     pause
     exit /b 1
 )
 
-REM Starte PowerShell mit dem Install-Script
-echo [INFO] Starte PowerShell Installation...
+REM Start PowerShell with the Install Script
+echo [INFO] Starting PowerShell installation...
 echo.
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" %*
 
 if errorlevel 1 (
     echo.
-    echo [ERROR] Installation fehlgeschlagen!
+    echo [ERROR] Installation failed!
     pause
     exit /b 1
 )
 
 echo.
-echo [SUCCESS] Installation abgeschlossen!
+echo [SUCCESS] Installation completed!
 pause
 exit /b 0

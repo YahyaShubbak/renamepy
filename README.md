@@ -2,7 +2,7 @@
 
 A powerful and user-friendly PyQt6 application for batch renaming image files with EXIF data integration.
 
-![File Renamer](https://img.shields.io/badge/Python-3.8+-blue.svg)
+![File Renamer](https://img.shields.io/badge/Python-3.10+-blue.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)
 
@@ -74,8 +74,8 @@ A powerful and user-friendly PyQt6 application for batch renaming image files wi
 ## 📋 Requirements
 
 ### System Requirements
-- **Python**: 3.8 or higher
-- **Operating System**: Windows; macOS and Linux not tested yet, should work
+- **Python**: 3.10 or higher (required for modern type hints)
+- **Operating System**: Windows, macOS, Linux (cross-platform compatible)
 
 ### Python Dependencies
 ```bash
