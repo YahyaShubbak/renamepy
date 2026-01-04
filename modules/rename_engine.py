@@ -70,6 +70,354 @@ class RenameWorkerThread(QThread):
         except Exception:
             pass
     
+    # ------------------------------------------------------------------
+    # Phase 2 Refactoring: Helper functions for optimized_rename_files
+    # ------------------------------------------------------------------
+    
+    def _sync_exif_timestamps(self):
+        """
+        Sync EXIF timestamps to file timestamps (optional first step).
+        
+        Returns:
+            tuple: (success_list, error_list, timestamp_backup_dict)
+        """
+        if not self.sync_exif_date:
+            return [], [], {}
+        
+        self.progress_update.emit("Synchronizing EXIF dates to file timestamps...")
+        media_files = [f for f in self.files if is_media_file(f)]
+        
+        successes, sync_errors, timestamp_backup = exif_processor.batch_sync_exif_dates(
+            media_files,
+            self.exiftool_path if self.exiftool_path else None,
+            lambda msg: self.progress_update.emit(f"Date sync: {msg}"),
+            options=self.timestamp_options,
+        )
+        
+        if successes:
+            self.progress_update.emit(f"Successfully synced dates for {len(successes)} files")
+        if sync_errors:
+            self.progress_update.emit(f"Failed to sync dates for {len(sync_errors)} files")
+        
+        return successes, sync_errors, timestamp_backup
+    
+    def _create_file_groups(self):
+        """
+        Group RAW/JPEG siblings (same basename in same directory).
+        
+        Returns:
+            list: List of file groups (each group is a list of files)
+        """
+        basename_groups = defaultdict(list)
+        for path in self.files:
+            if is_media_file(path):
+                directory = os.path.dirname(path)
+                stem = os.path.splitext(os.path.basename(path))[0]
+                basename_groups[f"{directory}#{stem}"].append(path)
+        
+        file_groups = []
+        orphans = []
+        for _k, group in basename_groups.items():
+            if len(group) > 1:
+                file_groups.append(group)
+            else:
+                orphans.extend(group)
+        
+        for f in orphans:
+            file_groups.append([f])
+        
+        return file_groups
+    
+    def _pre_extract_exif_cache(self, file_groups):
+        """
+        Pre-extract EXIF data for all files once (performance optimization).
+        
+        Args:
+            file_groups: List of file groups
+            
+        Returns:
+            dict: Cache with {file_path: {'date_str', 'camera', 'lens', 'raw_meta'}}
+        """
+        exif_cache = {}
+        
+        if not self.exif_method:
+            return exif_cache
+        
+        self.progress_update.emit("Pre-extracting EXIF data for all files...")
+        
+        for idx, group in enumerate(file_groups):
+            if idx % 50 == 0:
+                self.progress_update.emit(f"Extracting EXIF: {idx+1}/{len(file_groups)} groups")
+            
+            first_file = group[0]
+            if first_file not in exif_cache:
+                try:
+                    # Extract full EXIF metadata once
+                    if self.exif_service:
+                        date_str, camera, lens = self.exif_service.get_selective_cached_exif_data(
+                            first_file, self.exif_method, self.exiftool_path,
+                            need_date=True, need_camera=True, need_lens=True
+                        )
+                        raw_meta = self.exif_service.extract_raw_exif(first_file)
+                    else:
+                        date_str, camera, lens = exif_processor.get_selective_cached_exif_data(
+                            first_file, self.exif_method, self.exiftool_path,
+                            need_date=True, need_camera=True, need_lens=True
+                        )
+                        raw_meta = exif_processor.get_exiftool_metadata_shared(first_file, self.exiftool_path)
+                    
+                    exif_cache[first_file] = {
+                        'date_str': date_str,
+                        'camera': camera,
+                        'lens': lens,
+                        'raw_meta': raw_meta
+                    }
+                except Exception as e:
+                    self._debug(f"EXIF pre-extraction failed for {first_file}: {e}")
+                    exif_cache[first_file] = None
+        
+        self.progress_update.emit("EXIF pre-extraction complete")
+        return exif_cache
+    
+    def _get_exif_sort_key(self, group, exif_cache):
+        """
+        Generate sort key for chronological ordering based on EXIF timestamp.
+        
+        Args:
+            group: File group (list of file paths)
+            exif_cache: Pre-extracted EXIF cache
+            
+        Returns:
+            tuple: (datetime, file_number, filename) for sorting
+        """
+        first_file = group[0]
+        exif_datetime = None
+        
+        # Use pre-extracted EXIF cache (PERFORMANCE OPTIMIZATION)
+        if first_file in exif_cache and exif_cache[first_file]:
+            cached_exif = exif_cache[first_file]
+            date_str = cached_exif.get('date_str')
+            raw_meta = cached_exif.get('raw_meta')
+            
+            if date_str and raw_meta:
+                # Look for DateTimeOriginal with time
+                datetime_fields = [
+                    'EXIF:DateTimeOriginal',
+                    'EXIF:CreateDate', 
+                    'QuickTime:CreateDate',
+                    'QuickTime:CreationDate'
+                ]
+                for field in datetime_fields:
+                    if field in raw_meta:
+                        dt_str = raw_meta[field]
+                        try:
+                            import datetime as dt_module
+                            if ':' in dt_str:
+                                dt_str_clean = dt_str.replace(':', '-', 2)
+                                exif_datetime = dt_module.datetime.strptime(dt_str_clean, "%Y-%m-%d %H:%M:%S")
+                                break
+                        except Exception:
+                            pass
+        
+        # Fallback to file modification time
+        if not exif_datetime:
+            try:
+                import datetime as dt_module
+                mtime = os.path.getmtime(first_file)
+                exif_datetime = dt_module.datetime.fromtimestamp(mtime)
+            except Exception:
+                import datetime as dt_module
+                exif_datetime = dt_module.datetime(1970, 1, 1)
+        
+        # Extract number from filename as tiebreaker
+        basename = os.path.basename(first_file)
+        match = re.search(r'(\d+)', basename)
+        file_number = int(match.group(1)) if match else 0
+        
+        return (exif_datetime, file_number, first_file)
+    
+    def _process_file_group(self, group, date_counter, exif_cache):
+        """
+        Process a single file group and rename all files within it.
+        
+        Args:
+            group: List of file paths in this group
+            date_counter: Counter dict for non-continuous numbering
+            exif_cache: Pre-extracted EXIF cache
+            
+        Returns:
+            tuple: (renamed_files_list, errors_list)
+        """
+        renamed_files = []
+        errors = []
+        
+        need_date = self.use_date
+        need_camera = self.use_camera
+        need_lens = self.use_lens
+        
+        group_existing = [p for p in group if os.path.exists(p)]
+        if not group_existing:
+            return renamed_files, errors
+
+        date_taken = None
+        camera_model = None
+        lens_model = None
+        first_file = group_existing[0]
+
+        # ============================================================
+        # PERFORMANCE OPTIMIZATION: Use pre-extracted EXIF cache
+        # ============================================================
+        if first_file in exif_cache and exif_cache[first_file]:
+            cached_exif = exif_cache[first_file]
+            date_taken = cached_exif.get('date_str') if need_date else None
+            camera_model = cached_exif.get('camera') if need_camera else None
+            lens_model = cached_exif.get('lens') if need_lens else None
+            
+            # Best-effort look through rest of group if anything missing
+            if ((need_date and not date_taken) or (need_camera and not camera_model) or (need_lens and not lens_model)):
+                for other in group_existing[1:]:
+                    if other in exif_cache and exif_cache[other]:
+                        other_exif = exif_cache[other]
+                        if need_date and not date_taken: 
+                            date_taken = other_exif.get('date_str')
+                        if need_camera and not camera_model: 
+                            camera_model = other_exif.get('camera')
+                        if need_lens and not lens_model: 
+                            lens_model = other_exif.get('lens')
+                        if date_taken and camera_model and lens_model:
+                            break
+        # Fallback to old method if not in cache
+        elif self.exif_method and any([need_date, need_camera, need_lens]):
+            if self.exif_service:
+                date_taken, camera_model, lens_model = self.exif_service.get_selective_cached_exif_data(
+                    first_file, self.exif_method, self.exiftool_path,
+                    need_date=need_date, need_camera=need_camera, need_lens=need_lens
+                )
+            else:
+                date_taken, camera_model, lens_model = exif_processor.get_selective_cached_exif_data(
+                    first_file, self.exif_method, self.exiftool_path,
+                    need_date=need_date, need_camera=need_camera, need_lens=need_lens
+                )
+
+        # Fallbacks
+        if need_date and not date_taken:
+            for p in group_existing:
+                m = re.search(r'(20\d{2})(\d{2})(\d{2})', os.path.basename(p))
+                if m:
+                    date_taken = f"{m.group(1)}{m.group(2)}{m.group(3)}"
+                    break
+            if not date_taken:
+                try:
+                    dt = datetime.datetime.fromtimestamp(os.path.getmtime(first_file))
+                    date_taken = dt.strftime('%Y%m%d')
+                except Exception:
+                    date_taken = '19700101'
+        if need_camera and not camera_model:
+            camera_model = 'ILCE-7CM2'
+        if need_lens and not lens_model:
+            lens_model = 'FE-20-70mm-F4-G'
+
+        # Counter logic
+        if self.use_date and not self.continuous_counter:
+            key = date_taken or 'unknown'
+            date_counter[key] = date_counter.get(key, 0) + 1
+            group_number = date_counter[key]
+        elif not self.use_date:
+            key = 'all_files'
+            date_counter[key] = date_counter.get(key, 0) + 1
+            group_number = date_counter[key]
+        else:  # self.use_date and continuous_counter
+            if hasattr(self, '_continuous_counter_map'):
+                group_number = self._continuous_counter_map.get(first_file, 1)
+            else:
+                key = 'all_files'
+                date_counter[key] = date_counter.get(key, 0) + 1
+                group_number = date_counter[key]
+
+        # Process each file in group
+        for path in group_existing:
+            try:
+                file_date = date_taken
+                file_cam = camera_model
+                file_lens = lens_model
+                if self.exif_method and any([need_date, need_camera, need_lens]):
+                    try:
+                        if self.exif_service:
+                            d, c, l = self.exif_service.get_selective_cached_exif_data(
+                                path, self.exif_method, self.exiftool_path,
+                                need_date=need_date, need_camera=need_camera, need_lens=need_lens
+                            )
+                        else:
+                            d, c, l = exif_processor.get_selective_cached_exif_data(
+                                path, self.exif_method, self.exiftool_path,
+                                need_date=need_date, need_camera=need_camera, need_lens=need_lens
+                            )
+                        if need_date and d: file_date = d
+                        if need_camera and c: file_cam = c
+                        if need_lens and l: file_lens = l
+                    except Exception:
+                        pass
+
+                # Individual selected metadata (aperture, iso, etc.)
+                individual_metadata = self.selected_metadata.copy() if self.selected_metadata else {}
+                if self.selected_metadata and self.exif_method:
+                    wants_extra = any(individual_metadata.get(k) is True for k in ['aperture','iso','focal_length','shutter','shutter_speed','exposure_bias'])
+                    if wants_extra:
+                        try:
+                            if self.exif_service:
+                                meta = self.exif_service.get_all_metadata(path, self.exif_method, self.exiftool_path) or {}
+                            else:
+                                meta = exif_processor.get_all_metadata(path, self.exif_method, self.exiftool_path) or {}
+                            if meta:
+                                if 'shutter' in individual_metadata and 'shutter_speed' in meta:
+                                    individual_metadata['shutter'] = meta.get('shutter_speed')
+                                for k in ['aperture','iso','focal_length','shutter_speed','exposure_bias']:
+                                    if individual_metadata.get(k) is True and k in meta:
+                                        individual_metadata[k] = meta[k]
+                        except Exception:
+                            pass
+
+                parts = build_ordered_components(
+                    date_taken=file_date,
+                    camera_prefix=self.camera_prefix,
+                    additional=self.additional,
+                    camera_model=file_cam,
+                    lens_model=file_lens,
+                    use_camera=self.use_camera,
+                    use_lens=self.use_lens,
+                    number=group_number,
+                    custom_order=self.custom_order,
+                    date_format=self.date_format,
+                    use_date=self.use_date,
+                    selected_metadata=individual_metadata,
+                )
+                sep = '' if self.devider == 'None' else self.devider
+                new_name = sanitize_final_filename(sep.join(parts) + os.path.splitext(path)[1])
+
+                # CRITICAL FIX: Pass original file path, not directory!
+                target_path = get_safe_target_path(path, new_name)
+
+                if not validate_path_length(target_path):
+                    errors.append((path, f"Target path too long: {len(target_path)} chars"))
+                    continue
+
+                if os.path.normpath(path) != os.path.normpath(target_path):
+                    try:
+                        os.rename(path, target_path)
+                        renamed_files.append(target_path)
+                    except Exception as e:
+                        errors.append((path, str(e)))
+                else:
+                    renamed_files.append(path)
+            except Exception as e:
+                errors.append((path, str(e)))
+        
+        return renamed_files, errors
+    
+    # ------------------------------------------------------------------
+    # End of Phase 2 helper functions
+    # ------------------------------------------------------------------
+    
     def run(self):
         self._debug(f"Starting rename thread with {len(self.files)} files. Continuous={self.continuous_counter} SyncTS={self.sync_exif_date}")
         """Run the rename operation in background thread"""
@@ -201,12 +549,19 @@ class RenameWorkerThread(QThread):
             counter += 1
     
     def optimized_rename_files(self):
-        """Main worker implementation.
-
-        1. Optional EXIF->filesystem timestamp sync (with selective fields / custom date)
-        2. Early exit path when user chose metadata-only (leave_names)
-        3. Fast grouping of RAW/JPG siblings
-        4. Minimal EXIF extraction (only needed fields)
+        """
+        Main worker implementation - simplified with helper functions.
+        
+        Steps:
+        1. Optional EXIF->filesystem timestamp sync
+        2. Early exit for metadata-only mode (leave_names)
+        3. Group RAW/JPG siblings
+        4. Pre-extract EXIF data once (performance optimization)
+        5. Sort files chronologically
+        6. Process each file group with counter logic
+        
+        Returns:
+            tuple: (renamed_files, errors, timestamp_backup)
         """
         self.progress_update.emit("Starting optimized batch processing...")
 
@@ -220,331 +575,48 @@ class RenameWorkerThread(QThread):
         else:
             exif_processor.clear_global_exif_cache()
 
+        # Report what EXIF fields are needed
         need_date = self.use_date
         need_camera = self.use_camera
         need_lens = self.use_lens
-
         needed_labels = [lbl for lbl, flag in [("date", need_date), ("camera", need_camera), ("lens", need_lens)] if flag]
+        
         if needed_labels:
             self.progress_update.emit(f"Extracting only: {', '.join(needed_labels)}")
         else:
             self.progress_update.emit("No EXIF extraction needed - using file names only")
 
-        timestamp_backup = {}
-        if self.sync_exif_date:
-            self.progress_update.emit("Synchronizing EXIF dates to file timestamps...")
-            media_files = [f for f in self.files if is_media_file(f)]
-            successes, sync_errors, timestamp_backup = exif_processor.batch_sync_exif_dates(
-                media_files,
-                self.exiftool_path if self.exiftool_path else None,
-                lambda msg: self.progress_update.emit(f"Date sync: {msg}"),
-                options=self.timestamp_options,
-            )
-            if successes:
-                self.progress_update.emit(f"Successfully synced dates for {len(successes)} files")
-            if sync_errors:
-                self.progress_update.emit(f"Failed to sync dates for {len(sync_errors)} files")
-            if self.leave_names:
-                # Only syncing timestamps; convert sync_errors to simple messages
-                error_messages = [msg for _file, msg in sync_errors]
-                return [], error_messages, timestamp_backup
+        # Step 1: Optional EXIF timestamp sync
+        successes, sync_errors, timestamp_backup = self._sync_exif_timestamps()
+        
+        if self.leave_names:
+            # Only syncing timestamps - early exit
+            error_messages = [msg for _file, msg in sync_errors]
+            return [], error_messages, timestamp_backup
 
-        # Group RAW/JPEG siblings (same basename in same directory)
-        basename_groups = defaultdict(list)
-        for path in self.files:
-            if is_media_file(path):
-                directory = os.path.dirname(path)
-                stem = os.path.splitext(os.path.basename(path))[0]
-                basename_groups[f"{directory}#{stem}"].append(path)
-        file_groups = []
-        orphans = []
-        for _k, group in basename_groups.items():
-            if len(group) > 1:
-                file_groups.append(group)
-            else:
-                orphans.extend(group)
-        for f in orphans:
-            file_groups.append([f])
-
+        # Step 2: Group RAW/JPEG siblings
+        file_groups = self._create_file_groups()
         self.progress_update.emit(f"Processing {len(file_groups)} file groups...")
 
-        # ============================================================
-        # PERFORMANCE OPTIMIZATION: Pre-extract EXIF data once
-        # ============================================================
-        # Extract EXIF for all files ONCE and cache for both sorting AND rename
-        # This eliminates duplicate EXIF extraction (40-50% speedup)
-        self.progress_update.emit("Pre-extracting EXIF data for all files...")
-        exif_cache = {}  # Store full EXIF metadata for each file
-        
-        if self.exif_method:
-            for idx, group in enumerate(file_groups):
-                if idx % 50 == 0:  # Update progress every 50 groups
-                    self.progress_update.emit(f"Extracting EXIF: {idx+1}/{len(file_groups)} groups")
-                
-                first_file = group[0]
-                if first_file not in exif_cache:
-                    try:
-                        # Extract full EXIF metadata once
-                        if self.exif_service:
-                            date_str, camera, lens = self.exif_service.get_selective_cached_exif_data(
-                                first_file, self.exif_method, self.exiftool_path,
-                                need_date=True, need_camera=True, need_lens=True
-                            )
-                            raw_meta = self.exif_service.extract_raw_exif(first_file)
-                        else:
-                            date_str, camera, lens = exif_processor.get_selective_cached_exif_data(
-                                first_file, self.exif_method, self.exiftool_path,
-                                need_date=True, need_camera=True, need_lens=True
-                            )
-                            raw_meta = exif_processor.get_exiftool_metadata_shared(first_file, self.exiftool_path)
-                        
-                        exif_cache[first_file] = {
-                            'date_str': date_str,
-                            'camera': camera,
-                            'lens': lens,
-                            'raw_meta': raw_meta
-                        }
-                    except Exception as e:
-                        self._debug(f"EXIF pre-extraction failed for {first_file}: {e}")
-                        exif_cache[first_file] = None
-        
-        self.progress_update.emit("EXIF pre-extraction complete")
+        # Step 3: Pre-extract EXIF data (PERFORMANCE OPTIMIZATION)
+        exif_cache = self._pre_extract_exif_cache(file_groups)
 
-        # ALWAYS sort by EXIF timestamp for chronological ordering
-        # This ensures files are numbered in the order they were actually taken
+        # Step 4: Sort files chronologically
         self.progress_update.emit("Sorting files by capture time...")
-        
-        def get_exif_sort_key(group):
-            """
-            Sort key based on EXIF DateTimeOriginal (down to seconds).
-            Falls back to mtime, then filename number.
-            Uses pre-extracted EXIF cache for maximum performance.
-            """
-            first_file = group[0]
-            exif_datetime = None
-            
-            # Use pre-extracted EXIF cache (PERFORMANCE OPTIMIZATION)
-            if first_file in exif_cache and exif_cache[first_file]:
-                cached_exif = exif_cache[first_file]
-                date_str = cached_exif.get('date_str')
-                raw_meta = cached_exif.get('raw_meta')
-                
-                if date_str and raw_meta:
-                    # Look for DateTimeOriginal with time
-                    datetime_fields = [
-                        'EXIF:DateTimeOriginal',
-                        'EXIF:CreateDate', 
-                        'QuickTime:CreateDate',
-                        'QuickTime:CreationDate'
-                    ]
-                    for field in datetime_fields:
-                        if field in raw_meta:
-                            dt_str = raw_meta[field]
-                            # Parse format: "2024:01:15 10:30:45"
-                            try:
-                                import datetime as dt_module
-                                if ':' in dt_str:
-                                    # Handle both "2024:01:15 10:30:45" and "2024-01-15 10:30:45"
-                                    dt_str_clean = dt_str.replace(':', '-', 2)  # Replace first 2 colons
-                                    exif_datetime = dt_module.datetime.strptime(dt_str_clean, "%Y-%m-%d %H:%M:%S")
-                                    break
-                            except Exception:
-                                pass
-            
-            # Fallback to file modification time
-            if not exif_datetime:
-                try:
-                    import datetime as dt_module
-                    mtime = os.path.getmtime(first_file)
-                    exif_datetime = dt_module.datetime.fromtimestamp(mtime)
-                except Exception:
-                    import datetime as dt_module
-                    exif_datetime = dt_module.datetime(1970, 1, 1)
-            
-            # Extract number from filename as tiebreaker
-            basename = os.path.basename(first_file)
-            match = re.search(r'(\d+)', basename)
-            file_number = int(match.group(1)) if match else 0
-            
-            # Return tuple: (datetime, file_number, filename)
-            # This ensures chronological order with filename as tiebreaker
-            return (exif_datetime, file_number, first_file)
-        
-        file_groups.sort(key=get_exif_sort_key)
+        file_groups.sort(key=lambda g: self._get_exif_sort_key(g, exif_cache))
         self.progress_update.emit("Files sorted chronologically")
 
+        # Step 5: Process each file group
         renamed_files = []
         errors = []
         date_counter = {}
 
         for idx, group in enumerate(file_groups):
             self.progress_update.emit(f"Processing group {idx+1}/{len(file_groups)}")
-            group_existing = [p for p in group if os.path.exists(p)]
-            if not group_existing:
-                continue
-
-            date_taken = None
-            camera_model = None
-            lens_model = None
-            first_file = group_existing[0]
-
-            # ============================================================
-            # PERFORMANCE OPTIMIZATION: Use pre-extracted EXIF cache
-            # ============================================================
-            # Use cached EXIF data instead of extracting again
-            if first_file in exif_cache and exif_cache[first_file]:
-                cached_exif = exif_cache[first_file]
-                date_taken = cached_exif.get('date_str') if need_date else None
-                camera_model = cached_exif.get('camera') if need_camera else None
-                lens_model = cached_exif.get('lens') if need_lens else None
-                
-                # Best-effort look through rest of group if anything missing
-                if ((need_date and not date_taken) or (need_camera and not camera_model) or (need_lens and not lens_model)):
-                    for other in group_existing[1:]:
-                        if other in exif_cache and exif_cache[other]:
-                            other_exif = exif_cache[other]
-                            if need_date and not date_taken: 
-                                date_taken = other_exif.get('date_str')
-                            if need_camera and not camera_model: 
-                                camera_model = other_exif.get('camera')
-                            if need_lens and not lens_model: 
-                                lens_model = other_exif.get('lens')
-                            if date_taken and camera_model and lens_model:
-                                break
-            # Fallback to old method if not in cache (shouldn't happen, but safety)
-            elif self.exif_method and any([need_date, need_camera, need_lens]):
-                if self.exif_service:
-                    date_taken, camera_model, lens_model = self.exif_service.get_selective_cached_exif_data(
-                        first_file, self.exif_method, self.exiftool_path,
-                        need_date=need_date, need_camera=need_camera, need_lens=need_lens
-                    )
-                else:
-                    date_taken, camera_model, lens_model = exif_processor.get_selective_cached_exif_data(
-                        first_file, self.exif_method, self.exiftool_path,
-                        need_date=need_date, need_camera=need_camera, need_lens=need_lens
-                    )
-
-            # Fallbacks
-            if need_date and not date_taken:
-                for p in group_existing:
-                    m = re.search(r'(20\d{2})(\d{2})(\d{2})', os.path.basename(p))
-                    if m:
-                        date_taken = f"{m.group(1)}{m.group(2)}{m.group(3)}"
-                        break
-                if not date_taken:
-                    try:
-                        dt = datetime.datetime.fromtimestamp(os.path.getmtime(first_file))
-                        date_taken = dt.strftime('%Y%m%d')
-                    except Exception:
-                        date_taken = '19700101'
-            if need_camera and not camera_model:
-                camera_model = 'ILCE-7CM2'
-            if need_lens and not lens_model:
-                lens_model = 'FE-20-70mm-F4-G'
-
-            # Counter logic
-            if self.use_date and not self.continuous_counter:
-                key = date_taken or 'unknown'
-                date_counter[key] = date_counter.get(key, 0) + 1
-                group_number = date_counter[key]
-            elif not self.use_date:
-                key = 'all_files'
-                date_counter[key] = date_counter.get(key, 0) + 1
-                group_number = date_counter[key]
-            else:  # self.use_date and continuous_counter
-                if hasattr(self, '_continuous_counter_map'):
-                    group_number = self._continuous_counter_map.get(first_file, 1)
-                else:
-                    key = 'all_files'
-                    date_counter[key] = date_counter.get(key, 0) + 1
-                    group_number = date_counter[key]
-
-            # Process each file in group
-            for path in group_existing:
-                try:
-                    file_date = date_taken
-                    file_cam = camera_model
-                    file_lens = lens_model
-                    if self.exif_method and any([need_date, need_camera, need_lens]):
-                        try:
-                            if self.exif_service:
-                                d, c, l = self.exif_service.get_selective_cached_exif_data(
-                                    path, self.exif_method, self.exiftool_path,
-                                    need_date=need_date, need_camera=need_camera, need_lens=need_lens
-                                )
-                            else:
-                                d, c, l = exif_processor.get_selective_cached_exif_data(
-                                    path, self.exif_method, self.exiftool_path,
-                                    need_date=need_date, need_camera=need_camera, need_lens=need_lens
-                                )
-                            if need_date and d: file_date = d
-                            if need_camera and c: file_cam = c
-                            if need_lens and l: file_lens = l
-                        except Exception:
-                            pass
-
-                    # Individual selected metadata (aperture, iso, etc.)
-                    individual_metadata = self.selected_metadata.copy() if self.selected_metadata else {}
-                    if self.selected_metadata and self.exif_method:
-                        wants_extra = any(individual_metadata.get(k) is True for k in ['aperture','iso','focal_length','shutter','shutter_speed','exposure_bias'])
-                        if wants_extra:
-                            try:
-                                if self.exif_service:
-                                    meta = self.exif_service.get_all_metadata(path, self.exif_method, self.exiftool_path) or {}
-                                else:
-                                    meta = exif_processor.get_all_metadata(path, self.exif_method, self.exiftool_path) or {}
-                                if meta:
-                                    if 'shutter' in individual_metadata and 'shutter_speed' in meta:
-                                        individual_metadata['shutter'] = meta.get('shutter_speed')
-                                    for k in ['aperture','iso','focal_length','shutter_speed','exposure_bias']:
-                                        if individual_metadata.get(k) is True and k in meta:
-                                            individual_metadata[k] = meta[k]
-                            except Exception:
-                                pass
-
-                    parts = build_ordered_components(
-                        date_taken=file_date,
-                        camera_prefix=self.camera_prefix,
-                        additional=self.additional,
-                        camera_model=file_cam,
-                        lens_model=file_lens,
-                        use_camera=self.use_camera,
-                        use_lens=self.use_lens,
-                        number=group_number,
-                        custom_order=self.custom_order,
-                        date_format=self.date_format,
-                        use_date=self.use_date,
-                        selected_metadata=individual_metadata,
-                    )
-                    sep = '' if self.devider == 'None' else self.devider
-                    new_name = sanitize_final_filename(sep.join(parts) + os.path.splitext(path)[1])
-                    target = get_safe_target_path(path, new_name)
-                    
-                    # Check if name conflict occurred (suffix was added)
-                    if '(' in os.path.basename(target) and ')' in os.path.basename(target):
-                        # Extract the intended name without suffix
-                        intended_target = os.path.join(os.path.dirname(path), new_name)
-                        if os.path.normcase(path) != os.path.normcase(intended_target) and os.path.exists(intended_target):
-                            # Real conflict: another file exists with this name
-                            conflict_msg = f"Name conflict: '{new_name}' already exists, renamed to '{os.path.basename(target)}'"
-                            if conflict_msg not in errors:  # Avoid duplicates
-                                errors.append(conflict_msg)
-                    
-                    if not validate_path_length(target):
-                        # Attempt shorten
-                        directory = os.path.dirname(path)
-                        base, ext = os.path.splitext(new_name)
-                        max_len = 200 - len(directory)
-                        if max_len > 10:
-                            new_name = base[:max_len - len(ext)] + ext
-                            target = os.path.join(directory, new_name)
-                        else:
-                            errors.append(f"Path too long: {path}")
-                            continue
-                    os.rename(path, target)
-                    renamed_files.append(target)
-                except Exception as e:
-                    errors.append(f"Failed to rename {os.path.basename(path)}: {e}")
+            
+            group_renamed, group_errors = self._process_file_group(group, date_counter, exif_cache)
+            renamed_files.extend(group_renamed)
+            errors.extend(group_errors)
 
         return renamed_files, errors, timestamp_backup
     
