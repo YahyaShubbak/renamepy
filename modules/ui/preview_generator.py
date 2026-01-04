@@ -45,6 +45,42 @@ class PreviewGenerator:
         date_format = self.parent.date_format_combo.currentText()
         devider = self.parent.devider_combo.currentText()
         
+        # Component management: Ensure custom_order reflects currently active components
+        # This handles components being activated/deactivated
+        active_components = []
+        if use_date:
+            active_components.append("Date")
+        if camera_prefix:
+            active_components.append("Prefix")
+        if additional:
+            active_components.append("Additional")
+        if use_camera:
+            active_components.append("Camera")
+        if use_lens:
+            active_components.append("Lens")
+        active_components.append("Number")  # Always present
+        
+        # Add active metadata components
+        if hasattr(self.parent, 'selected_metadata') and self.parent.selected_metadata:
+            for meta_key in self.parent.selected_metadata.keys():
+                active_components.append(f"Meta_{meta_key}")
+        
+        # Update custom_order: Add missing active components before "Number"
+        for component in active_components:
+            if component not in self.parent.custom_order:
+                # Insert before Number for logical ordering
+                if "Number" in self.parent.custom_order:
+                    idx = self.parent.custom_order.index("Number")
+                    self.parent.custom_order.insert(idx, component)
+                else:
+                    self.parent.custom_order.append(component)
+        
+        # Remove inactive components from custom_order
+        self.parent.custom_order = [
+            c for c in self.parent.custom_order 
+            if c in active_components
+        ]
+        
         # Choose first JPG file, else first media file, else dummy
         preview_file = next((f for f in self.parent.files if os.path.splitext(f)[1].lower() in [".jpg", ".jpeg"]), None)
         if not preview_file:
@@ -215,25 +251,12 @@ class PreviewGenerator:
         return preview_metadata
     
     def _build_display_components(self, component_mapping):
-        """Build ordered list of display components"""
+        """Build ordered list of display components - follows custom_order exactly"""
         display_components = []
         
-        # Create a dynamic, full order list
-        active_components_order = list(self.parent.custom_order)
-        if hasattr(self.parent, 'selected_metadata') and self.parent.selected_metadata:
-            for meta_key, is_selected in self.parent.selected_metadata.items():
-                if is_selected:
-                    meta_name = f"Meta_{meta_key}"
-                    if meta_name not in active_components_order:
-                        # CRITICAL FIX: Insert new components BEFORE "Number", not at the end
-                        if "Number" in active_components_order:
-                            number_index = active_components_order.index("Number")
-                            active_components_order.insert(number_index, meta_name)
-                        else:
-                            active_components_order.append(meta_name)
-        
-        # Add components in the current order
-        for component_name in active_components_order:
+        # Simply iterate through custom_order and add components with values
+        # No manipulation of order here - that's handled in update_preview()
+        for component_name in self.parent.custom_order:
             value = component_mapping.get(component_name)
             if value:  # Only add non-empty and active components
                 display_components.append(value)

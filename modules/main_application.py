@@ -1101,20 +1101,8 @@ class FileRenamerApp(QMainWindow):
                 if component_name not in new_internal_order:  # Prevent duplicates
                     new_internal_order.append(component_name)
         
-        # Add any missing basic components that weren't in the display
-        # CRITICAL FIX: Insert missing components BEFORE "Number", not at the end
-        basic_components = ["Date", "Prefix", "Additional", "Camera", "Lens", "Number"]
-        
-        for component in basic_components:
-            if component not in new_internal_order:
-                # Insert before Number if it exists, otherwise append
-                if "Number" in new_internal_order:
-                    number_index = new_internal_order.index("Number")
-                    new_internal_order.insert(number_index, component)
-                else:
-                    new_internal_order.append(component)
-        
-        # Update custom order
+        # Update custom order - respect EXACT order from preview (no auto-insertion)
+        # This ensures "What You See Is What You Get"
         self.custom_order = new_internal_order
         
         # Update preview to reflect the change
