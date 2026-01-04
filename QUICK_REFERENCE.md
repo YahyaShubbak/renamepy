@@ -1,111 +1,111 @@
-# 🚀 RenamePy - Quick Reference Card
+# 🚀 RenamePy - Quick Reference Guide
 
-## Installation & Start (Nur 2 Schritte!)
+## Installation & Start (2 Simple Steps!)
 
-### 1️⃣ Installation (einmalig)
+### 1️⃣ Installation (One-time Setup)
 ```bash
 install.bat
-# ODER
+# OR
 .\install.ps1
 ```
 
-### 2️⃣ Anwendung Starten (jederzeit)
+### 2️⃣ Start Application (Anytime)
 ```bash
 start_simple.bat
-# ODER
-start_debug.bat     # Mit Debug-Info
+# OR
+start_debug.bat     # With debug information
 ```
 
 ---
 
-## 📁 Wichtigste Dateien
+## 📁 Key Files
 
-| Datei | Was | Wann |
-|-------|-----|------|
-| **install.bat** | Installation | Nur einmal! |
-| **start_simple.bat** | App starten | Immer nutzen |
-| **start_debug.bat** | Mit Debug | Bei Problemen |
-| **activate_env.bat** | Manuell aktivieren | Optional |
-| **INSTALL_GUIDE.md** | Vollständiger Guide | Bei Fragen |
+| File | Purpose | When to Use |
+|------|---------|-------------|
+| **install.bat** | Installation | Once only! |
+| **start_simple.bat** | Start app | Always use this |
+| **start_debug.bat** | With debug output | For troubleshooting |
+| **activate_env.bat** | Manual activation | Optional |
+| **README.md** | Complete guide | For detailed help |
 
 ---
 
-## 🆘 Schnelle Lösungen
+## 🆘 Quick Solutions
 
 ### "ModuleNotFoundError: PyQt6"
 ```bash
-# Hat nicht funktioniert:
-→ Nutze start_simple.bat
-→ Es aktiviert automatisch das Conda Environment
+# If installation didn't work:
+→ Use start_simple.bat
+→ It automatically activates the conda environment
 ```
 
-### "Conda nicht gefunden"
+### "Conda not found"
 ```bash
 → Install Miniconda: https://docs.conda.io/miniconda.html
-→ Dann: install.bat
+→ Then run: install.bat
 ```
 
-### "Python nicht gefunden"
+### "Python not found"
 ```bash
-→ Installiere Python: https://www.python.org/
-→ ✓ "Add to PATH" ankreuzen!
-→ System-Neustart
-→ Dann: install.bat
+→ Install Python: https://www.python.org/
+→ ✓ Check "Add to PATH" during installation!
+→ Restart system
+→ Then run: install.bat
 ```
 
-### "Es funktioniert immer noch nicht"
+### "Still not working"
 ```bash
 start_debug.bat
-# Liest Output und nutze INSTALL_GUIDE.md → Troubleshooting
+# Read output and check README.md → Troubleshooting section
 ```
 
 ---
 
-## 💾 Umgebungen
+## 💾 Environments
 
-Nachdem Installation:
+After installation, you have two options:
 
 ```
-Zwei Möglichkeiten:
+Two possibilities:
 
-[A] Conda Environment
-    C:\Users\YaSh\miniconda3\envs\renamepy\
-    → Nutze: conda activate renamepy
+[A] Conda Environment (Recommended)
+    C:\Users\<User>\miniconda3\envs\renamepy\
+    → Use: conda activate renamepy
 
-[B] Venv Environment (falls -ForceVenv)
+[B] Venv Environment (if -ForceVenv used)
     .\renamepy\
-    → Nutze: .\renamepy\Scripts\Activate.ps1
+    → Use: .\renamepy\Scripts\Activate.ps1
 ```
 
 ---
 
-## 🔄 Tägliche Nutzung
+## 🔄 Daily Usage
 
 ```bash
-# Option 1 (Einfach):
+# Option 1 (Simple - Recommended):
 start_simple.bat
-→ Alles automatisch
+→ Everything automatic
 
-# Option 2 (Manuell):
+# Option 2 (Manual):
 conda activate renamepy
 python RenameFiles.py
 
-# Option 3 (Mit Debug):
+# Option 3 (Debug Mode):
 start_debug.bat
-→ Viel Info
+→ Detailed information
 ```
 
 ---
 
-## 📊 Status nach Installation
+## 📊 Post-Installation Status
 
-Prüfe mit:
+Check with:
 ```powershell
 conda env list
-# Sollte anzeigen: renamepy ← Conda
+# Should display: renamepy ← Conda
 ```
 
-oder:
+or:
 
 ```powershell
 .\activate_env.bat
@@ -114,93 +114,90 @@ python -c "import PyQt6, PIL; print('OK')"
 
 ---
 
-## 🎯 Die drei Starter erklärt
+## 🎯 The Three Starter Scripts Explained
 
 ```
 start_simple.bat
-└─ Normale Nutzung
-   └─ Startet die App
-   └─ Minimal Output
-   └─ ← NUTZE DIESEN!
+└─ Normal usage
+   └─ Starts the application
+   └─ Minimal console output
+   └─ ← USE THIS ONE!
 
 start_file_renamer.bat
-└─ Alternative zu simple
-   └─ Identisch funktional
-   └─ Anderer Name
+└─ Alternative to simple
+   └─ Functionally identical
+   └─ Different name only
 
 start_debug.bat
-└─ Debug-Modus
-   └─ Zeigt Python-Info
-   └─ Prüft alle Module
-   └─ ← NUTZE BEI PROBLEMEN
+└─ Debug mode
+   └─ Shows Python information
+   └─ Checks all modules
+   └─ ← USE WHEN TROUBLESHOOTING
 ```
 
 ---
 
-## ⚙️ Wenn etwas fehlt
+## ⚙️ If Something Is Missing
 
 ```bash
-# Fehlende Packages installieren
+# Install missing packages
 conda activate renamepy
 pip install -r requirements.txt
 
-# Oder Alles neu
+# Or complete reinstall
 .\install.ps1
 ```
 
 ---
 
-## 📞 Dokumentation
+## 📞 Documentation
 
 ```
-Schnell starten?
-→ Du liest diese Datei ✓
+Quick start?
+→ You're reading it ✓
 
-Alles verstehen?
-→ INSTALL_GUIDE.md
+Full understanding?
+→ README.md
 
-Nur Installation?
-→ INSTALL_QUICK_START.md
+Installation details?
+→ Check install.bat comments
 
-Starter erklärt?
-→ STARTER_GUIDE.md
-
-Technische Details?
-→ INSTALLATION.md
+Technical documentation?
+→ CHANGELOG.md (version history)
 ```
 
 ---
 
-## ✅ Checkliste
+## ✅ Checklist
 
-- [ ] `install.bat` ausgeführt
-- [ ] `start_simple.bat` funktioniert
-- [ ] GUI-Fenster öffnet sich
-- [ ] Keine Fehler im Console
+- [ ] `install.bat` executed successfully
+- [ ] `start_simple.bat` works
+- [ ] GUI window opens
+- [ ] No errors in console
 
-→ **Fertig!** 🎉
+→ **Done!** 🎉
 
 ---
 
-## 🆘 Notfall-Befehle
+## 🆘 Emergency Commands
 
 ```powershell
-# Prüfe Installation
+# Check installation
 conda env list
 
-# Manuell aktivieren
+# Manually activate
 conda activate renamepy
 
-# Alle Packages prüfen
+# List all packages
 pip list
 
-# Module testen
+# Test modules
 python -c "import PyQt6; import PIL; print('OK')"
 
-# Neuinstallation
+# Reinstall everything
 .\install.ps1
 ```
 
 ---
 
-**Das war's! Viel Spaß mit RenamePy!** 🚀
+**That's it! Enjoy RenamePy!** 🚀

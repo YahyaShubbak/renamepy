@@ -16,18 +16,18 @@ class TimestampSyncOptionsDialog(QDialog):
         layout = QVBoxLayout(self)
 
         info = QLabel(
-            "Wähle, welche Dateisystem-Zeitstempel auf das Aufnahmedatum gesetzt werden sollen.\n"
-            "Optional kannst du ein eigenes Datum/Zeit angeben (überschreibt EXIF)."
+            "Select which filesystem timestamps should be set to the capture date.\n"
+            "Optionally specify a custom date/time (overrides EXIF)."
         )
         info.setWordWrap(True)
         layout.addWidget(info)
 
         # Checkboxes for which timestamps
-        box = QGroupBox("Zu ändernde Felder")
+        box = QGroupBox("Fields to Modify")
         box_layout = QVBoxLayout()
-        self.cb_creation = QCheckBox("Erstellt (Creation)")
-        self.cb_modification = QCheckBox("Geändert (Modification)")
-        self.cb_access = QCheckBox("Letzter Zugriff (Access)")
+        self.cb_creation = QCheckBox("Created (Creation Time)")
+        self.cb_modification = QCheckBox("Modified (Modification Time)")
+        self.cb_access = QCheckBox("Last Access (Access Time)")
         for cb in (self.cb_creation, self.cb_modification, self.cb_access):
             cb.setChecked(True)
             box_layout.addWidget(cb)
@@ -35,7 +35,7 @@ class TimestampSyncOptionsDialog(QDialog):
         layout.addWidget(box)
 
         # Custom datetime option
-        self.cb_custom = QCheckBox("Eigenes Datum/Zeit verwenden")
+        self.cb_custom = QCheckBox("Use Custom Date/Time")
         layout.addWidget(self.cb_custom)
 
         dt_row = QHBoxLayout()
@@ -47,7 +47,7 @@ class TimestampSyncOptionsDialog(QDialog):
         else:
             self.dt_edit.setDateTime(default_dt)
         self.dt_edit.setEnabled(False)
-        dt_row.addWidget(QLabel("Datum/Zeit:"))
+        dt_row.addWidget(QLabel("Date/Time:"))
         dt_row.addWidget(self.dt_edit)
         layout.addLayout(dt_row)
 
@@ -57,7 +57,7 @@ class TimestampSyncOptionsDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_row.addStretch()
         self.btn_ok = QPushButton("OK")
-        self.btn_cancel = QPushButton("Abbrechen")
+        self.btn_cancel = QPushButton("Cancel")
         btn_row.addWidget(self.btn_cancel)
         btn_row.addWidget(self.btn_ok)
         layout.addLayout(btn_row)

@@ -132,7 +132,7 @@ class MainWindowUI:
                 background-color: #005a9e;
             }
         """)
-        # Callback wird später in main_application.py gesetzt
+        # Callback connected later in main_application.py
         
         # Select Folder
         window.select_folder_menu_button = QPushButton("📁 Select Folder")
@@ -153,7 +153,7 @@ class MainWindowUI:
                 background-color: #0c5a0c;
             }
         """)
-        # Callback wird später in main_application.py gesetzt
+        # Callback connected later in main_application.py
         
         # Clear Files
         window.clear_files_menu_button = QPushButton("🗑️ Clear Files")
@@ -174,7 +174,7 @@ class MainWindowUI:
                 background-color: #a72d01;
             }
         """)
-        # Callback wird später in main_application.py gesetzt
+        # Callback connected later in main_application.py
         
         file_menu_row.addWidget(window.select_files_menu_button)
         file_menu_row.addWidget(window.select_folder_menu_button)

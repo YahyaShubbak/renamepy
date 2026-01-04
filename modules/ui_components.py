@@ -6,11 +6,11 @@ Custom GUI w    def __init__(self, parent=None):
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self.setAcceptDrops(True)  # Explicitly enable drop acceptance
-        self.setMaximumHeight(80)  # Höherer Bereich für bessere Sichtbarkeit
-        self.setMinimumHeight(65)  # Höherer Bereich für bessere Sichtbarkeit
+        self.setMaximumHeight(80)  # Increased height for better component visibility
+        self.setMinimumHeight(65)  # Minimum height to prevent component clipping
         self.setFlow(QListWidget.Flow.LeftToRight)
         self.setWrapping(False)
-        self.setSpacing(2)  # Zurück auf 2px für besseren Abstand zwischen Items the RenameFiles application.
+        self.setSpacing(2)  # 2px spacing provides optimal visual separation between items
 """
 
 import os
@@ -54,34 +54,34 @@ class InteractivePreviewWidget(QListWidget):
         self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
         self.setDefaultDropAction(Qt.DropAction.MoveAction)
         self.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-        self.setMaximumHeight(80)  # Höherer Bereich für bessere Sichtbarkeit
-        self.setMinimumHeight(65)  # Höherer Bereich für bessere Sichtbarkeit
+        self.setMaximumHeight(80)  # Increased height for better component visibility
+        self.setMinimumHeight(65)  # Minimum height to prevent component clipping
         self.setFlow(QListWidget.Flow.LeftToRight)
         self.setWrapping(False)
-        self.setSpacing(2)  # Zurück auf 2px für besseren Abstand zwischen Items
+        self.setSpacing(2)  # 2px spacing provides optimal visual separation between items
         
         # Set custom item delegate for separator handling
         self.setItemDelegate(CustomItemDelegate(self))
         
-        # Style the widget - kompaktere Version
+        # Style the widget with compact, optimized layout
         self.setStyleSheet("""
             QListWidget {
                 border: 2px solid #cccccc;
                 border-radius: 6px;
                 background-color: #f9f9f9;
-                padding: 8px;  /* Zurück auf 8px damit Items vollständig sichtbar sind */
-                font-size: 11px;  /* Reduziert von 12px */
+                padding: 8px;  /* 8px padding ensures items are fully visible */
+                font-size: 11px;  /* Reduced from 12px for more compact display */
             }
             QListWidget::item {
                 background-color: #e6f3ff;
                 border: 1px solid #b3d9ff;
-                border-radius: 2px;  /* Kleinerer border-radius */
-                padding: 1px 3px;  /* Etwas mehr Padding für bessere Proportionen */
-                margin: 0px;  /* Kein Margin */
+                border-radius: 2px;  /* Smaller radius for compact appearance */
+                padding: 1px 3px;  /* Balanced padding for optimal proportions */
+                margin: 0px;  /* No margin for tight spacing */
                 font-weight: bold;
                 text-align: center;
-                font-size: 8px;  /* Erhöht von 7px auf 8px für bessere Sichtbarkeit */
-                /* Keine feste min-width - lässt die Box sich an den Text anpassen */
+                font-size: 8px;  /* Increased from 7px for better readability */
+                /* No fixed min-width - allows box to adapt to text length */
             }
             QListWidget::item:selected {
                 background-color: #cce7ff;
@@ -91,7 +91,7 @@ class InteractivePreviewWidget(QListWidget):
                 background-color: #d9ecff;
                 border: 1px solid #66c2ff;
             }
-            /* Separatoren erhalten keine Box-Styling */
+            /* Separators receive no box styling to maintain visual distinction */
         """)
         
         # Add drag & drop visual feedback
@@ -173,8 +173,8 @@ class InteractivePreviewWidget(QListWidget):
                 sep_item = QListWidgetItem(self.separator)
                 sep_item.setFlags(Qt.ItemFlag.NoItemFlags)  # Not selectable or draggable
                 sep_item.setData(Qt.ItemDataRole.UserRole, "separator")
-                # Separator should be just big enough for the separator character
-                sep_item.setSizeHint(QSize(8, 20))  # Kompakte Separator-Größe
+                # Separator sized to fit character while maintaining compact layout
+                sep_item.setSizeHint(QSize(8, 20))  # Compact separator size (8px width)
                 self.addItem(sep_item)
                 
         # FLEXIBLE: No more fixed number - it's now part of components
