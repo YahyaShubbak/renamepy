@@ -79,20 +79,14 @@ class RenameWorkerThread(QThread):
             # Use optimized rename function
             renamed_files, errors, timestamp_backup = self.optimized_rename_files()
             
-            # IMPORTANT: Clean up ExifTool instance after batch processing
-            if self.exif_service:
-                self.exif_service.cleanup()
-            else:
-                # Fallback to global cleanup for backward compatibility
-                exif_processor.cleanup_global_exiftool()
+            # OPTIMIZATION: Keep ExifTool instance alive for better performance
+            # Only cleanup on app close, not after each operation
+            # Cache is preserved between operations for maximum speed
             
             self.finished.emit(renamed_files, errors, timestamp_backup)
         except Exception as e:
-            # Clean up ExifTool instance even if there's an error
-            if self.exif_service:
-                self.exif_service.cleanup()
-            else:
-                exif_processor.cleanup_global_exiftool()
+            # OPTIMIZATION: Even on error, keep ExifTool instance alive
+            # It will be cleaned up when app closes
             self.error.emit(str(e))
     
     def _create_continuous_counter_map(self):

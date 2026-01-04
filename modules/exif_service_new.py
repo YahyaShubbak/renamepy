@@ -77,13 +77,18 @@ class ExifService:
             self._cache.clear()
     
     def cleanup(self):
-        """Clean up the ExifTool instance when done with batch processing"""
+        """
+        Clean up the ExifTool instance when done with batch processing.
+        OPTIMIZATION: Only call this when app closes, not after each operation!
+        """
         if self._exiftool_instance is not None:
             try:
                 self._exiftool_instance.__exit__(None, None, None)
-            except:
-                pass
-            self._exiftool_instance = None
+                log.info("ExifTool instance cleaned up successfully")
+            except Exception as e:
+                log.warning(f"Error during ExifTool cleanup: {e}")
+            finally:
+                self._exiftool_instance = None
     
     def get_cached_exif_data(self, file_path, method=None, exiftool_path=None):
         """

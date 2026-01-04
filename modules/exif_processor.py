@@ -47,28 +47,20 @@ _global_exiftool_path = None
 # Legacy wrapper functions for backward compatibility
 def get_cached_exif_data(file_path, method, exiftool_path=None):
     """
-    Legacy wrapper - creates temporary ExifService instance.
-    Use ExifService directly for better performance.
+    Legacy wrapper - calls extract_exif_fields_with_retry which uses shared ExifTool instance.
+    OPTIMIZATION: No ExifService instance created, uses global ExifTool directly.
     """
-    service = ExifService(exiftool_path)
-    try:
-        return service.get_cached_exif_data(file_path, method, exiftool_path)
-    finally:
-        service.cleanup()
+    return extract_exif_fields_with_retry(file_path, method, exiftool_path, max_retries=2)
 
 def get_selective_cached_exif_data(file_path, method, exiftool_path=None, need_date=True, need_camera=False, need_lens=False):
     """
-    Legacy wrapper - creates temporary ExifService instance.
-    Use ExifService directly for better performance.
+    Legacy wrapper - calls extract_selective_exif_fields which uses shared ExifTool instance.
+    OPTIMIZATION: No ExifService instance created, uses global ExifTool directly.
     """
-    service = ExifService(exiftool_path)
-    try:
-        return service.get_selective_cached_exif_data(
-            file_path, method, exiftool_path,
-            need_date=need_date, need_camera=need_camera, need_lens=need_lens
-        )
-    finally:
-        service.cleanup()
+    return extract_selective_exif_fields(
+        file_path, method, exiftool_path,
+        need_date=need_date, need_camera=need_camera, need_lens=need_lens
+    )
 
 def extract_exif_fields(image_path, method, exiftool_path=None):
     """
@@ -247,9 +239,10 @@ def clear_global_exif_cache():
 
 def cleanup_global_exiftool():
     """
-    Clean up the global ExifTool instance when done with batch processing
+    Clean up the global ExifTool instance when done with batch processing.
     """
     global _global_exiftool_instance
+    
     if _global_exiftool_instance is not None:
         try:
             _global_exiftool_instance.__exit__(None, None, None)

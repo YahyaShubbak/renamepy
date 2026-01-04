@@ -1288,19 +1288,22 @@ class FileRenamerApp(QMainWindow):
             # Show success message
             self.status.showMessage("EXIF timestamps updated successfully", 5000)
 
+    # ------------------------------------------------------------------
+    # Phase 2 Refactoring: Helper functions for on_rename_finished
+    # ------------------------------------------------------------------
     
-    def on_rename_finished(self, renamed_files, errors, timestamp_backup=None):
-        """Handle completion of rename operation"""
-        # Store timestamp backup for potential undo operations
-        if timestamp_backup:
-            self.timestamp_backup = timestamp_backup
+    def _create_filename_mapping(self, old_media_files, renamed_files, timestamp_backup):
+        """
+        Create or update original_filenames mapping for undo functionality.
         
-        # Update the file list with the new file names
-        original_non_media = [f for f in self.files if not is_media_file(f)]
-        old_media_files = [f for f in self.files if is_media_file(f)]
-        
-        # CRITICAL FIX: Handle both rename operations and EXIF-only sync
-        # Create original_filenames mapping for both scenarios
+        Args:
+            old_media_files: List of original file paths before rename
+            renamed_files: List of new file paths after rename
+            timestamp_backup: Dict of timestamp backups (for EXIF-only sync)
+            
+        Returns:
+            dict: Mapping of {current_path: original_filename}
+        """
         if not hasattr(self, 'original_filenames') or not self.original_filenames:
             new_original_filenames = {}
             
@@ -1323,7 +1326,6 @@ class FileRenamerApp(QMainWindow):
                     renamed_files_by_dir[directory].append(renamed_file)
                 
                 # Create safe mapping based on directory and order preservation
-                # CRITICAL FIX: Use index mapping instead of sorting to avoid order issues
                 for directory in old_files_by_dir:
                     old_files_in_dir = old_files_by_dir[directory]
                     renamed_files_in_dir = renamed_files_by_dir.get(directory, [])
@@ -1332,19 +1334,14 @@ class FileRenamerApp(QMainWindow):
                     if len(old_files_in_dir) != len(renamed_files_in_dir):
                         self.log(f"WARNING: File count mismatch in {directory}")
                         self.log(f"  Original: {len(old_files_in_dir)}, Renamed: {len(renamed_files_in_dir)}")
-                        # Use minimum count to avoid index errors
                         min_count = min(len(old_files_in_dir), len(renamed_files_in_dir))
                         old_files_in_dir = old_files_in_dir[:min_count]
                         renamed_files_in_dir = renamed_files_in_dir[:min_count]
                     
-                    # Map files based on their original position in self.files list
-                    # This preserves the exact order relationship
+                    # Map files based on their original position
                     for old_file in old_files_in_dir:
                         try:
-                            # Find the position of this old file in the original self.files list
                             old_index = old_media_files.index(old_file)
-                            
-                            # Find the corresponding renamed file at the same position
                             if old_index < len(renamed_files):
                                 renamed_file = renamed_files[old_index]
                                 original_filename = os.path.basename(old_file)
@@ -1356,20 +1353,18 @@ class FileRenamerApp(QMainWindow):
             # CASE 2: EXIF-only sync (no renamed files, but we have timestamp backup)
             elif timestamp_backup and old_media_files:
                 self.log("🔄 EXIF-only sync detected - creating filename mapping for restore functionality")
-                # Create identity mapping (file -> its own basename) for files that had timestamp changes
                 for media_file in old_media_files:
                     if media_file in timestamp_backup:
                         original_filename = os.path.basename(media_file)
                         new_original_filenames[media_file] = original_filename
                         self.log(f"EXIF mapping: {os.path.basename(media_file)} -> {original_filename}")
             
-            # Set original_filenames for the first time
-            self.original_filenames = new_original_filenames
+            return new_original_filenames
         else:
             # Subsequent rename operations - update paths but keep original filenames
             updated_original_filenames = {}
             
-            # Map old paths to new paths but preserve original filenames
+            # Map old paths to new paths
             old_to_new_path_mapping = {}
             for i, old_file in enumerate(old_media_files):
                 if i < len(renamed_files):
@@ -1381,46 +1376,55 @@ class FileRenamerApp(QMainWindow):
                     new_path = old_to_new_path_mapping[old_path]
                     updated_original_filenames[new_path] = original_filename
                 else:
-                    # Keep unchanged entries
                     updated_original_filenames[old_path] = original_filename
             
-            self.original_filenames = updated_original_filenames
+            return updated_original_filenames
+    
+    def _rebuild_file_list(self, renamed_files, original_non_media, old_media_files):
+        """
+        Rebuild the file list widget after rename operation.
         
-        # Clear and rebuild the file list
+        Args:
+            renamed_files: List of renamed file paths
+            original_non_media: List of non-media files (unchanged)
+            old_media_files: List of original media files (for EXIF-only case)
+        """
         self.files.clear()
         self.file_list.clear()
         
         # CASE 1: Normal rename operation - use renamed files
         if renamed_files:
-            # Add renamed media files with proper item data
             for renamed_file in renamed_files:
                 self.files.append(renamed_file)
                 item = QListWidgetItem(os.path.basename(renamed_file))
                 item.setData(Qt.ItemDataRole.UserRole, renamed_file)
                 self.file_list.addItem(item)
         else:
-            # CASE 2: EXIF-only sync - keep original files (no renaming occurred)
+            # CASE 2: EXIF-only sync - keep original files
             for media_file in old_media_files:
                 self.files.append(media_file)
                 item = QListWidgetItem(os.path.basename(media_file))
                 item.setData(Qt.ItemDataRole.UserRole, media_file)
                 self.file_list.addItem(item)
         
-        # Add back any non-media files (they weren't renamed) with proper item data
+        # Add back non-media files
         for non_media in original_non_media:
             self.files.append(non_media)
             item = QListWidgetItem(os.path.basename(non_media))
             item.setData(Qt.ItemDataRole.UserRole, non_media)
             self.file_list.addItem(item)
-            # Preserve original tracking for non-media files too
+            # Preserve original tracking for non-media files
             if non_media not in self.original_filenames:
                 self.original_filenames[non_media] = os.path.basename(non_media)
+    
+    def _show_rename_results(self, renamed_files, errors):
+        """
+        Show results dialog with success/error/conflict information.
         
-        # Enable undo button if we have any rename tracking
-        # Update restore button state based on available restore data (filenames or timestamps)
-        self.update_restore_button_state()
-        
-        # Show results
+        Args:
+            renamed_files: List of successfully renamed files
+            errors: List of error messages
+        """
         if errors:
             # Separate name conflicts from real errors
             name_conflicts = [e for e in errors if e.startswith("Name conflict:")]
@@ -1474,6 +1478,38 @@ class FileRenamerApp(QMainWindow):
             error_dialog.exec()
         else:
             QMessageBox.information(self, "Success", f"All files renamed successfully!\n{len(renamed_files)} files processed.")
+    
+    # ------------------------------------------------------------------
+    # End of Phase 2 helper functions
+    # ------------------------------------------------------------------
+    
+    def on_rename_finished(self, renamed_files, errors, timestamp_backup=None):
+        """
+        Handle completion of rename operation.
+        
+        Simplified version after Phase 2 refactoring - delegates to helper functions.
+        """
+        # Store timestamp backup for potential undo operations
+        if timestamp_backup:
+            self.timestamp_backup = timestamp_backup
+        
+        # Get file lists
+        original_non_media = [f for f in self.files if not is_media_file(f)]
+        old_media_files = [f for f in self.files if is_media_file(f)]
+        
+        # Create or update filename mapping for undo functionality
+        self.original_filenames = self._create_filename_mapping(
+            old_media_files, renamed_files, timestamp_backup
+        )
+        
+        # Rebuild file list widget
+        self._rebuild_file_list(renamed_files, original_non_media, old_media_files)
+        
+        # Update restore button state
+        self.update_restore_button_state()
+        
+        # Show results dialog
+        self._show_rename_results(renamed_files, errors)
         
         # Update preview and status
         self.update_preview()
@@ -1487,12 +1523,200 @@ class FileRenamerApp(QMainWindow):
         QMessageBox.critical(self, "Critical Error", f"Unexpected error during renaming:\n{error_message}")
         self.status.showMessage("Rename operation failed", 3000)
     
-    def undo_rename_action(self):
-        """Restore files to their original names and EXIF timestamps"""
+    # ------------------------------------------------------------------
+    # Phase 2 Refactoring: Helper functions for undo_rename_action
+    # ------------------------------------------------------------------
+    
+    def _check_undo_availability(self):
+        """
+        Check if undo operation is available and what can be restored.
+        
+        Returns:
+            tuple: (files_to_undo, timestamp_backup_exists, exif_backup_exists)
+        """
         timestamp_backup_exists = hasattr(self, 'timestamp_backup') and bool(getattr(self, 'timestamp_backup'))
         exif_backup_exists = hasattr(self, 'exif_backup') and bool(getattr(self, 'exif_backup'))
         
-        if (not getattr(self, 'original_filenames', None) or not self.original_filenames) and not timestamp_backup_exists and not exif_backup_exists:
+        # Check which files need to be undone
+        files_to_undo = []
+        if hasattr(self, 'original_filenames') and self.original_filenames:
+            for current_file, original_filename in self.original_filenames.items():
+                current_filename = os.path.basename(current_file)
+                if current_filename != original_filename and current_file in self.files:
+                    files_to_undo.append((current_file, original_filename))
+        
+        return files_to_undo, timestamp_backup_exists, exif_backup_exists
+    
+    def _restore_timestamps_only(self):
+        """
+        Restore only timestamps (file and EXIF) without renaming files.
+        
+        Returns:
+            list: Error messages
+        """
+        errors = []
+        
+        # Disable UI
+        self.undo_button.setEnabled(False)
+        self.undo_button.setText("⏳ Restoring...")
+        self.rename_button.setEnabled(False)
+        self.select_files_menu_button.setEnabled(False)
+        self.select_folder_menu_button.setEnabled(False)
+        self.clear_files_menu_button.setEnabled(False)
+        
+        # Restore file timestamps
+        if hasattr(self, 'timestamp_backup') and self.timestamp_backup:
+            try:
+                ts_success, ts_errors = batch_restore_timestamps(
+                    self.timestamp_backup,
+                    progress_callback=lambda msg: self.status.showMessage(msg, 1000)
+                )
+                if ts_success:
+                    self.log(f"✅ Restored file timestamps for {len(ts_success)} files")
+                if ts_errors:
+                    for file_path, err in ts_errors:
+                        errors.append(f"File timestamp restore failed for {os.path.basename(file_path)}: {err}")
+                self.timestamp_backup = {}
+            except Exception as e:
+                errors.append(f"File timestamp restore error: {e}")
+        
+        # Restore EXIF timestamps
+        if hasattr(self, 'exif_backup') and self.exif_backup:
+            try:
+                from .exif_processor import batch_restore_exif_timestamps
+                exif_success, exif_errors = batch_restore_exif_timestamps(
+                    self.exif_backup,
+                    self.exiftool_path,
+                    progress_callback=lambda msg: self.status.showMessage(msg, 1000)
+                )
+                if exif_success:
+                    self.log(f"✅ Restored EXIF timestamps for {len(exif_success)} files")
+                    self.exif_service.clear_cache()
+                if exif_errors:
+                    for file_path, err in exif_errors:
+                        errors.append(f"EXIF timestamp restore failed for {os.path.basename(file_path)}: {err}")
+                self.exif_backup = {}
+            except Exception as e:
+                errors.append(f"EXIF timestamp restore error: {e}")
+        
+        # Re-enable UI
+        self.undo_button.setText("↶ Restore Original Names")
+        self.rename_button.setEnabled(True)
+        self.select_files_menu_button.setEnabled(True)
+        self.select_folder_menu_button.setEnabled(True)
+        self.clear_files_menu_button.setEnabled(True)
+        
+        return errors
+    
+    def _restore_filenames(self, files_to_undo):
+        """
+        Restore files to their original filenames.
+        
+        Args:
+            files_to_undo: List of (current_file, original_filename) tuples
+            
+        Returns:
+            tuple: (restored_files, errors)
+        """
+        restored_files = []
+        errors = []
+        
+        for current_file, original_filename in files_to_undo:
+            try:
+                if os.path.exists(current_file):
+                    # Only restore filename, never move between directories
+                    current_directory = os.path.dirname(current_file)
+                    target_path = os.path.join(current_directory, original_filename)
+                    
+                    # Check if target already exists
+                    if os.path.exists(target_path) and target_path != current_file:
+                        errors.append(f"Cannot restore {os.path.basename(current_file)}: Target name already exists")
+                        continue
+                    
+                    os.rename(current_file, target_path)
+                    restored_files.append(target_path)
+                    
+                    # Update file list
+                    if current_file in self.files:
+                        index = self.files.index(current_file)
+                        self.files[index] = target_path
+                        item = self.file_list.item(index)
+                        item.setText(os.path.basename(target_path))
+                        item.setData(Qt.ItemDataRole.UserRole, target_path)
+                else:
+                    errors.append(f"File not found: {os.path.basename(current_file)}")
+            except Exception as e:
+                errors.append(f"Failed to restore {os.path.basename(current_file)}: {e}")
+        
+        return restored_files, errors
+    
+    def _restore_all_timestamps(self):
+        """
+        Restore file and EXIF timestamps after filename restore.
+        
+        Returns:
+            list: Error messages
+        """
+        errors = []
+        
+        # Restore file timestamps
+        if hasattr(self, 'timestamp_backup') and self.timestamp_backup:
+            self.log("🔄 Restoring original file timestamps...")
+            try:
+                timestamp_successes, timestamp_errors = batch_restore_timestamps(
+                    self.timestamp_backup,
+                    progress_callback=lambda msg: self.status.showMessage(msg, 1000)
+                )
+                if timestamp_successes:
+                    self.log(f"✅ Restored file timestamps for {len(timestamp_successes)} files")
+                if timestamp_errors:
+                    self.log(f"❌ Failed to restore file timestamps for {len(timestamp_errors)} files")
+                    for file_path, error_msg in timestamp_errors:
+                        errors.append(f"File timestamp restore failed for {os.path.basename(file_path)}: {error_msg}")
+                self.timestamp_backup = {}
+            except Exception as e:
+                self.log(f"❌ Error during file timestamp restore: {e}")
+                errors.append(f"File timestamp restore error: {e}")
+        
+        # Restore EXIF timestamps
+        if hasattr(self, 'exif_backup') and self.exif_backup:
+            self.log("🔄 Restoring original EXIF timestamps...")
+            try:
+                from .exif_processor import batch_restore_exif_timestamps
+                exif_successes, exif_errors = batch_restore_exif_timestamps(
+                    self.exif_backup,
+                    self.exiftool_path,
+                    progress_callback=lambda msg: self.status.showMessage(msg, 1000)
+                )
+                if exif_successes:
+                    self.log(f"✅ Restored EXIF timestamps for {len(exif_successes)} files")
+                    self.exif_service.clear_cache()
+                if exif_errors:
+                    self.log(f"❌ Failed to restore EXIF timestamps for {len(exif_errors)} files")
+                    for file_path, error_msg in exif_errors:
+                        errors.append(f"EXIF timestamp restore failed for {os.path.basename(file_path)}: {error_msg}")
+                self.exif_backup = {}
+            except Exception as e:
+                self.log(f"❌ Error during EXIF timestamp restore: {e}")
+                errors.append(f"EXIF timestamp restore error: {e}")
+        
+        return errors
+    
+    # ------------------------------------------------------------------
+    # End of Phase 2 undo helper functions
+    # ------------------------------------------------------------------
+    
+    def undo_rename_action(self):
+        """
+        Restore files to their original names and EXIF timestamps.
+        
+        Simplified version after Phase 2 refactoring - delegates to helper functions.
+        """
+        # Check what can be undone
+        files_to_undo, timestamp_backup_exists, exif_backup_exists = self._check_undo_availability()
+        
+        # Nothing to undo?
+        if not files_to_undo and not timestamp_backup_exists and not exif_backup_exists:
             QMessageBox.information(
                 self,
                 "No Undo Available",
@@ -1503,22 +1727,8 @@ class FileRenamerApp(QMainWindow):
             )
             return
         
-        # Check which files actually need to be undone (current name != original name)
-        files_to_undo = []
-        for current_file, original_filename in self.original_filenames.items():
-            current_filename = os.path.basename(current_file)
-            if current_filename != original_filename and current_file in self.files:
-                files_to_undo.append((current_file, original_filename))
-        
-        if not files_to_undo and not timestamp_backup_exists and not exif_backup_exists:
-            QMessageBox.information(
-                self,
-                "No Changes to Undo",
-                "All files already have their original names and no backup data was found."
-            )
-            return
-        elif not files_to_undo and (timestamp_backup_exists or exif_backup_exists):
-            # Offer timestamp/EXIF-only restore
+        # Only timestamps to restore (no filename changes)?
+        if not files_to_undo and (timestamp_backup_exists or exif_backup_exists):
             restore_msg = "File names are unchanged. Restore original "
             restore_items = []
             if timestamp_backup_exists:
@@ -1536,66 +1746,20 @@ class FileRenamerApp(QMainWindow):
             )
             if reply != QMessageBox.StandardButton.Yes:
                 return
-            # Directly run timestamp restore path
-            self.undo_button.setEnabled(False)
-            self.undo_button.setText("⏳ Restoring...")
-            self.rename_button.setEnabled(False)
-            self.select_files_menu_button.setEnabled(False)
-            self.select_folder_menu_button.setEnabled(False)
-            self.clear_files_menu_button.setEnabled(False)
-            errors = []
-            restored_files = []  # No renames
             
-            # Restore file timestamps
-            if timestamp_backup_exists:
-                try:
-                    ts_success, ts_errors = batch_restore_timestamps(
-                        self.timestamp_backup,
-                        progress_callback=lambda msg: self.status.showMessage(msg, 1000)
-                    )
-                    if ts_success:
-                        self.log(f"✅ Restored file timestamps for {len(ts_success)} files")
-                    if ts_errors:
-                        for file_path, err in ts_errors:
-                            errors.append(f"File timestamp restore failed for {os.path.basename(file_path)}: {err}")
-                    self.timestamp_backup = {}
-                except Exception as e:
-                    errors.append(f"File timestamp restore error: {e}")
-            
-            # Restore EXIF timestamps
-            if exif_backup_exists:
-                try:
-                    from .exif_processor import batch_restore_exif_timestamps
-                    exif_success, exif_errors = batch_restore_exif_timestamps(
-                        self.exif_backup,
-                        self.exiftool_path,
-                        progress_callback=lambda msg: self.status.showMessage(msg, 1000)
-                    )
-                    if exif_success:
-                        self.log(f"✅ Restored EXIF timestamps for {len(exif_success)} files")
-                        # Clear EXIF cache after restore
-                        self.exif_service.clear_cache()
-                    if exif_errors:
-                        for file_path, err in exif_errors:
-                            errors.append(f"EXIF timestamp restore failed for {os.path.basename(file_path)}: {err}")
-                    self.exif_backup = {}
-                except Exception as e:
-                    errors.append(f"EXIF timestamp restore error: {e}")
+            # Restore only timestamps
+            errors = self._restore_timestamps_only()
             
             if errors:
                 QMessageBox.warning(self, "Timestamp Restore", "Some timestamp restores failed:\n" + "\n".join(errors[:10]))
             else:
                 QMessageBox.information(self, "Timestamp Restore", "Original timestamps restored successfully.")
-            self.undo_button.setText("↶ Restore Original Names")
-            self.rename_button.setEnabled(True)
-            self.select_files_menu_button.setEnabled(True)
-            self.select_folder_menu_button.setEnabled(True)
-            self.clear_files_menu_button.setEnabled(True)
+            
             self.status.showMessage("Timestamps restored", 4000)
             self.update_preview()
             return
         
-        # Confirm undo operation
+        # Confirm filename restore
         reply = QMessageBox.question(
             self,
             "Confirm Undo",
@@ -1615,96 +1779,14 @@ class FileRenamerApp(QMainWindow):
         self.select_folder_menu_button.setEnabled(False)
         self.clear_files_menu_button.setEnabled(False)
         
-        # Perform undo operation
-        restored_files = []
-        errors = []
+        # Restore filenames
+        restored_files, errors = self._restore_filenames(files_to_undo)
         
-        for current_file, original_filename in files_to_undo:
-            try:
-                if os.path.exists(current_file):
-                    # CRITICAL FIX: Only restore filename, never move between directories
-                    current_directory = os.path.dirname(current_file)
-                    target_path = os.path.join(current_directory, original_filename)
-                    
-                    # Check if target name already exists
-                    if os.path.exists(target_path) and target_path != current_file:
-                        errors.append(f"Cannot restore {os.path.basename(current_file)}: Target name already exists")
-                        continue
-                    
-                    os.rename(current_file, target_path)
-                    restored_files.append(target_path)
-                    
-                    # Update our file list
-                    if current_file in self.files:
-                        index = self.files.index(current_file)
-                        self.files[index] = target_path
-                        # Update the list item with proper data
-                        item = self.file_list.item(index)
-                        item.setText(os.path.basename(target_path))
-                        item.setData(Qt.ItemDataRole.UserRole, target_path)
-                    
-                else:
-                    errors.append(f"File not found: {os.path.basename(current_file)}")
-                    
-            except Exception as e:
-                errors.append(f"Failed to restore {os.path.basename(current_file)}: {e}")
+        # Restore timestamps
+        timestamp_errors = self._restore_all_timestamps()
+        errors.extend(timestamp_errors)
         
-        # Restore original timestamps if EXIF sync was used
-        if hasattr(self, 'timestamp_backup') and self.timestamp_backup:
-            self.log("🔄 Restoring original file timestamps...")
-            
-            try:
-                timestamp_successes, timestamp_errors = batch_restore_timestamps(
-                    self.timestamp_backup,
-                    progress_callback=lambda msg: self.status.showMessage(msg, 1000)
-                )
-                
-                if timestamp_successes:
-                    self.log(f"✅ Restored file timestamps for {len(timestamp_successes)} files")
-                
-                if timestamp_errors:
-                    self.log(f"❌ Failed to restore file timestamps for {len(timestamp_errors)} files")
-                    for file_path, error_msg in timestamp_errors:
-                        errors.append(f"File timestamp restore failed for {os.path.basename(file_path)}: {error_msg}")
-                
-                # Clear timestamp backup after restore
-                self.timestamp_backup = {}
-                
-            except Exception as e:
-                self.log(f"❌ Error during file timestamp restore: {e}")
-                errors.append(f"File timestamp restore error: {e}")
-        
-        # Restore original EXIF timestamps if time shift was used
-        if hasattr(self, 'exif_backup') and self.exif_backup:
-            self.log("🔄 Restoring original EXIF timestamps...")
-            
-            try:
-                from .exif_processor import batch_restore_exif_timestamps
-                exif_successes, exif_errors = batch_restore_exif_timestamps(
-                    self.exif_backup,
-                    self.exiftool_path,
-                    progress_callback=lambda msg: self.status.showMessage(msg, 1000)
-                )
-                
-                if exif_successes:
-                    self.log(f"✅ Restored EXIF timestamps for {len(exif_successes)} files")
-                    # Clear EXIF cache after restore
-                    self.exif_service.clear_cache()
-                
-                if exif_errors:
-                    self.log(f"❌ Failed to restore EXIF timestamps for {len(exif_errors)} files")
-                    for file_path, error_msg in exif_errors:
-                        errors.append(f"EXIF timestamp restore failed for {os.path.basename(file_path)}: {error_msg}")
-                
-                # Clear EXIF backup after restore
-                self.exif_backup = {}
-                
-            except Exception as e:
-                self.log(f"❌ Error during EXIF timestamp restore: {e}")
-                errors.append(f"EXIF timestamp restore error: {e}")
-        
-        # CRITICAL FIX: Clear original_filenames tracking after successful undo
-        # This allows a fresh start for the next rename operation
+        # Clear original_filenames tracking
         self.original_filenames = {}
         
         # Show results
@@ -1737,12 +1819,10 @@ class FileRenamerApp(QMainWindow):
         else:
             QMessageBox.information(self, "Undo Complete", f"Successfully restored {len(restored_files)} files to their original names.")
         
-        # Update status and disable undo button after successful undo
+        # Update status and UI
         self.status.showMessage(f"Restored {len(restored_files)} files to original names", 5000)
-        
-        # Re-enable UI
         self.undo_button.setText("↶ Restore Original Names")
-        self.undo_button.setEnabled(False)  # Disable after successful undo
+        self.undo_button.setEnabled(False)
         self.rename_button.setEnabled(True)
         self.select_files_menu_button.setEnabled(True)
         self.select_folder_menu_button.setEnabled(True)
@@ -1903,6 +1983,11 @@ JPG, TIFF, RAW files (CR2, NEF, ARW, etc.)
 
     def closeEvent(self, event):
         """Handle application close event"""
+        # OPTIMIZATION: Cleanup ExifTool instance on app close
+        # This is the only place we cleanup for maximum performance
+        if hasattr(self, 'exif_service') and self.exif_service:
+            self.exif_service.cleanup()
+        
         # Save window geometry and state
         self.settings_manager.set_window_geometry(self.saveGeometry())
         self.settings_manager.set_window_state(self.saveState())
