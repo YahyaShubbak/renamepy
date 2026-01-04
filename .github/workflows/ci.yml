@@ -39,7 +39,13 @@ jobs:
       env:
         QT_QPA_PLATFORM: offscreen
       run: |
-        # Run an inline smoke check so the CI job doesn't fail if a top-level
-        # helper file is missing from the checkout for any reason.
-        # Only import headless-safe modules (avoid importing the GUI which requires libEGL)
-        python -c "import modules.exif_processor as exif; assert hasattr(exif, 'find_exiftool_path'); assert hasattr(exif, 'get_safe_target_path'); print('SMOKE_OK')"
+        # Run an inline smoke check to verify critical modules can be imported
+        # Test exif_processor module
+        python -c "import modules.exif_processor as exif; assert hasattr(exif, 'find_exiftool_path'); assert hasattr(exif, 'get_cached_exif_data'); print('exif_processor: OK')"
+        # Test file_utilities module
+        python -c "import modules.file_utilities as fu; assert hasattr(fu, 'get_safe_target_path'); assert hasattr(fu, 'is_media_file'); print('file_utilities: OK')"
+        # Test exif_service_new module
+        python -c "from modules.exif_service_new import ExifService; service = ExifService(); print('ExifService: OK')"
+        # Test rename_engine module
+        python -c "from modules.rename_engine import RenameWorkerThread; print('RenameWorkerThread: OK')"
+        echo "All critical imports successful!"
