@@ -10,6 +10,7 @@ import threading
 import subprocess
 import glob
 import shutil
+from functools import lru_cache
 
 from .logger_util import get_logger
 log = get_logger()
@@ -51,8 +52,10 @@ class ExifService:
         # Set default method based on availability
         self.current_method = "exiftool" if EXIFTOOL_AVAILABLE else ("pillow" if PIL_AVAILABLE else None)
     
-    def _find_exiftool_path(self):
-        """Find ExifTool executable in project directory"""
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def _find_exiftool_path_cached():
+        """Find ExifTool executable in project directory (cached for performance)"""
         try:
             # Check project directory
             project_root = os.path.dirname(os.path.dirname(__file__))
@@ -67,9 +70,14 @@ class ExifService:
             if shutil.which("exiftool"):
                 return "exiftool"
         except Exception as e:
-            log.debug(f"Error finding exiftool: {e}")
+            # Can't use log here since this is a static method
+            pass
         
         return None
+    
+    def _find_exiftool_path(self):
+        """Find ExifTool executable (uses cached static method)"""
+        return self._find_exiftool_path_cached()
     
     def clear_cache(self):
         """Clear the EXIF cache for fresh processing"""

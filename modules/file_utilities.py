@@ -5,6 +5,7 @@ Constants and utility functions for the RenameFiles application.
 
 import os
 import re
+from functools import lru_cache
 from .logger_util import get_logger
 log = get_logger()
 try:

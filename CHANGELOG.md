@@ -9,10 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Type Hints**: Comprehensive type hints added to all core functions for better IDE support and code safety
+- **Improved Docstrings**: Enhanced documentation with detailed parameter and return value descriptions
+
 ### Changed
-- Improved code documentation with English-only comments
-- Consolidated development documentation
-- Enhanced inline code clarity
+- **Code Refactoring Phase 2**: Split large functions into focused helper functions for better maintainability
+  - `on_rename_finished`: 198→40 lines (3 helpers)
+  - `undo_rename_action`: 270→120 lines (4 helpers)
+  - `optimized_rename_files`: 318→65 lines (5 helpers)
+- **Code Quality**: Eliminated ~550 lines of complex nested code, replaced with clean, documented helpers
+- **Documentation Cleanup**: Removed obsolete test outputs and debug scripts
+
+### Fixed
+- **Critical Bug**: Fixed `get_safe_target_path` parameter error that caused files to be renamed to wrong locations
+  - Issue: Directory path passed instead of file path
+  - Impact: Files moved to Desktop instead of original location
+  - Fix: Corrected parameter in line 397 of rename_engine.py
 
 ---
 
