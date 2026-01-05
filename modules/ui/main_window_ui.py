@@ -353,6 +353,34 @@ class MainWindowUI:
             "Useful when you only want to normalize filesystem dates without changing filenames."
         )
         sync_date_layout.addWidget(window.checkbox_leave_names)
+        
+        window.checkbox_save_original_to_exif = QCheckBox("Save original filename to metadata")
+        window.checkbox_save_original_to_exif.setStyleSheet("""
+            QCheckBox {
+                color: #4CAF50;
+                font-weight: bold;
+            }
+            QCheckBox::indicator:checked {
+                background-color: #4CAF50;
+                border: 2px solid #45a049;
+            }
+        """)
+        window.checkbox_save_original_to_exif.setToolTip(
+            "💾 Persistent Undo Feature\n\n"
+            "Saves the original filename in EXIF metadata before renaming.\n\n"
+            "Benefits:\n"
+            "• Undo renames even after closing the application\n"
+            "• Each file carries its own rename history\n"
+            "• View original filename in EXIF info dialog\n"
+            "• Works with all image formats (JPEG, RAW, etc.)\n\n"
+            "⚠️ Performance Note:\n"
+            "Adds ~50-200ms per file to rename time.\n"
+            "With 100+ files, this can add 5-20 seconds.\n\n"
+            "Note: Requires ExifTool. Original filename is stored in\n"
+            "EXIF UserComment field."
+        )
+        sync_date_layout.addWidget(window.checkbox_save_original_to_exif)
+        
         sync_date_layout.addStretch()
         window.layout.addLayout(sync_date_layout)
 

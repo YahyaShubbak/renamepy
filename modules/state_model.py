@@ -27,6 +27,9 @@ class RenamerState:
     # User selections
     selected_metadata: Dict[str, Any] = field(default_factory=dict)
     
+    # Persistent undo feature
+    save_original_to_exif: bool = False
+    
     def clear_files(self):
         """Clears all file-related data."""
         self.files.clear()

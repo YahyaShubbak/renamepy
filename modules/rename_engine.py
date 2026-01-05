@@ -19,6 +19,7 @@ from .file_utilities import is_media_file, sanitize_final_filename, get_safe_tar
 # Import exif_processor module (relative only to work inside package)
 from . import exif_processor
 from .filename_components import build_ordered_components
+from .exif_undo_manager import write_original_filename_to_exif
 
 class RenameWorkerThread(QThread):
     """Worker thread for file renaming & optional EXIF timestamp sync."""
@@ -45,6 +46,7 @@ class RenameWorkerThread(QThread):
         parent: Optional[QThread] = None,
         log_callable: Optional[Callable] = None,
         exif_service: Optional[Any] = None,
+        save_original_to_exif: bool = False,
         **kwargs: Any,
     ) -> None:
             super().__init__(parent)
@@ -64,6 +66,7 @@ class RenameWorkerThread(QThread):
             self.sync_exif_date = sync_exif_date
             self._log = log_callable or (lambda *a, **k: None)
             self.exif_service = exif_service  # NEW: Store service instance
+            self.save_original_to_exif = save_original_to_exif  # NEW: Persistent undo feature
             self.timestamp_options = kwargs.get('timestamp_options') or kwargs.get('timestamp_options'.lower()) or kwargs.get('TIMESTAMP_OPTIONS') or kwargs.get('timestamp_options'.upper()) or kwargs.get('timestamp_options', None)
             self.leave_names = kwargs.get('leave_names', False)
             # (Dry-run feature removed)
@@ -441,6 +444,16 @@ class RenameWorkerThread(QThread):
 
                 if os.path.normpath(path) != os.path.normpath(target_path):
                     try:
+                        # Write original filename to EXIF before renaming (if enabled)
+                        if self.save_original_to_exif and self.exiftool_path:
+                            original_filename = os.path.basename(path)
+                            success, message = write_original_filename_to_exif(
+                                path, original_filename, self.exiftool_path
+                            )
+                            if not success:
+                                self._debug(f"Warning: Could not write original filename to EXIF: {message}")
+                                # Continue with rename anyway - this is not a critical error
+                        
                         os.rename(path, target_path)
                         renamed_files.append(target_path)
                     except Exception as e:

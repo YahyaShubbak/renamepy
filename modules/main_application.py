@@ -10,6 +10,7 @@ import datetime
 import glob
 import webbrowser
 import traceback
+import time
 from pathlib import Path
 from .logger_util import get_logger, set_level
 log = get_logger()
@@ -48,6 +49,10 @@ from .filename_components import build_ordered_components
 from .timestamp_options_dialog import TimestampSyncOptionsDialog
 from .dialogs import ExifToolWarningDialog
 from .handlers import SimpleExifHandler, SimpleFilenameGenerator, extract_image_number
+from .performance_benchmark import (
+    PerformanceBenchmark, BenchmarkThread, analyze_pattern_complexity
+)
+from .exif_undo_manager import get_original_filename_from_exif, batch_get_original_filenames, get_rename_info
 from .ui import FileListManager, PreviewGenerator, MainWindowUI
 from .utils.ui_helpers import calculate_stats, is_video_file as is_video_file_util
 from .state_model import RenamerState
@@ -92,6 +97,11 @@ class FileRenamerApp(QMainWindow):
     def selected_metadata(self): return self.state.selected_metadata
     @selected_metadata.setter
     def selected_metadata(self, value): self.state.selected_metadata = value
+    
+    @property
+    def save_original_to_exif(self): return self.state.save_original_to_exif
+    @save_original_to_exif.setter
+    def save_original_to_exif(self, value): self.state.save_original_to_exif = value
     # -----------------------------------------
 
     def __init__(self):
@@ -154,6 +164,10 @@ class FileRenamerApp(QMainWindow):
         
         # Initialize EXIF cache
         self._preview_exif_cache = {}
+        
+        # Initialize performance benchmark manager
+        self.benchmark_manager = PerformanceBenchmark(self.exiftool_path)
+        self.benchmark_thread = None
 
     # ------------------------------------------------------------------
     # Helper utilities (added for Phase 2 refactor: logging & UI state)
@@ -168,7 +182,24 @@ class FileRenamerApp(QMainWindow):
         if not hasattr(self, 'rename_button'):
             return  # UI not built yet
         has_files = bool(self.files)
+        
+        # Check for undo availability (in-memory OR EXIF metadata)
         can_undo = bool(getattr(self, 'original_filenames', {})) or bool(getattr(self, 'timestamp_backup', {}))
+        
+        # Also check if any loaded file has original filename in EXIF (cached check)
+        if not can_undo and has_files and self.exiftool_path:
+            # Use cached result if available
+            if not hasattr(self, '_exif_undo_checked'):
+                self._exif_undo_available = False
+                # Check first few files for EXIF undo data (performance optimization)
+                for file_path in self.files[:3]:  # Check only first 3 files
+                    if get_original_filename_from_exif(file_path, self.exiftool_path):
+                        self._exif_undo_available = True
+                        break
+                self._exif_undo_checked = True
+            
+            can_undo = self._exif_undo_available
+        
         if self._busy:
             self.rename_button.setEnabled(False)
             self.select_files_menu_button.setEnabled(False)
@@ -528,6 +559,25 @@ class FileRenamerApp(QMainWindow):
         add_metadata_row(layout, "File", os.path.basename(file_path))
         add_metadata_row(layout, "Size", f"{file_size_mb:.1f} MB")
         add_metadata_row(layout, "Type", metadata_dict.get('File:FileType', 'Unknown'))
+        
+        # Check for original filename in EXIF metadata
+        if self.exiftool_path:
+            rename_info = get_rename_info(file_path, self.exiftool_path)
+            if rename_info['original_filename']:
+                # Display original filename with special formatting
+                original_row = QHBoxLayout()
+                original_row.setContentsMargins(0, 2, 0, 2)
+                
+                original_label = QLabel(f"📝 Original: {rename_info['original_filename']}")
+                original_label.setStyleSheet("margin-left: 5px; color: #2196F3; font-weight: bold;")
+                original_label.setToolTip(
+                    f"This file was renamed from '{rename_info['original_filename']}'\n"
+                    f"Rename date: {rename_info.get('rename_date', 'Unknown')}\n\n"
+                    "You can restore the original filename using the Undo function."
+                )
+                original_row.addWidget(original_label)
+                original_row.addStretch()
+                layout.addLayout(original_row)
         
         # CAMERA & LENS section
         camera_section = QLabel("📷 CAMERA & LENS")
@@ -1178,6 +1228,102 @@ class FileRenamerApp(QMainWindow):
         # Get EXIF date sync setting
         sync_exif_date = getattr(self, 'checkbox_sync_exif_date', None) and self.checkbox_sync_exif_date.isChecked()
         leave_file_names = getattr(self, 'checkbox_leave_names', None) and self.checkbox_leave_names.isChecked()
+        save_original_to_exif = getattr(self, 'checkbox_save_original_to_exif', None) and self.checkbox_save_original_to_exif.isChecked()
+
+        # Analyze pattern complexity and estimate time
+        exif_field_count, text_field_count = analyze_pattern_complexity(
+            use_date=use_date,
+            use_camera=use_camera,
+            use_lens=use_lens,
+            additional_text=additional or "",
+            camera_prefix=camera_prefix or "",
+            selected_metadata=self.state.selected_metadata
+        )
+        
+        print(f"[DEBUG] Pattern analysis: {exif_field_count} EXIF fields, {text_field_count} text fields")
+        print(f"[DEBUG] benchmark_manager exists: {hasattr(self, 'benchmark_manager')}")
+        print(f"[DEBUG] benchmark_manager.is_ready(): {self.benchmark_manager.is_ready()}")
+        print(f"[DEBUG] benchmark_manager._benchmark_complete: {self.benchmark_manager._benchmark_complete}")
+        print(f"[DEBUG] benchmark_manager.benchmark_results: {len(self.benchmark_manager.benchmark_results)} results")
+        
+        # Get time estimate from benchmark (or use fallback)
+        if self.benchmark_manager.is_ready():
+            print("[DEBUG] Using BENCHMARK data for estimate")
+            estimated_time, confidence = self.benchmark_manager.estimate_time(
+                file_count=len(media_files),
+                exif_field_count=exif_field_count,
+                text_field_count=text_field_count,
+                with_exif_save=save_original_to_exif
+            )
+            print(f"[DEBUG] Benchmark estimate: {estimated_time:.1f}s, confidence={confidence}")
+            confidence_text = {
+                1.0: "exact measurement",
+                0.7: "similar scenario",
+                0.5: "estimated",
+                0.3: "rough estimate"
+            }.get(confidence, "estimated")
+        else:
+            print("[DEBUG] Using FALLBACK estimate (no benchmark)")
+            # Fallback to simple estimation if benchmark not ready
+            base_time = len(media_files) * 0.03
+            exif_time = exif_field_count * 0.01 * len(media_files)
+            exif_save_time = len(media_files) * 0.1 if save_original_to_exif else 0
+            estimated_time = base_time + exif_time + exif_save_time
+            confidence_text = "rough estimate (no benchmark)"
+        
+        # Calculate time range based on confidence
+        # High confidence (exact match) = narrower range
+        # Low confidence (interpolated) = wider range
+        if confidence >= 0.9:
+            # Exact measurement - tight range
+            time_range_low = max(1, estimated_time * 0.9)
+            time_range_high = estimated_time * 1.1
+        elif confidence >= 0.7:
+            # Similar scenario - moderate range
+            time_range_low = max(1, estimated_time * 0.8)
+            time_range_high = estimated_time * 1.2
+        else:
+            # Rough estimate - wider range
+            time_range_low = max(1, estimated_time * 0.7)
+            time_range_high = estimated_time * 1.3
+        
+        # Format time as min:sec if > 60 seconds
+        def format_time(seconds: float) -> str:
+            if seconds >= 60:
+                mins = int(seconds // 60)
+                secs = int(seconds % 60)
+                return f"{mins}:{secs:02d}"
+            else:
+                return f"{seconds:.1f}s"
+        
+        time_range_text = f"{format_time(time_range_low)}-{format_time(time_range_high)}"
+        
+        # Build pattern complexity description
+        complexity_parts = []
+        if exif_field_count > 0:
+            complexity_parts.append(f"{exif_field_count} EXIF field{'s' if exif_field_count != 1 else ''}")
+        if text_field_count > 0:
+            complexity_parts.append(f"{text_field_count} text field{'s' if text_field_count != 1 else ''}")
+        if save_original_to_exif:
+            complexity_parts.append("metadata save enabled")
+        
+        complexity_desc = ", ".join(complexity_parts) if complexity_parts else "simple pattern"
+        
+        # Always show estimation dialog before renaming
+        reply = QMessageBox.information(
+            self,
+            "⏱️ Operation Time Estimate",
+            f"Ready to rename {len(media_files)} files\n\n"
+            f"Pattern complexity: {complexity_desc}\n"
+            f"Estimated time: {time_range_text}\n"
+            f"Confidence: {confidence_text}\n\n"
+            f"Continue with rename operation?",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Ok
+        )
+        if reply != QMessageBox.StandardButton.Ok:
+            self._ui_set_busy(False)
+            return
 
         timestamp_options = None
         if sync_exif_date:
@@ -1204,6 +1350,16 @@ class FileRenamerApp(QMainWindow):
             else:
                 self._ui_set_busy(False)
                 return
+        
+        # Store estimation data for calibration after rename completes
+        self._last_estimate_data = {
+            'estimated_time': estimated_time,
+            'file_count': len(media_files),
+            'exif_field_count': exif_field_count,
+            'text_field_count': text_field_count,
+            'with_exif_save': save_original_to_exif,
+            'start_time': time.time()
+        }
 
         # Start worker thread for background processing
         self.worker = RenameWorkerThread(
@@ -1223,6 +1379,7 @@ class FileRenamerApp(QMainWindow):
             sync_exif_date,
             timestamp_options=timestamp_options,
             leave_names=leave_file_names,
+            save_original_to_exif=save_original_to_exif,
             log_callable=self.log,
             exif_service=self.exif_service,  # NEW: Pass ExifService instance
         )
@@ -1515,6 +1672,19 @@ class FileRenamerApp(QMainWindow):
         self.update_preview()
         self.status.showMessage(f"Completed: {len(renamed_files)} files renamed", 5000)
         
+        # Calibrate benchmark safety factor based on actual operation time
+        if hasattr(self, '_last_estimate_data') and self._last_estimate_data:
+            actual_time = time.time() - self._last_estimate_data['start_time']
+            self.benchmark_manager.calibrate_from_actual(
+                estimated_time=self._last_estimate_data['estimated_time'],
+                actual_time=actual_time,
+                file_count=self._last_estimate_data['file_count'],
+                exif_field_count=self._last_estimate_data['exif_field_count'],
+                text_field_count=self._last_estimate_data['text_field_count'],
+                with_exif_save=self._last_estimate_data['with_exif_save']
+            )
+            self._last_estimate_data = None  # Clear after calibration
+        
         # Re-enable UI
         self._ui_set_busy(False)
     
@@ -1531,6 +1701,8 @@ class FileRenamerApp(QMainWindow):
         """
         Check if undo operation is available and what can be restored.
         
+        Checks both in-memory original_filenames and EXIF metadata (hybrid approach).
+        
         Returns:
             tuple: (files_to_undo, timestamp_backup_exists, exif_backup_exists)
         """
@@ -1539,11 +1711,30 @@ class FileRenamerApp(QMainWindow):
         
         # Check which files need to be undone
         files_to_undo = []
+        
+        # First check in-memory tracking (current session - fastest)
         if hasattr(self, 'original_filenames') and self.original_filenames:
             for current_file, original_filename in self.original_filenames.items():
                 current_filename = os.path.basename(current_file)
                 if current_filename != original_filename and current_file in self.files:
                     files_to_undo.append((current_file, original_filename))
+        
+        # Then check EXIF metadata for files not in memory (previous sessions)
+        if self.exiftool_path and hasattr(self, 'files') and self.files:
+            for file_path in self.files:
+                # Skip if already found in memory
+                if any(file_path == f[0] for f in files_to_undo):
+                    continue
+                
+                # Check EXIF for original filename
+                original_filename = get_original_filename_from_exif(file_path, self.exiftool_path)
+                current_filename = os.path.basename(file_path)
+                
+                if original_filename and original_filename != current_filename:
+                    files_to_undo.append((file_path, original_filename))
+                    # Also add to in-memory tracking for consistency
+                    if hasattr(self, 'original_filenames'):
+                        self.original_filenames[file_path] = original_filename
         
         return files_to_undo, timestamp_backup_exists, exif_backup_exists
     
@@ -1621,6 +1812,9 @@ class FileRenamerApp(QMainWindow):
         restored_files = []
         errors = []
         
+        # Create a mapping of old paths to new paths for batch update
+        path_mapping = {}
+        
         for current_file, original_filename in files_to_undo:
             try:
                 if os.path.exists(current_file):
@@ -1629,24 +1823,39 @@ class FileRenamerApp(QMainWindow):
                     target_path = os.path.join(current_directory, original_filename)
                     
                     # Check if target already exists
-                    if os.path.exists(target_path) and target_path != current_file:
+                    if os.path.exists(target_path) and os.path.normpath(target_path) != os.path.normpath(current_file):
                         errors.append(f"Cannot restore {os.path.basename(current_file)}: Target name already exists")
                         continue
                     
+                    # Perform the rename
                     os.rename(current_file, target_path)
                     restored_files.append(target_path)
+                    path_mapping[os.path.normpath(current_file)] = target_path
                     
-                    # Update file list
-                    if current_file in self.files:
-                        index = self.files.index(current_file)
-                        self.files[index] = target_path
-                        item = self.file_list.item(index)
-                        item.setText(os.path.basename(target_path))
-                        item.setData(Qt.ItemDataRole.UserRole, target_path)
                 else:
                     errors.append(f"File not found: {os.path.basename(current_file)}")
             except Exception as e:
                 errors.append(f"Failed to restore {os.path.basename(current_file)}: {e}")
+        
+        # Update all file references in self.files and UI
+        if path_mapping:
+            # Update self.files list
+            for i, file_path in enumerate(self.files):
+                normalized_path = os.path.normpath(file_path)
+                if normalized_path in path_mapping:
+                    self.files[i] = path_mapping[normalized_path]
+            
+            # Update UI list
+            for i in range(self.file_list.count()):
+                item = self.file_list.item(i)
+                if item:
+                    item_path = item.data(Qt.ItemDataRole.UserRole)
+                    if item_path:
+                        normalized_path = os.path.normpath(item_path)
+                        if normalized_path in path_mapping:
+                            new_path = path_mapping[normalized_path]
+                            item.setText(os.path.basename(new_path))
+                            item.setData(Qt.ItemDataRole.UserRole, new_path)
         
         return restored_files, errors
     
