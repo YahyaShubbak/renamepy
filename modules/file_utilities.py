@@ -13,12 +13,13 @@ try:
 except ImportError:
     from filename_components import build_ordered_components
 
-def natural_sort_key(filename):
+def natural_sort_key(filename: str) -> list:
+    """Generate a sort key for natural sorting (handles numbers correctly).
+
+    Example:
+        DSC00001 comes before DSC00009.
     """
-    Generate a sort key for natural sorting (handles numbers correctly)
-    DSC00001 comes before DSC00009
-    """
-    def convert(text):
+    def convert(text: str) -> int | str:
         return int(text) if text.isdigit() else text.lower()
     
     return [convert(c) for c in re.split(r'(\d+)', filename)]
@@ -77,22 +78,16 @@ IMAGE_EXTENSIONS = FileConstants.IMAGE_EXTENSIONS
 VIDEO_EXTENSIONS = FileConstants.VIDEO_EXTENSIONS
 MEDIA_EXTENSIONS = FileConstants.MEDIA_EXTENSIONS
 
-def is_image_file(filename):
-    """
-    Returns True if the file is an image or RAW file based on its extension.
-    """
+def is_image_file(filename: str) -> bool:
+    """Returns True if the file is an image or RAW file based on its extension."""
     return os.path.splitext(filename)[1].lower() in IMAGE_EXTENSIONS
 
-def is_video_file(filename):
-    """
-    Returns True if the file is a video file based on its extension.
-    """
+def is_video_file(filename: str) -> bool:
+    """Returns True if the file is a video file based on its extension."""
     return os.path.splitext(filename)[1].lower() in VIDEO_EXTENSIONS
 
-def is_media_file(filename):
-    """
-    Returns True if the file is a media file (image, RAW, or video) based on its extension.
-    """
+def is_media_file(filename: str) -> bool:
+    """Returns True if the file is a media file (image, RAW, or video) based on its extension."""
     return os.path.splitext(filename)[1].lower() in MEDIA_EXTENSIONS
 
 def scan_directory_recursive(directory):
@@ -114,9 +109,16 @@ def scan_directory_recursive(directory):
     
     return sorted(media_files, key=lambda x: (os.path.dirname(x), natural_sort_key(os.path.basename(x))))
 
-def sanitize_filename(filename):
-    """
-    Sanitize filename by removing/replacing invalid characters and ensuring compatibility.
+def sanitize_filename(filename: str) -> str:
+    """Sanitize filename by removing/replacing invalid characters.
+
+    Ensures compatibility across Windows, macOS, and Linux filesystems.
+
+    Args:
+        filename: The raw filename to sanitize.
+
+    Returns:
+        A sanitized filename string (may be empty if nothing remains).
     """
     # First check if filename is only whitespace - return empty string instead of 'unnamed_file'
     if not filename or filename.isspace():
@@ -164,10 +166,14 @@ def sanitize_final_filename(filename):
     
     return sanitized
 
-def validate_path_length(file_path):
-    """
-    Validate that the file path is not too long for the filesystem.
-    Returns True if valid, False if too long.
+def validate_path_length(file_path: str) -> bool:
+    """Validate that the file path is not too long for the filesystem.
+
+    Args:
+        file_path: The full file path to validate.
+
+    Returns:
+        True if the path length is within limits, False otherwise.
     """
     # Windows has a 260 character limit, leave buffer
     max_length = 250
@@ -278,35 +284,33 @@ def get_safe_filename(directory, new_name):
     
     return os.path.basename(new_path)
 
-def validate_path(file_path):
-    """
-    Validate a file path for various criteria.
-    
+def validate_path(file_path: str) -> tuple[bool, str]:
+    """Validate a file path for various criteria.
+
     Args:
-        file_path: Path to validate
-        
+        file_path: Path to validate.
+
     Returns:
-        Tuple of (is_valid, error_message)
+        Tuple of (is_valid, error_message).
     """
     if not file_path:
         return False, "Path is empty"
-    
+
     if not os.path.exists(file_path):
         return False, "Path does not exist"
-    
-    # Check path length
-    is_valid_length, length_error = validate_path_length(file_path)
-    if not is_valid_length:
-        return False, length_error
-    
+
+    # Check path length (validate_path_length returns bool)
+    if not validate_path_length(file_path):
+        return False, f"Path too long ({len(file_path)} chars, max 250)"
+
     # Check if it's a file
     if not os.path.isfile(file_path):
         return False, "Path is not a file"
-    
+
     # Check if it's a media file
     if not is_media_file(file_path):
         return False, "File is not a supported media type"
-    
+
     return True, "Valid"
 
 def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_method, devider="_", exiftool_path=None, custom_order=None, date_format="YYYY-MM-DD", use_date=True):

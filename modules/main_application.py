@@ -164,6 +164,7 @@ class FileRenamerApp(QMainWindow):
         
         # Initialize EXIF cache
         self._preview_exif_cache = {}
+        self._preview_exif_file = None  # Track which file the preview cache belongs to
         
         # Initialize performance benchmark manager
         self.benchmark_manager = PerformanceBenchmark(self.exiftool_path)
@@ -513,7 +514,7 @@ class FileRenamerApp(QMainWindow):
                         key = parts[0].strip() + ':' + parts[1].strip()
                         value = parts[2].strip() if len(parts) > 2 else ''
                         metadata_dict[key] = value
-                except:
+                except (ValueError, IndexError):
                     continue
         
         # Helper function to add metadata row with checkbox
@@ -622,7 +623,7 @@ class FileRenamerApp(QMainWindow):
                 else:
                     shutter_display = f"{exp_val}s"
                 add_metadata_row(layout, "Shutter", shutter_display, 'shutter')
-            except:
+            except (ValueError, TypeError, ZeroDivisionError):
                 add_metadata_row(layout, "Shutter", exposure_time, 'shutter')
         
         focal_length = metadata_dict.get('EXIF:FocalLength', '')
@@ -646,7 +647,7 @@ class FileRenamerApp(QMainWindow):
                 megapixels = (int(width) * int(height)) / 1000000
                 resolution_display = f"{width} x {height} ({megapixels:.1f} MP)"
                 add_metadata_row(layout, "Resolution", resolution_display, 'resolution')
-            except:
+            except (ValueError, TypeError):
                 add_metadata_row(layout, "Resolution", f"{width} x {height}", 'resolution')
         
         # CAMERA SETTINGS section
@@ -677,7 +678,7 @@ class FileRenamerApp(QMainWindow):
             try:
                 flash_fired = 'Yes' if int(flash) & 1 else 'No'
                 add_metadata_row(layout, "Flash", flash_fired, 'flash')
-            except:
+            except (ValueError, TypeError):
                 add_metadata_row(layout, "Flash", flash, 'flash')
         
         image_stab = metadata_dict.get('MakerNotes:ImageStabilization', '')
@@ -787,7 +788,7 @@ class FileRenamerApp(QMainWindow):
                         key = parts[0].strip() + ':' + parts[1].strip()
                         value = parts[2].strip() if len(parts) > 2 else ''
                         metadata_dict[key] = value
-                except:
+                except (ValueError, IndexError):
                     continue
         
         # File information
@@ -835,7 +836,7 @@ class FileRenamerApp(QMainWindow):
                     essential_text += f"Shutter: 1/{int(1/exp_val)}s\n"
                 else:
                     essential_text += f"Shutter: {exp_val}s\n"
-            except:
+            except (ValueError, TypeError, ZeroDivisionError):
                 essential_text += f"Shutter: {exposure_time}\n"
         
         focal_length = metadata_dict.get('EXIF:FocalLength', '')
@@ -855,7 +856,7 @@ class FileRenamerApp(QMainWindow):
             try:
                 megapixels = (int(width) * int(height)) / 1000000
                 essential_text += f"Resolution: {width} x {height} ({megapixels:.1f} MP)\n"
-            except:
+            except (ValueError, TypeError):
                 essential_text += f"Resolution: {width} x {height}\n"
         
         # Additional useful settings
@@ -884,7 +885,7 @@ class FileRenamerApp(QMainWindow):
             try:
                 flash_fired = 'Yes' if int(flash) & 1 else 'No'
                 essential_text += f"Flash: {flash_fired}\n"
-            except:
+            except (ValueError, TypeError):
                 essential_text += f"Flash: {flash}\n"
         
         # Image stabilization (Sony specific)
@@ -1240,22 +1241,19 @@ class FileRenamerApp(QMainWindow):
             selected_metadata=self.state.selected_metadata
         )
         
-        print(f"[DEBUG] Pattern analysis: {exif_field_count} EXIF fields, {text_field_count} text fields")
-        print(f"[DEBUG] benchmark_manager exists: {hasattr(self, 'benchmark_manager')}")
-        print(f"[DEBUG] benchmark_manager.is_ready(): {self.benchmark_manager.is_ready()}")
-        print(f"[DEBUG] benchmark_manager._benchmark_complete: {self.benchmark_manager._benchmark_complete}")
-        print(f"[DEBUG] benchmark_manager.benchmark_results: {len(self.benchmark_manager.benchmark_results)} results")
+        log.debug(f"Pattern analysis: {exif_field_count} EXIF fields, {text_field_count} text fields")
+        log.debug(f"Benchmark ready: {self.benchmark_manager.is_ready()}, results: {len(self.benchmark_manager.benchmark_results)}")
         
         # Get time estimate from benchmark (or use fallback)
         if self.benchmark_manager.is_ready():
-            print("[DEBUG] Using BENCHMARK data for estimate")
+            log.debug("Using benchmark data for estimate")
             estimated_time, confidence = self.benchmark_manager.estimate_time(
                 file_count=len(media_files),
                 exif_field_count=exif_field_count,
                 text_field_count=text_field_count,
                 with_exif_save=save_original_to_exif
             )
-            print(f"[DEBUG] Benchmark estimate: {estimated_time:.1f}s, confidence={confidence}")
+            log.debug(f"Benchmark estimate: {estimated_time:.1f}s, confidence={confidence}")
             confidence_text = {
                 1.0: "exact measurement",
                 0.7: "similar scenario",
@@ -1263,7 +1261,7 @@ class FileRenamerApp(QMainWindow):
                 0.3: "rough estimate"
             }.get(confidence, "estimated")
         else:
-            print("[DEBUG] Using FALLBACK estimate (no benchmark)")
+            log.debug("Using fallback estimate (no benchmark data)")
             # Fallback to simple estimation if benchmark not ready
             base_time = len(media_files) * 0.03
             exif_time = exif_field_count * 0.01 * len(media_files)

@@ -260,10 +260,12 @@ class RenameWorkerThread(QThread):
                 import datetime as dt_module
                 exif_datetime = dt_module.datetime(1970, 1, 1)
         
-        # Extract number from filename as tiebreaker
+        # Extract LAST number from filename as tiebreaker
+        # Use the last number to get the actual sequence number (e.g., '003')
+        # instead of the first number which is often the year (e.g., '2025')
         basename = os.path.basename(first_file)
-        match = re.search(r'(\d+)', basename)
-        file_number = int(match.group(1)) if match else 0
+        all_numbers = re.findall(r'(\d+)', basename)
+        file_number = int(all_numbers[-1]) if all_numbers else 0
         
         return (exif_datetime, file_number, first_file)
     
@@ -354,9 +356,9 @@ class RenameWorkerThread(QThread):
                 except Exception:
                     date_taken = '19700101'
         if need_camera and not camera_model:
-            camera_model = 'ILCE-7CM2'
+            camera_model = 'Unknown-Camera'
         if need_lens and not lens_model:
-            lens_model = 'FE-20-70mm-F4-G'
+            lens_model = 'Unknown-Lens'
 
         # Counter logic
         if self.use_date and not self.continuous_counter:
@@ -582,10 +584,11 @@ class RenameWorkerThread(QThread):
             first_file = group[0]
             try:
                 basename = os.path.basename(first_file)
-                match = re.search(r'(\d+)', basename)
-                if match:
-                    file_number_str = match.group(1)
-                    file_number = int(file_number_str)
+                all_numbers = re.findall(r'(\d+)', basename)
+                if all_numbers:
+                    # Use the last number as tiebreaker (actual sequence number)
+                    # instead of the first (often the year)
+                    file_number = int(all_numbers[-1])
                     try:
                         mtime = os.path.getmtime(first_file)
                         return (date, mtime, file_number, first_file)

@@ -194,7 +194,7 @@ def get_exiftool_metadata_shared(image_path, exiftool_path=None):
             if _global_exiftool_instance is not None:
                 try:
                     _global_exiftool_instance.terminate()
-                except:
+                except Exception:
                     pass
             
             # Create new instance
@@ -228,25 +228,32 @@ def get_exiftool_metadata_shared(image_path, exiftool_path=None):
             log.error(f"Temporary ExifTool instance also failed: {e2}")
             return {}
 
-def clear_global_exif_cache():
-    """
-    Legacy wrapper: Clear the global EXIF cache.
-    For backward compatibility only. Use ExifService.clear_cache() instead.
-    """
-    # Note: This function is kept for backward compatibility
-    # New code should use ExifService instance directly
-    pass
+def clear_global_exif_cache() -> None:
+    """Clear any global EXIF state.
 
-def cleanup_global_exiftool():
+    For backward compatibility only. The global ``get_exiftool_metadata_shared``
+    function is stateless (no result cache), so there is nothing to evict here.
+    New code should use :class:`ExifService` instead.
     """
-    Clean up the global ExifTool instance when done with batch processing.
-    """
+    # The legacy global path does not maintain a result cache, but we
+    # reset the global instance so a fresh connection is established on
+    # the next call.
+    global _global_exiftool_instance
+    if _global_exiftool_instance is not None:
+        try:
+            _global_exiftool_instance.__exit__(None, None, None)
+        except Exception:
+            pass
+        _global_exiftool_instance = None
+
+def cleanup_global_exiftool() -> None:
+    """Clean up the global ExifTool instance when done with batch processing."""
     global _global_exiftool_instance
     
     if _global_exiftool_instance is not None:
         try:
             _global_exiftool_instance.__exit__(None, None, None)
-        except:
+        except Exception:
             pass
         _global_exiftool_instance = None
 
@@ -371,15 +378,6 @@ def get_file_timestamp(image_path, method, exiftool_path=None):
         log.debug(f"Failed to get file timestamp: {e}")
         return None
 
-def validate_path_length(file_path):
-    """
-    Validate that the file path is not too long for the filesystem.
-    Returns True if valid, False if too long.
-    """
-    # Windows has a 260 character limit, leave buffer
-    max_length = 250
-    return len(file_path) <= max_length
-
 # Legacy class for backward compatibility
 class ExifHandler:
     """Legacy class for backward compatibility"""
@@ -394,28 +392,6 @@ class ExifHandler:
     def is_exiftool_available(self):
         """Check if ExifTool is available"""
         return EXIFTOOL_AVAILABLE
-
-# Simple EXIF Handler for UI compatibility
-class SimpleExifHandler:
-    """Simple EXIF handler for UI compatibility"""
-    
-    def __init__(self):
-        self.current_method = "exiftool" if EXIFTOOL_AVAILABLE else ("pillow" if PIL_AVAILABLE else None)
-        # Correct path to ExifTool in the project (updated to version 13.33)
-        self.exiftool_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "exiftool-13.33_64", "exiftool(-k).exe")
-        # Check if ExifTool exists at the specified path
-        if not os.path.exists(self.exiftool_path):
-            self.exiftool_path = None
-    
-    def extract_raw_exif(self, file_path):
-        """Extract raw EXIF data"""
-        if self.current_method == "exiftool":
-            return get_exiftool_metadata_shared(file_path, self.exiftool_path)
-        return {}
-    
-    def is_exiftool_available(self):
-        """Check if ExifTool is available"""
-        return EXIFTOOL_AVAILABLE and self.current_method == "exiftool"
 
 # Backward compatibility functions
 def get_exif_data(file_path: str, 
@@ -471,7 +447,7 @@ def get_all_metadata(file_path, method, exiftool_path=None):
                         else:
                             aperture_val = float(aperture)
                         metadata['aperture'] = f"f{aperture_val:.1f}".replace('.0', '')
-                    except:
+                    except (ValueError, TypeError, ZeroDivisionError):
                         pass
                 
                 # ISO
@@ -489,7 +465,7 @@ def get_all_metadata(file_path, method, exiftool_path=None):
                         else:
                             focal_val = float(focal)
                         metadata['focal_length'] = f"{focal_val:.0f}mm"
-                    except:
+                    except (ValueError, TypeError, ZeroDivisionError):
                         pass
                 
                 # Shutter Speed
@@ -509,7 +485,7 @@ def get_all_metadata(file_path, method, exiftool_path=None):
                                 metadata['shutter_speed'] = f"{shutter_val:.0f}s"
                             else:
                                 metadata['shutter_speed'] = f"1/{int(1/shutter_val)}s"
-                    except:
+                    except (ValueError, TypeError, ZeroDivisionError):
                         pass
                 
                 # Camera model
@@ -629,7 +605,7 @@ def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps
         original_times = {
             'atime': stat_info.st_atime,    # Access time
             'mtime': stat_info.st_mtime,    # Modification time
-            'ctime': stat_info.st_birthtime      # Creation time (Windows) / Status change time (Unix)
+            'ctime': getattr(stat_info, 'st_birthtime', stat_info.st_ctime),  # Creation time (macOS/Windows) or status change time (Linux)
         }
         
         # On Windows, get the real creation time using Windows API
@@ -912,7 +888,7 @@ def _apply_ultimate_timestamp_sync(file_path, new_timestamp, dt):
             kernel32 = ctypes.windll.kernel32
             kernel32.FlushFileBuffers(-1)  # Flush all system buffers
             log.debug("Method 4 (FlushFileBuffers) successful")
-    except:
+    except Exception:
         pass
     
     log.info(f"Timestamp sync result: {success_count}/3 methods succeeded")

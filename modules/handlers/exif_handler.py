@@ -58,9 +58,12 @@ class SimpleExifHandler:
 
 
 def extract_image_number(image_path, exif_method, exiftool_path):
-    """Extract image number/shutter count from image file"""
+    """Extract image number/shutter count from image file.
+    
+    Uses the shared ExifTool instance for performance.
+    """
     try:
-        # Get raw EXIF data for detailed extraction
+        # Get raw EXIF data using shared instance for performance
         if exif_method == "exiftool" and exiftool_path:
             exif_data = get_exiftool_metadata_shared(image_path, exiftool_path)
         else:

@@ -44,9 +44,11 @@ class ExifService:
             exiftool_path: Path to exiftool executable. If None, will auto-detect.
         """
         # Instance variables instead of globals
-        self._cache = {}
+        self._cache: dict = {}
         self._cache_lock = threading.Lock()
+        self._cache_max_size = 10000  # Prevent unbounded memory growth
         self._exiftool_instance = None
+        self._exiftool_lock = threading.Lock()  # Thread safety for ExifTool instance
         self._exiftool_path = exiftool_path or self._find_exiftool_path()
         
         # Set default method based on availability
@@ -79,24 +81,37 @@ class ExifService:
         """Find ExifTool executable (uses cached static method)"""
         return self._find_exiftool_path_cached()
     
-    def clear_cache(self):
-        """Clear the EXIF cache for fresh processing"""
+    def clear_cache(self) -> None:
+        """Clear the EXIF cache for fresh processing."""
         with self._cache_lock:
             self._cache.clear()
-    
-    def cleanup(self):
+
+    def _evict_cache_if_needed(self) -> None:
+        """Evict oldest cache entries if cache exceeds max size.
+
+        Must be called while holding ``_cache_lock``.
         """
-        Clean up the ExifTool instance when done with batch processing.
+        if len(self._cache) > self._cache_max_size:
+            # Remove oldest 20% of entries
+            evict_count = self._cache_max_size // 5
+            keys_to_remove = list(self._cache.keys())[:evict_count]
+            for key in keys_to_remove:
+                del self._cache[key]
+    
+    def cleanup(self) -> None:
+        """Clean up the ExifTool instance when done with batch processing.
+
         OPTIMIZATION: Only call this when app closes, not after each operation!
         """
-        if self._exiftool_instance is not None:
-            try:
-                self._exiftool_instance.__exit__(None, None, None)
-                log.info("ExifTool instance cleaned up successfully")
-            except Exception as e:
-                log.warning(f"Error during ExifTool cleanup: {e}")
-            finally:
-                self._exiftool_instance = None
+        with self._exiftool_lock:
+            if self._exiftool_instance is not None:
+                try:
+                    self._exiftool_instance.__exit__(None, None, None)
+                    log.info("ExifTool instance cleaned up successfully")
+                except Exception as e:
+                    log.warning(f"Error during ExifTool cleanup: {e}")
+                finally:
+                    self._exiftool_instance = None
     
     def get_cached_exif_data(self, file_path, method=None, exiftool_path=None):
         """
@@ -128,6 +143,7 @@ class ExifService:
             
             # Cache the result
             with self._cache_lock:
+                self._evict_cache_if_needed()
                 self._cache[cache_key] = result
             
             return result
@@ -182,6 +198,7 @@ class ExifService:
             
             # Cache the result
             with self._cache_lock:
+                self._evict_cache_if_needed()
                 self._cache[cache_key] = result
             
             return result
@@ -206,33 +223,34 @@ class ExifService:
         exiftool_path = exiftool_path or self._exiftool_path
         
         try:
-            # Check if we need to create/recreate the instance
-            if (self._exiftool_instance is None or
-                self._exiftool_path != exiftool_path):
+            with self._exiftool_lock:
+                # Check if we need to create/recreate the instance
+                if (self._exiftool_instance is None or
+                    self._exiftool_path != exiftool_path):
+                    
+                    # Close existing instance if needed
+                    if self._exiftool_instance is not None:
+                        try:
+                            self._exiftool_instance.terminate()
+                        except Exception:
+                            pass
+                    
+                    # Create new instance
+                    if exiftool_path and os.path.exists(exiftool_path):
+                        self._exiftool_instance = exiftool.ExifToolHelper(executable=exiftool_path)
+                        log.info(f"Created ExifTool instance with: {exiftool_path}")
+                    else:
+                        self._exiftool_instance = exiftool.ExifToolHelper()
+                        log.info("Created default ExifTool instance")
+                    
+                    self._exiftool_path = exiftool_path
+                    
+                    # Start the instance
+                    self._exiftool_instance.__enter__()
                 
-                # Close existing instance if needed
-                if self._exiftool_instance is not None:
-                    try:
-                        self._exiftool_instance.terminate()
-                    except:
-                        pass
-                
-                # Create new instance
-                if exiftool_path and os.path.exists(exiftool_path):
-                    self._exiftool_instance = exiftool.ExifToolHelper(executable=exiftool_path)
-                    log.info(f"Created ExifTool instance with: {exiftool_path}")
-                else:
-                    self._exiftool_instance = exiftool.ExifToolHelper()
-                    log.info("Created default ExifTool instance")
-                
-                self._exiftool_path = exiftool_path
-                
-                # Start the instance
-                self._exiftool_instance.__enter__()
-            
-            # Get metadata using the shared instance with normalized path
-            meta = self._exiftool_instance.get_metadata([normalized_path])[0]
-            return meta
+                # Get metadata using the shared instance with normalized path
+                meta = self._exiftool_instance.get_metadata([normalized_path])[0]
+                return meta
             
         except Exception as e:
             # If the shared instance fails, fall back to a temporary instance
@@ -442,7 +460,7 @@ class ExifService:
                             else:
                                 aperture_val = float(aperture)
                             metadata['aperture'] = f"f{aperture_val:.1f}".replace('.0', '')
-                        except:
+                        except (ValueError, TypeError, ZeroDivisionError):
                             pass
                     
                     # ISO
@@ -460,7 +478,7 @@ class ExifService:
                             else:
                                 focal_val = float(focal)
                             metadata['focal_length'] = f"{focal_val:.0f}mm"
-                        except:
+                        except (ValueError, TypeError, ZeroDivisionError):
                             pass
                     
                     # Shutter Speed
@@ -480,7 +498,7 @@ class ExifService:
                                     metadata['shutter_speed'] = f"{shutter_val:.0f}s"
                                 else:
                                     metadata['shutter_speed'] = f"1/{int(1/shutter_val)}s"
-                        except:
+                        except (ValueError, TypeError, ZeroDivisionError):
                             pass
                     
                     # Camera model
