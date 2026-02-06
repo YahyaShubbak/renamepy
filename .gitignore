@@ -3,7 +3,6 @@ __pycache__/
 exiftool-13.32_64/
 exiftool/
 exiftool*/
-Tests/
 *.py[cod]
 *$py.class
 *.so
