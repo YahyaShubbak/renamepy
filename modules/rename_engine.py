@@ -35,7 +35,7 @@ class RenameWorkerThread(QThread):
         use_camera: bool,
         use_lens: bool,
         exif_method: str,
-        devider: str,
+        separator: str,
         exiftool_path: Optional[str],
         custom_order: List[str],
         date_format: str,
@@ -56,7 +56,7 @@ class RenameWorkerThread(QThread):
             self.use_camera = use_camera
             self.use_lens = use_lens
             self.exif_method = exif_method
-            self.devider = devider
+            self.separator = separator
             self.exiftool_path = exiftool_path
             self.custom_order = custom_order or []
             self.date_format = date_format
@@ -434,7 +434,7 @@ class RenameWorkerThread(QThread):
                     use_date=self.use_date,
                     selected_metadata=individual_metadata,
                 )
-                sep = '' if self.devider == 'None' else self.devider
+                sep = '' if self.separator == 'None' else self.separator
                 new_name = sanitize_final_filename(sep.join(parts) + os.path.splitext(path)[1])
 
                 # CRITICAL FIX: Pass original file path, not directory!
@@ -722,7 +722,7 @@ class RenameWorkerThread(QThread):
         
         # Step 3: Build the new filename using the custom order
         try:
-            new_filename = self.devider.join(
+            new_filename = self.separator.join(
                 str(components[key]) for key in self.custom_order if key in components and components[key] is not None
             )
         except Exception as e:

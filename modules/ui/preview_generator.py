@@ -43,7 +43,7 @@ class PreviewGenerator:
         use_lens = self.parent.checkbox_lens.isChecked()
         use_date = self.parent.checkbox_date.isChecked()
         date_format = self.parent.date_format_combo.currentText()
-        devider = self.parent.devider_combo.currentText()
+        separator = self.parent.separator_combo.currentText()
         
         # Component management: Ensure custom_order reflects currently active components
         # This handles components being activated/deactivated
@@ -132,7 +132,7 @@ class PreviewGenerator:
         
         # Update the interactive preview
         self.parent.log(f"🖼️ Debug: Setting preview components: {display_components}")
-        self.parent.interactive_preview.set_separator(devider)
+        self.parent.interactive_preview.set_separator(separator)
         self.parent.interactive_preview.set_components(display_components, "001")
     
     def _extract_preview_metadata(self, preview_file, use_date, use_camera, use_lens):
@@ -343,7 +343,7 @@ Interactive Preview shows how your filenames will look.
 You can:
 • Drag and drop components to reorder them
 • See real-time preview of your filename format
-• Components are separated by your chosen divider
+• Components are separated by your chosen separator
 
 The number (001) is always at the end and auto-increments.
         """)

@@ -314,7 +314,7 @@ with EXIF metadata integration and customizable naming patterns.
         button_layout = QHBoxLayout()
         
         github_button = QPushButton("🌐 View on GitHub")
-        github_button.clicked.connect(lambda: webbrowser.open("https://github.com/YourUsername/file-renamer"))
+        github_button.clicked.connect(lambda: webbrowser.open("https://github.com/YahyaShubbak/renamepy"))
         github_button.setStyleSheet("QPushButton { padding: 8px 16px; background-color: #0066cc; color: white; border: none; border-radius: 4px; }")
         
         close_button = QPushButton("Close")

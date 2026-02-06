@@ -313,7 +313,7 @@ def validate_path(file_path: str) -> tuple[bool, str]:
 
     return True, "Valid"
 
-def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_method, devider="_", exiftool_path=None, custom_order=None, date_format="YYYY-MM-DD", use_date=True):
+def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_method, separator="_", exiftool_path=None, custom_order=None, date_format="YYYY-MM-DD", use_date=True):
     """
     Optimized batch rename function using cached EXIF processing.
     Simply delegates to the optimized_rename_files function for better performance.
@@ -328,7 +328,7 @@ def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_me
     
     # Create a temporary worker thread instance to use its optimized function
     worker = RenameWorkerThread(files, camera_prefix, additional, use_camera, use_lens, 
-                               exif_method, devider, exiftool_path, custom_order, date_format, use_date)
+                               exif_method, separator, exiftool_path, custom_order, date_format, use_date)
     
     # Use the optimized rename function directly
     return worker.optimized_rename_files()

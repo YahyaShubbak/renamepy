@@ -50,7 +50,7 @@ class MainWindowUI:
         # Setup Options (Date, Counter, etc.)
         self._setup_options(window)
         
-        # Setup Input Fields (Prefix, Additional, Divider)
+        # Setup Input Fields (Prefix, Additional, Separator)
         self._setup_input_fields(window)
         
         # Setup Preview
@@ -259,7 +259,7 @@ class MainWindowUI:
 
         # Separator
         separator_row = QHBoxLayout()
-        separator_label = QLabel("Devider:")
+        separator_label = QLabel("Separator:")
         separator_info = QLabel()
         separator_info.setPixmap(window.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation).pixmap(16, 16))
         separator_info.setToolTip("Click for detailed info about separators")
@@ -270,12 +270,12 @@ class MainWindowUI:
         separator_row.addStretch()
         window.layout.addLayout(separator_row)
         
-        window.devider_combo = QComboBox()
-        window.devider_combo.addItems(["-", "_", ""])
-        window.devider_combo.setCurrentText("-")
-        window.layout.addWidget(window.devider_combo)
-        window.devider_combo.currentIndexChanged.connect(window.update_preview)
-        window.devider_combo.currentIndexChanged.connect(window.on_devider_changed)
+        window.separator_combo = QComboBox()
+        window.separator_combo.addItems(["-", "_", ""])
+        window.separator_combo.setCurrentText("-")
+        window.layout.addWidget(window.separator_combo)
+        window.separator_combo.currentIndexChanged.connect(window.update_preview)
+        window.separator_combo.currentIndexChanged.connect(window.on_separator_changed)
 
     def _setup_preview(self, window):
         preview_row = QHBoxLayout()

@@ -15,9 +15,6 @@ from pathlib import Path
 from .logger_util import get_logger, set_level
 log = get_logger()
 
-# Add the parent directory to the Python path to allow module imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QPushButton, QLineEdit, QCheckBox, QComboBox, QListWidget,
@@ -1162,7 +1159,7 @@ class FileRenamerApp(QMainWindow):
         """Handle continuous counter checkbox change"""
         self.update_preview()
     
-    def on_devider_changed(self):
+    def on_separator_changed(self):
         """Handle separator change"""
         self.update_preview()
     
@@ -1206,7 +1203,7 @@ class FileRenamerApp(QMainWindow):
         use_date = self.checkbox_date.isChecked()
         continuous_counter = self.checkbox_continuous_counter.isChecked()
         date_format = self.date_format_combo.currentText()
-        devider = self.devider_combo.currentText()
+        separator = self.separator_combo.currentText()
         non_media = [f for f in self.files if not is_media_file(f)]
         if non_media:
             reply = QMessageBox.question(
@@ -1366,7 +1363,7 @@ class FileRenamerApp(QMainWindow):
             use_camera,
             use_lens,
             self.exif_method,
-            devider,
+            separator,
             self.exiftool_path,
             self.custom_order,
             date_format,
