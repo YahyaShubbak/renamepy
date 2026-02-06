@@ -144,8 +144,8 @@ class PreviewGenerator:
         if not self.parent.exif_method:
             # No EXIF support - use fallback values
             date_taken = "20250725"
-            camera_model = "ILCE-7CM2" if use_camera else None
-            lens_model = "FE-20-70mm-F4-G" if use_lens else None
+            camera_model = "Camera" if use_camera else None
+            lens_model = "Lens" if use_lens else None
         else:
             # EXIF cache: only extract if file changed
             cache_key = (preview_file, self.parent.exif_method, self.parent.exiftool_path)
@@ -176,9 +176,9 @@ class PreviewGenerator:
             
             # Use fallback values for preview if not detected AND checkbox is enabled
             if use_camera and not camera_model:
-                camera_model = "ILCE-7CM2"
+                camera_model = "Camera"
             if use_lens and not lens_model:
-                lens_model = "FE-20-70mm-F4-G"
+                lens_model = "Lens"
             
             # Clear values if checkboxes are disabled
             if not use_camera:

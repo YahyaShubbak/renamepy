@@ -38,7 +38,6 @@ from .exif_processor import (
     get_cached_exif_data, get_selective_cached_exif_data,
     extract_exif_fields, get_exiftool_metadata_shared, 
     cleanup_global_exiftool, clear_global_exif_cache,
-    SimpleExifHandler,
     extract_exif_fields_with_retry, find_exiftool_path,
     get_all_metadata, batch_restore_timestamps
 )
@@ -1079,7 +1078,7 @@ class FileRenamerApp(QMainWindow):
             if hasattr(self, '_preview_exif_cache') and self._preview_exif_cache:
                 camera_value = self._preview_exif_cache.get('camera')
             if not camera_value:
-                camera_value = "ILCE-7CM2"  # Fallback
+                camera_value = "Camera"  # Fallback
             value_to_component[camera_value] = "Camera"
             
         if use_lens:
@@ -1087,7 +1086,7 @@ class FileRenamerApp(QMainWindow):
             if hasattr(self, '_preview_exif_cache') and self._preview_exif_cache:
                 lens_value = self._preview_exif_cache.get('lens')
             if not lens_value:
-                lens_value = "FE-20-70mm-F4-G"  # Fallback
+                lens_value = "Lens"  # Fallback
             value_to_component[lens_value] = "Lens"
             
         # FLEXIBLE: Map Number component

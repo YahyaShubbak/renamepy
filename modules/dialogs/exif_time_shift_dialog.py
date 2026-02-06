@@ -13,6 +13,10 @@ from PyQt6.QtGui import QFont
 import os
 from datetime import datetime, timedelta
 
+from ..logger_util import get_logger
+
+log = get_logger()
+
 
 class TimeShiftWorker(QThread):
     """Worker thread for applying time shifts to EXIF data"""
@@ -272,7 +276,7 @@ class ExifTimeShiftDialog(QDialog):
                 self.preview_table.setItem(row, 2, QTableWidgetItem(""))
                 
             except Exception as e:
-                print(f"Error loading time for {file_path}: {e}")
+                log.warning(f"Error loading time for {file_path}: {e}")
         
         # Initial preview update
         self.update_preview()

@@ -4,6 +4,7 @@ Extracted from main_application.py to reduce clutter
 """
 
 import os
+from ..file_utilities import is_video_file as _is_video_file_canonical
 
 
 def calculate_stats(files):
@@ -45,18 +46,10 @@ def calculate_stats(files):
     }
 
 
-def is_video_file(file_path):
+def is_video_file(file_path: str) -> bool:
+    """Check if file is a video file.
+
+    Delegates to the canonical implementation in file_utilities to avoid
+    maintaining a duplicate extension list.
     """
-    Check if file is a video file
-    
-    Args:
-        file_path: Path to the file
-        
-    Returns:
-        bool: True if file is a video, False otherwise
-    """
-    video_extensions = [
-        '.mp4', '.mov', '.avi', '.mkv', '.m4v', '.3gp', '.wmv', 
-        '.flv', '.webm', '.mpg', '.mpeg', '.m2v', '.mts', '.m2ts'
-    ]
-    return os.path.splitext(file_path)[1].lower() in video_extensions
+    return _is_video_file_canonical(file_path)

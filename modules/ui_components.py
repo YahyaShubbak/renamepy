@@ -1,16 +1,9 @@
 #!/usr/bin/env python3
 """
-Custom GUI w    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setDragDropMode(QListWidget.DragDropMode.InternalMove)
-        self.setDefaultDropAction(Qt.DropAction.MoveAction)
-        self.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
-        self.setAcceptDrops(True)  # Explicitly enable drop acceptance
-        self.setMaximumHeight(80)  # Increased height for better component visibility
-        self.setMinimumHeight(65)  # Minimum height to prevent component clipping
-        self.setFlow(QListWidget.Flow.LeftToRight)
-        self.setWrapping(False)
-        self.setSpacing(2)  # 2px spacing provides optimal visual separation between items
+Custom GUI widgets for the RenameFiles application.
+
+Provides interactive preview, drag-and-drop reordering, about/help dialogs,
+and EXIF data display components.
 """
 
 import os

@@ -15,7 +15,7 @@ from typing import Optional
 from dataclasses import dataclass
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from modules.logger_util import get_logger
+from .logger_util import get_logger
 
 logger = get_logger(__name__)
 
@@ -223,7 +223,7 @@ class PerformanceBenchmark:
             for test_file in test_files:
                 # REAL EXIF extraction (not cached!) - this is what takes time
                 if exif_field_count > 0 and self.exiftool_path:
-                    from modules.exif_processor import get_exiftool_metadata_shared
+                    from .exif_processor import get_exiftool_metadata_shared
                     # This is the expensive operation - actual ExifTool call
                     exif_data = get_exiftool_metadata_shared(test_file, self.exiftool_path)
                     if exif_data and isinstance(exif_data, dict):
@@ -242,7 +242,7 @@ class PerformanceBenchmark:
                 
                 # Simulate EXIF save if enabled
                 if with_exif_save and self.exiftool_path:
-                    from modules.exif_undo_manager import write_original_filename_to_exif
+                    from .exif_undo_manager import write_original_filename_to_exif
                     original_name = os.path.basename(test_file)
                     write_original_filename_to_exif(test_file, original_name, self.exiftool_path)
                 
