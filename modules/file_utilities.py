@@ -10,10 +10,7 @@ import sys
 from functools import lru_cache
 from .logger_util import get_logger
 log = get_logger()
-try:
-    from .filename_components import build_ordered_components
-except ImportError:
-    from filename_components import build_ordered_components
+from .filename_components import build_ordered_components
 
 def natural_sort_key(filename: str) -> list:
     """Generate a sort key for natural sorting (handles numbers correctly).
@@ -94,14 +91,16 @@ def is_media_file(filename: str) -> bool:
 
 def scan_directory_recursive(directory):
     """
-    OPTIMIZED: Recursively scan directory for media files (images and videos) in all subdirectories.
+    Recursively scan directory for media files (images and videos) in all subdirectories.
     Uses followlinks=False to prevent symlink loops and duplicate counting.
+    Handles per-directory permission errors gracefully so that inaccessible
+    subdirectories do not abort the entire scan.
+
     Returns a sorted list of all media file paths found.
     """
     media_files = []
     try:
-        # OPTIMIZATION: followlinks=False prevents symlink loops (+10% performance)
-        for root, dirs, files in os.walk(directory, followlinks=False):
+        for root, dirs, files in os.walk(directory, followlinks=False, onerror=lambda e: log.warning(f"Cannot access directory: {e}")):
             for file in files:
                 if is_media_file(file):
                     full_path = os.path.join(root, file)
@@ -192,7 +191,7 @@ def validate_path_length(file_path: str) -> bool:
     # Filename component limit is 255 on all major filesystems
     max_filename = 255
 
-    if sys.platform == "win32":
+    if os.name == "nt":
         max_path = _get_windows_max_path()
     else:
         # POSIX (Linux, macOS) — PATH_MAX is typically 4096

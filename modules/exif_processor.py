@@ -6,6 +6,7 @@ This module provides the exact same functionality as the original RenameFiles.py
 from __future__ import annotations
 
 import os
+import re
 import time
 import subprocess
 import glob
@@ -51,6 +52,10 @@ HUNDREDS_OF_NANOSECONDS = 10000000
 if os.name == 'nt':
     import ctypes
     from ctypes import wintypes
+
+    # Fix #1: INVALID_HANDLE_VALUE must be compared as unsigned pointer value.
+    # On 64-bit Python, CreateFileW returns an unsigned int, not -1.
+    INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 
     class FILETIME(ctypes.Structure):
         """Windows FILETIME structure for file timestamp operations."""
@@ -114,8 +119,11 @@ def find_exiftool_path():
         try:
             if not os.path.exists(executable_path):
                 return None
-            # Try to run the binary with -ver (short, safe)
-            proc = subprocess.run([executable_path, "-ver"], capture_output=True, text=True, timeout=2)
+            proc = subprocess.run(
+                [executable_path, "-ver"],
+                capture_output=True, text=True, timeout=2,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+            )
             if proc.returncode == 0 and proc.stdout:
                 ver = proc.stdout.strip().splitlines()[0].strip()
                 log.debug(f"verify_exiftool: found version {ver} at {executable_path}")
@@ -184,16 +192,17 @@ def find_exiftool_path():
             log.debug(f"ExifTool located on PATH: {which_path}")
             return which_path
 
-    # 4) Common Windows locations
-    common_windows = [
-        "C:\\exiftool\\exiftool.exe",
-        "C:\\Program Files\\exiftool\\exiftool.exe",
-        "C:\\Program Files (x86)\\exiftool\\exiftool.exe",
-    ]
-    for path in common_windows:
-        if os.path.exists(path) and verify_exiftool(path):
-            log.debug(f"ExifTool located at: {path}")
-            return path
+    # 4) Common Windows locations (only checked on Windows)
+    if os.name == 'nt':
+        common_windows = [
+            "C:\\exiftool\\exiftool.exe",
+            "C:\\Program Files\\exiftool\\exiftool.exe",
+            "C:\\Program Files (x86)\\exiftool\\exiftool.exe",
+        ]
+        for path in common_windows:
+            if os.path.exists(path) and verify_exiftool(path):
+                log.debug(f"ExifTool located at: {path}")
+                return path
 
     log.warning("ExifTool not found in expected locations")
     return None
@@ -237,7 +246,6 @@ def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps
         # On Windows, get the real creation time using Windows API
         try:
             if os.name == 'nt':  # Windows
-                # Open file to get creation time
                 kernel32 = ctypes.windll.kernel32
                 handle = kernel32.CreateFileW(
                     file_path,
@@ -249,22 +257,19 @@ def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps
                     None
                 )
                 
-                if handle != -1:  # INVALID_HANDLE_VALUE
-                    creation_time = FILETIME()
-                    access_time = FILETIME()
-                    write_time = FILETIME()
-                    
-                    # Get file times
-                    if kernel32.GetFileTime(handle, ctypes.byref(creation_time), 
-                                          ctypes.byref(access_time), ctypes.byref(write_time)):
-                        # Convert Windows FILETIME to Unix timestamp
-                        creation_100ns = (creation_time.dwHighDateTime << 32) + creation_time.dwLowDateTime
-                        creation_timestamp = (creation_100ns - EPOCH_AS_FILETIME) / HUNDREDS_OF_NANOSECONDS
+                if handle != INVALID_HANDLE_VALUE:
+                    try:
+                        creation_time = FILETIME()
+                        access_time = FILETIME()
+                        write_time = FILETIME()
                         
-                        # Store the real Windows creation time
-                        original_times['windows_creation_time'] = creation_timestamp
-                    
-                    kernel32.CloseHandle(handle)
+                        if kernel32.GetFileTime(handle, ctypes.byref(creation_time), 
+                                              ctypes.byref(access_time), ctypes.byref(write_time)):
+                            creation_100ns = (creation_time.dwHighDateTime << 32) + creation_time.dwLowDateTime
+                            creation_timestamp = (creation_100ns - EPOCH_AS_FILETIME) / HUNDREDS_OF_NANOSECONDS
+                            original_times['windows_creation_time'] = creation_timestamp
+                    finally:
+                        kernel32.CloseHandle(handle)
         
         except Exception as e:
             # If Windows API fails, we still have the basic timestamps
@@ -339,12 +344,14 @@ def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps
                     ft.dwHighDateTime = ts_100ns >> 32
                     k32 = ctypes.windll.kernel32
                     handle = k32.CreateFileW(
-                        file_path,0x40000000,0x00000001|0x00000002,None,3,0x80,None
+                        file_path, 0x40000000, 0x00000001 | 0x00000002, None, 3, 0x80, None
                     )
-                    if handle != -1:
-                        if not k32.SetFileTime(handle, ctypes.byref(ft), None if not set_access else ctypes.byref(ft), None if not set_mod else ctypes.byref(ft)):
-                            creation_ok = False
-                        k32.CloseHandle(handle)
+                    if handle != INVALID_HANDLE_VALUE:
+                        try:
+                            if not k32.SetFileTime(handle, ctypes.byref(ft), None if not set_access else ctypes.byref(ft), None if not set_mod else ctypes.byref(ft)):
+                                creation_ok = False
+                        finally:
+                            k32.CloseHandle(handle)
                     else:
                         creation_ok = False
                 except Exception as e:
@@ -409,14 +416,12 @@ def _set_file_timestamp_method3(file_path, dt):
 def _restore_windows_creation_time(file_path, creation_timestamp):
     """Restore Windows creation time using Windows API."""
     try:
-        # Convert timestamp to Windows FILETIME format
         timestamp_100ns = int((creation_timestamp * HUNDREDS_OF_NANOSECONDS) + EPOCH_AS_FILETIME)
         
         ft = FILETIME()
         ft.dwLowDateTime = timestamp_100ns & 0xFFFFFFFF
         ft.dwHighDateTime = timestamp_100ns >> 32
         
-        # Open file handle with write access
         kernel32 = ctypes.windll.kernel32
         handle = kernel32.CreateFileW(
             file_path,
@@ -428,10 +433,11 @@ def _restore_windows_creation_time(file_path, creation_timestamp):
             None
         )
         
-        if handle != -1:  # INVALID_HANDLE_VALUE
-            # Restore original creation time
-            kernel32.SetFileTime(handle, ctypes.byref(ft), None, None)
-            kernel32.CloseHandle(handle)
+        if handle != INVALID_HANDLE_VALUE:
+            try:
+                kernel32.SetFileTime(handle, ctypes.byref(ft), None, None)
+            finally:
+                kernel32.CloseHandle(handle)
             return True
         
         return False
@@ -490,31 +496,46 @@ def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None
     errors = []
     backup_data = {}
 
-    # Fast path: prefetch all EXIF datetimes in one ExifTool invocation if possible
+    # Fast path: prefetch all EXIF datetimes via the registered ExifService
+    # (reuses the shared ExifTool process) or fall back to a one-shot helper.
     prefetch_map = {}
     use_custom = options and options.get('use_custom')
     can_prefetch = EXIFTOOL_AVAILABLE and not use_custom and file_paths
     if can_prefetch:
         try:
-            helper_exec = exiftool_path if exiftool_path else None
-            with exiftool.ExifToolHelper(executable=helper_exec) as et:
-                # Chunk to avoid extremely long command lines (safety)
-                CHUNK = 100
-                for start in range(0, len(file_paths), CHUNK):
-                    subset = file_paths[start:start+CHUNK]
-                    metas = et.get_metadata(subset)
-                    for meta in metas:
-                        # meta['SourceFile'] usually contains absolute path
-                        fpath = meta.get('SourceFile')
-                        if not fpath:
-                            continue
+            if _default_exif_service:
+                # Reuse the shared ExifService — no extra process needed
+                raw_batch = _default_exif_service.batch_get_raw_metadata(file_paths, chunk_size=100)
+                for fpath, meta in raw_batch.items():
+                    if meta:
                         dt_value = None
-                        for field in ['EXIF:DateTimeOriginal','EXIF:DateTime','EXIF:CreateDate','DateTimeOriginal','DateTime','CreateDate']:
+                        for field in ['EXIF:DateTimeOriginal', 'EXIF:DateTime', 'EXIF:CreateDate',
+                                      'DateTimeOriginal', 'DateTime', 'CreateDate']:
                             if field in meta and meta[field]:
                                 dt_value = meta[field]
                                 break
                         if dt_value:
                             prefetch_map[fpath] = dt_value
+            else:
+                # Fallback: one-shot ExifTool helper (slower)
+                helper_exec = exiftool_path if exiftool_path else None
+                with exiftool.ExifToolHelper(executable=helper_exec) as et:
+                    CHUNK = 100
+                    for start in range(0, len(file_paths), CHUNK):
+                        subset = file_paths[start:start + CHUNK]
+                        metas = et.get_metadata(subset)
+                        for meta in metas:
+                            fpath = meta.get('SourceFile')
+                            if not fpath:
+                                continue
+                            dt_value = None
+                            for field in ['EXIF:DateTimeOriginal', 'EXIF:DateTime', 'EXIF:CreateDate',
+                                          'DateTimeOriginal', 'DateTime', 'CreateDate']:
+                                if field in meta and meta[field]:
+                                    dt_value = meta[field]
+                                    break
+                            if dt_value:
+                                prefetch_map[fpath] = dt_value
             if progress_callback:
                 progress_callback(f"Prefetched EXIF datetimes for {len(prefetch_map)} files")
         except Exception as e:
@@ -598,10 +619,14 @@ def restore_exif_timestamps(file_path, original_exif, exiftool_path):
         # Build ExifTool command to restore all backed-up fields
         cmd = [exiftool_path, "-overwrite_original"]
         
-        # Add each backed-up field
+        # Add each backed-up field, validating values to prevent injection
+        _EXIF_VALUE_RE = re.compile(r'^[\w\s:./+\-]+$')
         for field, value in original_exif.items():
-            # Format: -EXIF:DateTimeOriginal="2024:01:15 10:30:45"
-            cmd.append(f'-{field}={value}')
+            str_value = str(value)
+            if not _EXIF_VALUE_RE.match(str_value):
+                log.warning(f"Skipping suspicious EXIF restore value for {field}: {str_value!r}")
+                continue
+            cmd.append(f'-{field}={str_value}')
         
         cmd.append(file_path)
         

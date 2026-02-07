@@ -229,7 +229,8 @@ class TestExifToolLifecycleHelpers:
         svc._exiftool_lock = __import__("threading").Lock()
 
         svc._kill_exiftool_instance()
-        fake_et.terminate.assert_called_once()
+        # _kill now uses __exit__ first, falling back to terminate
+        fake_et.__exit__.assert_called_once_with(None, None, None)
         assert svc._exiftool_instance is None
 
     def test_kill_noop_when_none(self):

@@ -119,7 +119,8 @@ class ExifService:
                     if orig not in results:
                         try:
                             results[orig] = self._get_exiftool_metadata_shared(norm, exiftool_path)
-                        except Exception:
+                        except Exception as e2:
+                            log.debug(f"Per-file ExifTool fallback failed for {norm}: {e2}")
                             results[orig] = {}
 
         return results
@@ -299,8 +300,12 @@ class ExifService:
     def get_selective_cached_exif_data(self, file_path, method=None, exiftool_path=None,
                                       need_date=True, need_camera=False, need_lens=False):
         """
-        OPTIMIZED: Get only requested EXIF data with intelligent caching.
-        This function only extracts and caches the fields that are actually needed.
+        Get EXIF data with intelligent caching.
+        
+        Always fetches all three fields (date, camera, lens) from ExifTool since
+        the IPC cost is the same regardless. Caches the full result so subsequent
+        calls for different field subsets hit the cache instead of re-invoking
+        ExifTool.
         
         Args:
             file_path: Path to the image file
@@ -311,43 +316,49 @@ class ExifService:
             need_lens: Whether to extract lens model
         
         Returns:
-            (date, camera, lens) - only requested fields are extracted and cached
+            (date, camera, lens) - only requested fields are populated, others are None
         """
         method = method or self.current_method
         exiftool_path = exiftool_path or self._exiftool_path
         
         try:
-            # CRITICAL FIX: Normalize path to prevent double backslashes
             normalized_path = os.path.normpath(file_path)
             
-            # Verify file exists before processing
             if not os.path.exists(normalized_path):
                 log.warning(f"File not found: {normalized_path}")
                 return None, None, None
             
-            # Create cache key based on file path, modification time, method AND requested fields
+            # Cache key: (path, mtime, method) — no field_signature needed.
+            # We always extract all 3 fields since ExifTool returns everything.
             mtime = os.path.getmtime(normalized_path)
-            field_signature = (need_date, need_camera, need_lens)
-            cache_key = (normalized_path, mtime, method, field_signature)
+            cache_key = (normalized_path, mtime, method)
             
-            # Check cache first
             with self._cache_lock:
                 if cache_key in self._cache:
-                    self._cache.move_to_end(cache_key)  # LRU: mark as recently used
-                    return self._cache[cache_key]
+                    self._cache.move_to_end(cache_key)
+                    cached_date, cached_camera, cached_lens = self._cache[cache_key]
+                    return (
+                        cached_date if need_date else None,
+                        cached_camera if need_camera else None,
+                        cached_lens if need_lens else None,
+                    )
             
-            # Extract only requested EXIF fields
+            # Extract ALL fields in one call (same IPC cost)
             result = self._extract_selective_exif_fields(
                 normalized_path, method, exiftool_path,
-                need_date=need_date, need_camera=need_camera, need_lens=need_lens
+                need_date=True, need_camera=True, need_lens=True
             )
             
-            # Cache the result
             with self._cache_lock:
                 self._evict_cache_if_needed()
                 self._cache[cache_key] = result
             
-            return result
+            date_val, camera_val, lens_val = result
+            return (
+                date_val if need_date else None,
+                camera_val if need_camera else None,
+                lens_val if need_lens else None,
+            )
         except Exception as e:
             log.debug(f"Error in get_selective_cached_exif_data for {file_path}: {e}")
             return None, None, None
@@ -400,12 +411,16 @@ class ExifService:
         if self._exiftool_instance is not None and os.path.normpath(self._exiftool_path or '') == os.path.normpath(exiftool_path or ''):
             return  # Already running with correct path
 
-        # Close stale instance
+        # Close stale instance (use __exit__ to match __enter__)
         if self._exiftool_instance is not None:
             try:
-                self._exiftool_instance.terminate()
+                self._exiftool_instance.__exit__(None, None, None)
             except Exception:
-                pass
+                try:
+                    self._exiftool_instance.terminate()
+                except Exception:
+                    pass
+            self._exiftool_instance = None
 
         # Create & start new instance
         if exiftool_path and os.path.exists(exiftool_path):
@@ -422,12 +437,17 @@ class ExifService:
         """Terminate the shared ExifTool process.
 
         MUST be called while holding ``_exiftool_lock``.
+        Uses ``__exit__`` for proper cleanup (matching ``__enter__`` in
+        ``_ensure_exiftool_running``), with ``terminate()`` as fallback.
         """
         if self._exiftool_instance is not None:
             try:
-                self._exiftool_instance.terminate()
+                self._exiftool_instance.__exit__(None, None, None)
             except Exception:
-                pass
+                try:
+                    self._exiftool_instance.terminate()
+                except Exception:
+                    pass
             self._exiftool_instance = None
     
     def _extract_exif_fields_with_retry(self, image_path, method, exiftool_path=None, max_retries=3):
@@ -547,9 +567,13 @@ class ExifService:
                     time.sleep(0.05)  # Shorter pause for batch processing
     
     def get_all_metadata(self, file_path, method=None, exiftool_path=None):
-        """
-        Extract all relevant metadata for filename generation
-        Returns dict with aperture, iso, focal_length, shutter_speed, etc.
+        """Extract all relevant metadata for filename generation.
+
+        Delegates parsing to :meth:`parse_all_metadata_from_raw` to avoid
+        duplicated extraction logic.
+
+        Returns:
+            dict with keys: aperture, iso, focal_length, shutter_speed, camera, lens.
         """
         method = method or self.current_method
         exiftool_path = exiftool_path or self._exiftool_path
@@ -560,76 +584,11 @@ class ExifService:
             if not os.path.exists(normalized_path):
                 return {}
             
-            metadata = {}
-            
             if method == "exiftool" and EXIFTOOL_AVAILABLE:
                 meta = self._get_exiftool_metadata_shared(normalized_path, exiftool_path)
-                
-                # Extract all relevant metadata
-                if meta:
-                    # Aperture (f-number)
-                    aperture = meta.get('EXIF:FNumber') or meta.get('FNumber') or meta.get('EXIF:ApertureValue')
-                    if aperture:
-                        try:
-                            # Convert to f/x format
-                            if isinstance(aperture, str) and '/' in aperture:
-                                num, den = aperture.split('/')
-                                aperture_val = float(num) / float(den)
-                            else:
-                                aperture_val = float(aperture)
-                            metadata['aperture'] = f"f{aperture_val:.1f}".replace('.0', '')
-                        except (ValueError, TypeError, ZeroDivisionError):
-                            pass
-                    
-                    # ISO
-                    iso = meta.get('EXIF:ISO') or meta.get('ISO')
-                    if iso:
-                        metadata['iso'] = str(iso)
-                    
-                    # Focal Length
-                    focal = meta.get('EXIF:FocalLength') or meta.get('FocalLength')
-                    if focal:
-                        try:
-                            if isinstance(focal, str) and '/' in focal:
-                                num, den = focal.split('/')
-                                focal_val = float(num) / float(den)
-                            else:
-                                focal_val = float(focal)
-                            metadata['focal_length'] = f"{focal_val:.0f}mm"
-                        except (ValueError, TypeError, ZeroDivisionError):
-                            pass
-                    
-                    # Shutter Speed
-                    shutter = meta.get('EXIF:ExposureTime') or meta.get('ExposureTime')
-                    if shutter:
-                        try:
-                            if isinstance(shutter, str) and '/' in shutter:
-                                num, den = shutter.split('/')
-                                shutter_val = float(num) / float(den)
-                                if shutter_val >= 1:
-                                    metadata['shutter_speed'] = f"{shutter_val:.0f}s"
-                                else:
-                                    metadata['shutter_speed'] = f"1/{int(1/shutter_val)}s"
-                            else:
-                                shutter_val = float(shutter)
-                                if shutter_val >= 1:
-                                    metadata['shutter_speed'] = f"{shutter_val:.0f}s"
-                                else:
-                                    metadata['shutter_speed'] = f"1/{int(1/shutter_val)}s"
-                        except (ValueError, TypeError, ZeroDivisionError):
-                            pass
-                    
-                    # Camera model
-                    camera = meta.get('EXIF:Model') or meta.get('Model')
-                    if camera:
-                        metadata['camera'] = str(camera).replace(' ', '-')
-                    
-                    # Lens model
-                    lens = meta.get('EXIF:LensModel') or meta.get('LensModel')
-                    if lens:
-                        metadata['lens'] = str(lens).replace(' ', '-')
+                return self.parse_all_metadata_from_raw(meta) if meta else {}
             
-            return metadata
+            return {}
         except Exception as e:
             log.error(f"Error extracting metadata from {file_path}: {e}")
             return {}

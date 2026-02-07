@@ -14,6 +14,9 @@ from collections import defaultdict
 from typing import List, Tuple, Dict, Optional, Any, Callable
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from .logger_util import get_logger
+log = get_logger()
+
 # Import unified utilities from file_utilities module
 from .file_utilities import is_media_file, sanitize_final_filename, get_safe_target_path, validate_path_length
 
@@ -280,8 +283,8 @@ class RenameWorkerThread(QThread):
                                 dt_str_clean = dt_str.replace(':', '-', 2)
                                 exif_datetime = dt_module.datetime.strptime(dt_str_clean, "%Y-%m-%d %H:%M:%S")
                                 break
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            log.debug(f"Could not parse EXIF datetime from {field}: {e}")
         
         # Fallback to file modification time
         if not exif_datetime:
@@ -485,8 +488,8 @@ class RenameWorkerThread(QThread):
                         if need_date and d: file_date = d
                         if need_camera and c: file_cam = c
                         if need_lens and l: file_lens = l
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.debug(f"Per-file EXIF fallback failed for {path}: {e}")
 
                 # Individual selected metadata (aperture, iso, etc.)
                 individual_metadata = self.selected_metadata.copy() if self.selected_metadata else {}
@@ -664,15 +667,16 @@ class RenameWorkerThread(QThread):
                     file_date = dt.strftime('%Y%m%d')
                 if file_date:
                     date_group_pairs.append((file_date, group))
-            except Exception:
+            except Exception as e:
+                log.debug(f"Date extraction failed for {first_file}: {e}")
                 # Ultimate fallback
                 try:
                     mtime = os.path.getmtime(first_file)
                     dt = datetime.datetime.fromtimestamp(mtime)
                     file_date = dt.strftime('%Y%m%d')
                     date_group_pairs.append((file_date, group))
-                except Exception:
-                    pass
+                except Exception as e2:
+                    log.debug(f"Ultimate date fallback failed for {first_file}: {e2}")
         # Step 4: Sort by date, then by original file order (using file modification time as fallback)
         def get_sort_key(date_group):
             date, group = date_group
