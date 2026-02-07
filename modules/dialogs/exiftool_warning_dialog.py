@@ -126,7 +126,9 @@ class ExifToolWarningDialog(QDialog):
                 '<a href="https://exiftool.org/install.html">exiftool.org</a><br>'
                 "2. Extract the ZIP into the project folder "
                 "(e.g. <code>exiftool-13.xx_64/</code>)<br>"
-                "3. Restart this application<br><br>"
+                "3. Restart this application "
+                "(<code>exiftool(-k).exe</code> is renamed to "
+                "<code>exiftool.exe</code> automatically)<br><br>"
             )
             lines.append(
                 "<b>Option C — Package manager:</b><br>"

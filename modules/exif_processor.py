@@ -125,10 +125,42 @@ def find_exiftool_path():
             log.debug(f"verify_exiftool failed for {executable_path}: {e}")
             return None
 
+    def _auto_rename_exiftool_k(directory: str) -> str | None:
+        """Rename exiftool(-k).exe to exiftool.exe if needed.
+
+        The Windows distribution ships as ``exiftool(-k).exe`` which causes
+        the process to pause for a keypress after every invocation — unusable
+        for programmatic access.  If only the ``(-k)`` variant exists in
+        *directory*, rename it to ``exiftool.exe`` so the application can
+        use it normally.
+
+        Returns:
+            Path to ``exiftool.exe`` after a successful rename, or *None*
+            if no rename was performed.
+        """
+        k_exe = os.path.join(directory, "exiftool(-k).exe")
+        target = os.path.join(directory, "exiftool.exe")
+        if os.path.exists(k_exe) and not os.path.exists(target):
+            try:
+                os.rename(k_exe, target)
+                log.info(
+                    "Automatically renamed exiftool(-k).exe → exiftool.exe "
+                    f"in {directory}"
+                )
+                return target
+            except OSError as exc:
+                log.warning(
+                    f"Could not rename exiftool(-k).exe → exiftool.exe: {exc}"
+                )
+        return None
+
     # 1) Search for project-local exiftool folders with flexible names (exiftool-*)
     for d in glob.glob(os.path.join(script_dir, "exiftool*")):
         if os.path.isdir(d):
-            for fname in ("exiftool(-k).exe", "exiftool.exe", "exiftool"):
+            # Auto-rename exiftool(-k).exe → exiftool.exe (Windows ZIP default)
+            _auto_rename_exiftool_k(d)
+
+            for fname in ("exiftool.exe", "exiftool"):
                 candidate = os.path.join(d, fname)
                 if os.path.exists(candidate):
                     if verify_exiftool(candidate):
@@ -137,7 +169,7 @@ def find_exiftool_path():
 
     # 2) Check a few legacy project paths explicitly (backwards compatibility)
     legacy_paths = [
-        os.path.join(script_dir, "exiftool-13.33_64", "exiftool(-k).exe"),
+        os.path.join(script_dir, "exiftool-13.33_64", "exiftool.exe"),
         os.path.join(script_dir, "exiftool-13.32_64", "exiftool.exe"),
     ]
     for path in legacy_paths:
