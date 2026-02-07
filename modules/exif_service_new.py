@@ -86,6 +86,173 @@ class ExifService:
         with self._cache_lock:
             self._cache.clear()
 
+    # ------------------------------------------------------------------
+    # Batch extraction — reduces N ExifTool IPC calls to ceil(N/chunk)
+    # ------------------------------------------------------------------
+
+    def batch_get_raw_metadata(
+        self, file_paths: list[str], chunk_size: int = 50
+    ) -> dict[str, dict]:
+        """Batch-extract raw EXIF metadata for many files at once.
+
+        Instead of one ExifTool IPC round-trip per file, this sends
+        *chunk_size* file paths in a single ``get_metadata()`` call.
+        For 300 files with chunk_size=50 this is 6 calls instead of 300.
+
+        Args:
+            file_paths: List of file paths to extract metadata from.
+            chunk_size: Files per ExifTool batch call (default 50).
+
+        Returns:
+            Dict mapping each input file path to its raw metadata dict.
+            Files that fail return an empty dict.
+        """
+        results: dict[str, dict] = {}
+        if not file_paths:
+            return results
+
+        # Normalize paths and filter to existing files
+        path_pairs: list[tuple[str, str]] = []
+        for fp in file_paths:
+            norm = os.path.normpath(fp)
+            if os.path.exists(norm):
+                path_pairs.append((norm, fp))
+            else:
+                results[fp] = {}
+
+        exiftool_path = self._exiftool_path
+
+        for i in range(0, len(path_pairs), chunk_size):
+            chunk = path_pairs[i : i + chunk_size]
+            chunk_norms = [norm for norm, _orig in chunk]
+
+            try:
+                with self._exiftool_lock:
+                    self._ensure_exiftool_running(exiftool_path)
+                    batch_meta = self._exiftool_instance.get_metadata(chunk_norms)
+
+                for (norm, orig), meta in zip(chunk, batch_meta):
+                    results[orig] = meta
+            except Exception as e:
+                log.warning(f"Batch ExifTool failed for chunk, falling back to per-file: {e}")
+                # Rebuild instance for next attempt
+                with self._exiftool_lock:
+                    self._kill_exiftool_instance()
+                for norm, orig in chunk:
+                    if orig not in results:
+                        try:
+                            results[orig] = self._get_exiftool_metadata_shared(norm, exiftool_path)
+                        except Exception:
+                            results[orig] = {}
+
+        return results
+
+    # ------------------------------------------------------------------
+    # Static helpers — parse fields from an already-fetched raw dict
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def parse_date_from_raw(meta: dict) -> str | None:
+        """Extract date string (YYYYMMDD) from raw EXIF metadata."""
+        date = (
+            meta.get("EXIF:DateTimeOriginal")
+            or meta.get("CreateDate")
+            or meta.get("DateTimeOriginal")
+        )
+        if date:
+            return date.split(" ")[0].replace(":", "")
+        return None
+
+    @staticmethod
+    def parse_camera_from_raw(meta: dict) -> str | None:
+        """Extract camera model from raw EXIF metadata."""
+        camera = meta.get("EXIF:Model") or meta.get("Model")
+        if camera:
+            return str(camera).replace(" ", "-")
+        return None
+
+    @staticmethod
+    def parse_lens_from_raw(meta: dict) -> str | None:
+        """Extract lens model from raw EXIF metadata."""
+        lens = (
+            meta.get("EXIF:LensModel")
+            or meta.get("LensModel")
+            or meta.get("LensInfo")
+        )
+        if lens:
+            return str(lens).replace(" ", "-")
+        return None
+
+    @staticmethod
+    def parse_all_metadata_from_raw(meta: dict) -> dict:
+        """Extract all relevant metadata fields from raw EXIF dict.
+
+        Returns dict with keys: aperture, iso, focal_length, shutter_speed,
+        camera, lens — same format as ``get_all_metadata()``.
+        """
+        metadata: dict = {}
+        if not meta:
+            return metadata
+
+        # Aperture
+        aperture = meta.get("EXIF:FNumber") or meta.get("FNumber") or meta.get("EXIF:ApertureValue")
+        if aperture:
+            try:
+                if isinstance(aperture, str) and "/" in aperture:
+                    num, den = aperture.split("/")
+                    aperture_val = float(num) / float(den)
+                else:
+                    aperture_val = float(aperture)
+                metadata["aperture"] = f"f{aperture_val:.1f}".replace(".0", "")
+            except (ValueError, TypeError, ZeroDivisionError):
+                pass
+
+        # ISO
+        iso = meta.get("EXIF:ISO") or meta.get("ISO")
+        if iso:
+            metadata["iso"] = str(iso)
+
+        # Focal length
+        focal = meta.get("EXIF:FocalLength") or meta.get("FocalLength")
+        if focal:
+            try:
+                if isinstance(focal, str) and "/" in focal:
+                    num, den = focal.split("/")
+                    focal_val = float(num) / float(den)
+                else:
+                    focal_val = float(focal)
+                metadata["focal_length"] = f"{focal_val:.0f}mm"
+            except (ValueError, TypeError, ZeroDivisionError):
+                pass
+
+        # Shutter speed
+        shutter = meta.get("EXIF:ExposureTime") or meta.get("ExposureTime")
+        if shutter:
+            try:
+                if isinstance(shutter, str) and "/" in shutter:
+                    num, den = shutter.split("/")
+                    shutter_val = float(num) / float(den)
+                else:
+                    shutter_val = float(shutter)
+                if shutter_val >= 1:
+                    metadata["shutter_speed"] = f"{shutter_val:.0f}s"
+                else:
+                    metadata["shutter_speed"] = f"1/{int(1/shutter_val)}s"
+            except (ValueError, TypeError, ZeroDivisionError):
+                pass
+
+        # Camera
+        camera = meta.get("EXIF:Model") or meta.get("Model")
+        if camera:
+            metadata["camera"] = str(camera).replace(" ", "-")
+
+        # Lens
+        lens = meta.get("EXIF:LensModel") or meta.get("LensModel")
+        if lens:
+            metadata["lens"] = str(lens).replace(" ", "-")
+
+        return metadata
+
     def _evict_cache_if_needed(self) -> None:
         """Evict oldest cache entries if cache exceeds max size.
 
@@ -224,37 +391,15 @@ class ExifService:
         
         try:
             with self._exiftool_lock:
-                # Check if we need to create/recreate the instance
-                if (self._exiftool_instance is None or
-                    self._exiftool_path != exiftool_path):
-                    
-                    # Close existing instance if needed
-                    if self._exiftool_instance is not None:
-                        try:
-                            self._exiftool_instance.terminate()
-                        except Exception:
-                            pass
-                    
-                    # Create new instance
-                    if exiftool_path and os.path.exists(exiftool_path):
-                        self._exiftool_instance = exiftool.ExifToolHelper(executable=exiftool_path)
-                        log.info(f"Created ExifTool instance with: {exiftool_path}")
-                    else:
-                        self._exiftool_instance = exiftool.ExifToolHelper()
-                        log.info("Created default ExifTool instance")
-                    
-                    self._exiftool_path = exiftool_path
-                    
-                    # Start the instance
-                    self._exiftool_instance.__enter__()
-                
-                # Get metadata using the shared instance with normalized path
+                self._ensure_exiftool_running(exiftool_path)
                 meta = self._exiftool_instance.get_metadata([normalized_path])[0]
                 return meta
             
         except Exception as e:
-            # If the shared instance fails, fall back to a temporary instance
+            # If the shared instance fails, rebuild and fall back to a temporary instance
             log.warning(f"Shared ExifTool instance failed, using temporary instance: {e}")
+            with self._exiftool_lock:
+                self._kill_exiftool_instance()
             try:
                 if exiftool_path and os.path.exists(exiftool_path):
                     with exiftool.ExifToolHelper(executable=exiftool_path) as et:
@@ -265,6 +410,46 @@ class ExifService:
             except Exception as e2:
                 log.error(f"Temporary ExifTool instance also failed: {e2}")
                 return {}
+
+    def _ensure_exiftool_running(self, exiftool_path: str | None = None) -> None:
+        """Start or restart the shared ExifTool process if needed.
+
+        MUST be called while holding ``_exiftool_lock``.
+        """
+        exiftool_path = exiftool_path or self._exiftool_path
+
+        if self._exiftool_instance is not None and self._exiftool_path == exiftool_path:
+            return  # Already running with correct path
+
+        # Close stale instance
+        if self._exiftool_instance is not None:
+            try:
+                self._exiftool_instance.terminate()
+            except Exception:
+                pass
+
+        # Create & start new instance
+        if exiftool_path and os.path.exists(exiftool_path):
+            self._exiftool_instance = exiftool.ExifToolHelper(executable=exiftool_path)
+            log.info(f"Created ExifTool instance with: {exiftool_path}")
+        else:
+            self._exiftool_instance = exiftool.ExifToolHelper()
+            log.info("Created default ExifTool instance")
+
+        self._exiftool_path = exiftool_path
+        self._exiftool_instance.__enter__()
+
+    def _kill_exiftool_instance(self) -> None:
+        """Terminate the shared ExifTool process.
+
+        MUST be called while holding ``_exiftool_lock``.
+        """
+        if self._exiftool_instance is not None:
+            try:
+                self._exiftool_instance.terminate()
+            except Exception:
+                pass
+            self._exiftool_instance = None
     
     def _extract_exif_fields_with_retry(self, image_path, method, exiftool_path=None, max_retries=3):
         """

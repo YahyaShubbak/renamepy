@@ -148,31 +148,60 @@ class RenameWorkerThread(QThread):
     
     def _pre_extract_exif_cache(self, file_groups: List[List[str]]) -> Dict[str, Optional[Dict[str, Any]]]:
         """
-        Pre-extract EXIF data for all files once (performance optimization).
+        Pre-extract EXIF data for all files in one batch call (performance optimization).
         
-        This eliminates duplicate EXIF reads during sorting and renaming,
-        providing 40-50% speedup for large batches.
+        Uses ExifService.batch_get_raw_metadata() to issue a single ExifTool
+        IPC call per chunk of ~50 files instead of one call per file.  The raw
+        metadata is parsed into date/camera/lens/all_metadata entries so that
+        _process_file_group() never needs to call ExifTool again.
         
         Args:
             file_groups: List of file groups to process
             
         Returns:
-            Cache dictionary mapping file_path to EXIF data:
-            {
-                'date_str': Date string (YYYYMMDD format),
-                'camera': Camera model name,
-                'lens': Lens model name,
-                'raw_meta': Raw EXIF metadata dictionary
-            }
-            Returns None for files that fail EXIF extraction.
+            Cache dictionary mapping file_path to EXIF data dict with keys:
+            date_str, camera, lens, raw_meta, all_metadata.
+            Returns None value for files that fail EXIF extraction.
         """
-        exif_cache = {}
+        exif_cache: Dict[str, Optional[Dict[str, Any]]] = {}
         
         if not self.exif_method:
             return exif_cache
         
         self.progress_update.emit("Pre-extracting EXIF data for all files...")
-        
+
+        # Collect unique first-files from each group
+        first_files = []
+        for group in file_groups:
+            if group[0] not in exif_cache:
+                first_files.append(group[0])
+
+        # ------------------------------------------------------------------
+        # FAST PATH: Batch extraction via ExifService (single IPC per chunk)
+        # ------------------------------------------------------------------
+        if self.exif_service and first_files:
+            self.progress_update.emit(f"Batch-extracting EXIF for {len(first_files)} files...")
+            raw_batch = self.exif_service.batch_get_raw_metadata(first_files, chunk_size=50)
+
+            for fp, meta in raw_batch.items():
+                if meta:
+                    from .exif_service_new import ExifService
+                    exif_cache[fp] = {
+                        'date_str': ExifService.parse_date_from_raw(meta),
+                        'camera': ExifService.parse_camera_from_raw(meta),
+                        'lens': ExifService.parse_lens_from_raw(meta),
+                        'raw_meta': meta,
+                        'all_metadata': ExifService.parse_all_metadata_from_raw(meta),
+                    }
+                else:
+                    exif_cache[fp] = None
+
+            self.progress_update.emit("EXIF pre-extraction complete")
+            return exif_cache
+
+        # ------------------------------------------------------------------
+        # SLOW FALLBACK: Per-file extraction via exif_processor globals
+        # ------------------------------------------------------------------
         for idx, group in enumerate(file_groups):
             if idx % 50 == 0:
                 self.progress_update.emit(f"Extracting EXIF: {idx+1}/{len(file_groups)} groups")
@@ -180,25 +209,17 @@ class RenameWorkerThread(QThread):
             first_file = group[0]
             if first_file not in exif_cache:
                 try:
-                    # Extract full EXIF metadata once
-                    if self.exif_service:
-                        date_str, camera, lens = self.exif_service.get_selective_cached_exif_data(
-                            first_file, self.exif_method, self.exiftool_path,
-                            need_date=True, need_camera=True, need_lens=True
-                        )
-                        raw_meta = self.exif_service.extract_raw_exif(first_file)
-                    else:
-                        date_str, camera, lens = exif_processor.get_selective_cached_exif_data(
-                            first_file, self.exif_method, self.exiftool_path,
-                            need_date=True, need_camera=True, need_lens=True
-                        )
-                        raw_meta = exif_processor.get_exiftool_metadata_shared(first_file, self.exiftool_path)
+                    date_str, camera, lens = exif_processor.get_selective_cached_exif_data(
+                        first_file, self.exif_method, self.exiftool_path,
+                        need_date=True, need_camera=True, need_lens=True
+                    )
+                    raw_meta = exif_processor.get_exiftool_metadata_shared(first_file, self.exiftool_path)
                     
                     exif_cache[first_file] = {
                         'date_str': date_str,
                         'camera': camera,
                         'lens': lens,
-                        'raw_meta': raw_meta
+                        'raw_meta': raw_meta,
                     }
                 except Exception as e:
                     self._debug(f"EXIF pre-extraction failed for {first_file}: {e}")
@@ -383,7 +404,23 @@ class RenameWorkerThread(QThread):
                 file_date = date_taken
                 file_cam = camera_model
                 file_lens = lens_model
-                if self.exif_method and any([need_date, need_camera, need_lens]):
+
+                # ----------------------------------------------------------
+                # Per-file EXIF override: only for secondary files in a
+                # group that weren't the "first_file" used for the cache.
+                # If the path IS in the exif_cache we already have everything.
+                # ----------------------------------------------------------
+                if path in exif_cache and exif_cache[path]:
+                    # Use pre-extracted cache (no ExifTool call)
+                    per_file = exif_cache[path]
+                    if need_date and per_file.get('date_str'):
+                        file_date = per_file['date_str']
+                    if need_camera and per_file.get('camera'):
+                        file_cam = per_file['camera']
+                    if need_lens and per_file.get('lens'):
+                        file_lens = per_file['lens']
+                elif path != first_file and self.exif_method and any([need_date, need_camera, need_lens]):
+                    # Secondary file NOT in cache — fall back to per-file call
                     try:
                         if self.exif_service:
                             d, c, l = self.exif_service.get_selective_cached_exif_data(
@@ -406,19 +443,30 @@ class RenameWorkerThread(QThread):
                 if self.selected_metadata and self.exif_method:
                     wants_extra = any(individual_metadata.get(k) is True for k in ['aperture','iso','focal_length','shutter','shutter_speed','exposure_bias'])
                     if wants_extra:
-                        try:
-                            if self.exif_service:
-                                meta = self.exif_service.get_all_metadata(path, self.exif_method, self.exiftool_path) or {}
-                            else:
-                                meta = exif_processor.get_all_metadata(path, self.exif_method, self.exiftool_path) or {}
-                            if meta:
-                                if 'shutter' in individual_metadata and 'shutter_speed' in meta:
-                                    individual_metadata['shutter'] = meta.get('shutter_speed')
-                                for k in ['aperture','iso','focal_length','shutter_speed','exposure_bias']:
-                                    if individual_metadata.get(k) is True and k in meta:
-                                        individual_metadata[k] = meta[k]
-                        except Exception:
-                            pass
+                        # Try the pre-built cache first (no ExifTool call)
+                        cache_entry = exif_cache.get(first_file) or exif_cache.get(path)
+                        cached_meta = (cache_entry or {}).get('all_metadata') if cache_entry else None
+                        if not cached_meta and cache_entry and cache_entry.get('raw_meta'):
+                            # Parse from raw_meta on the fly (still no IPC)
+                            from .exif_service_new import ExifService
+                            cached_meta = ExifService.parse_all_metadata_from_raw(cache_entry['raw_meta'])
+                        if cached_meta:
+                            meta = cached_meta
+                        else:
+                            # Ultimate fallback: per-file ExifTool call
+                            try:
+                                if self.exif_service:
+                                    meta = self.exif_service.get_all_metadata(path, self.exif_method, self.exiftool_path) or {}
+                                else:
+                                    meta = exif_processor.get_all_metadata(path, self.exif_method, self.exiftool_path) or {}
+                            except Exception:
+                                meta = {}
+                        if meta:
+                            if 'shutter' in individual_metadata and 'shutter_speed' in meta:
+                                individual_metadata['shutter'] = meta.get('shutter_speed')
+                            for k in ['aperture','iso','focal_length','shutter_speed','exposure_bias']:
+                                if individual_metadata.get(k) is True and k in meta:
+                                    individual_metadata[k] = meta[k]
 
                 parts = build_ordered_components(
                     date_taken=file_date,
@@ -537,12 +585,25 @@ class RenameWorkerThread(QThread):
             file_groups.append([file])
         
         # Step 3: Get date for each group and create (date, group) pairs
+        # ------------------------------------------------------------------
+        # FAST PATH: batch-extract dates via ExifService
+        # ------------------------------------------------------------------
+        first_files = [group[0] for group in file_groups]
+
+        date_by_file: Dict[str, Optional[str]] = {}
+        if self.exif_service and self.exif_method and first_files:
+            raw_batch = self.exif_service.batch_get_raw_metadata(first_files, chunk_size=50)
+            from .exif_service_new import ExifService as _ES
+            for fp, meta in raw_batch.items():
+                date_by_file[fp] = _ES.parse_date_from_raw(meta) if meta else None
+
         for group in file_groups:
-            first_file = group[0]  # Use first file to determine group date
-            file_date = None
+            first_file = group[0]
+            file_date = date_by_file.get(first_file)
             
             try:
-                if self.exif_method:
+                # Per-file fallback when batch didn't run or returned nothing
+                if file_date is None and self.exif_method and first_file not in date_by_file:
                     if self.exif_service:
                         d, _, _ = self.exif_service.get_selective_cached_exif_data(
                             first_file, self.exif_method, self.exiftool_path,
@@ -634,11 +695,11 @@ class RenameWorkerThread(QThread):
         if self.use_date and self.continuous_counter:
             self._create_continuous_counter_map()
 
-        # Clear cache for fresh processing
-        if self.exif_service:
-            self.exif_service.clear_cache()
-        else:
-            exif_processor.clear_global_exif_cache()
+        # NOTE: We intentionally do NOT clear the ExifService cache here.
+        # _pre_extract_exif_cache() will batch-fetch everything fresh, and
+        # clearing would destroy data already populated by
+        # _create_continuous_counter_map().  The cache is instance-scoped
+        # and will be garbage-collected when the ExifService is released.
 
         # Report what EXIF fields are needed
         need_date = self.use_date
