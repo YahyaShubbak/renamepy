@@ -4,6 +4,7 @@ Performance Benchmark Module for Adaptive Time Estimation.
 This module provides automatic background benchmarking to estimate rename operation
 times based on the user's system performance and pattern complexity.
 """
+from __future__ import annotations
 
 import os
 import time

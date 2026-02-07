@@ -3,6 +3,7 @@
 ExifService - Modern EXIF data extraction service with instance-based caching.
 Replaces global variables with instance variables for better thread safety and testability.
 """
+from __future__ import annotations
 
 import os
 import time

@@ -2,6 +2,7 @@
 """
 Constants and utility functions for the RenameFiles application.
 """
+from __future__ import annotations
 
 import os
 import re

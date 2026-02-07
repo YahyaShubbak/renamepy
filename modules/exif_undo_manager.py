@@ -9,6 +9,7 @@ UserComment field to store the original filename in a simple format.
 Format: "OriginalName: <filename> | RenameDate: <timestamp>"
 Example: "OriginalName: _DSC8166.ARW | RenameDate: 2026:01:04 22:00:00"
 """
+from __future__ import annotations
 
 import os
 import json

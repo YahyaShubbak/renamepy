@@ -3,6 +3,7 @@
 Theme management for the RenameFiles application.
 Handles Dark/Light/System theme switching via parametrised CSS templates.
 """
+from __future__ import annotations
 
 from PyQt6.QtWidgets import QApplication
 

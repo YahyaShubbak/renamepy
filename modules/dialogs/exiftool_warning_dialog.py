@@ -5,6 +5,7 @@ ExifTool Warning Dialog — shown when ExifTool is not installed or not found.
 Provides platform-aware installation instructions and a direct download
 link.  The user can suppress this dialog for future sessions.
 """
+from __future__ import annotations
 
 import os
 import sys
