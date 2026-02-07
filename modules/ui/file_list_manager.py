@@ -245,7 +245,15 @@ class FileListManager:
             max_samples=sample_count
         )
         
-        # Connect signals
+        # Connect signals (use unique connection to prevent duplicates)
+        try:
+            self.parent.benchmark_thread.benchmark_complete.disconnect(self._on_benchmark_complete)
+        except (TypeError, RuntimeError):
+            pass  # No previous connection — safe to ignore
+        try:
+            self.parent.benchmark_thread.progress_update.disconnect(self._on_benchmark_progress)
+        except (TypeError, RuntimeError):
+            pass
         self.parent.benchmark_thread.benchmark_complete.connect(self._on_benchmark_complete)
         self.parent.benchmark_thread.progress_update.connect(self._on_benchmark_progress)
         

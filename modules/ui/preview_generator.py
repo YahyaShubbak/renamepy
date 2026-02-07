@@ -290,10 +290,11 @@ class PreviewGenerator:
             return formatter(metadata_value)
         
         # General cleanup for other metadata
-        return metadata_value.replace(' ', '-').replace('/', '-').replace(':', '-')
+        return str(metadata_value).replace(' ', '-').replace('/', '-').replace(':', '-')
     
     def _format_aperture(self, value):
         """Format aperture value"""
+        value = str(value)
         if value.startswith('f/'):
             return value.replace('f/', 'f')
         elif value.startswith('f'):
@@ -303,6 +304,7 @@ class PreviewGenerator:
     
     def _format_shutter(self, value):
         """Format shutter speed value"""
+        value = str(value)
         result = value.replace('/', '_').replace(' ', '')
         # Clean up double 's' if present
         if result.endswith('ss') and not result.endswith('sss'):
@@ -311,6 +313,7 @@ class PreviewGenerator:
     
     def _format_focal_length(self, value):
         """Format focal length value"""
+        value = str(value)
         match = re.search(r'(\d+)mm', value)
         if match:
             return f"{match.group(1)}mm"
@@ -318,6 +321,7 @@ class PreviewGenerator:
     
     def _format_resolution(self, value):
         """Format resolution value"""
+        value = str(value)
         if 'MP' in value:
             mp_part = value.split('(')[1].split(')')[0] if '(' in value else value
             return mp_part.replace(' ', '').replace('.', '-')

@@ -175,7 +175,13 @@ class FileRenamerApp(QMainWindow):
             self.status.showMessage(f"Verbose logging {'on' if enabled else 'off'}", 2500)
 
     def _update_buttons(self):
-        """Central place to update enabled state of primary buttons."""
+        """Central place to update enabled state of primary buttons.
+
+        Heavy EXIF look-ups are deferred to a background thread so the
+        GUI never blocks.  While the check is running, the undo button
+        stays in its previous state; once the result arrives we simply
+        call ``_update_buttons`` again (the cached flag is then set).
+        """
         if not hasattr(self, 'rename_button'):
             return  # UI not built yet
         has_files = bool(self.files)
@@ -186,16 +192,11 @@ class FileRenamerApp(QMainWindow):
         # Also check if any loaded file has original filename in EXIF (cached check)
         if not can_undo and has_files and self.exiftool_path:
             # Use cached result if available
-            if not hasattr(self, '_exif_undo_checked'):
-                self._exif_undo_available = False
-                # Check first few files for EXIF undo data (performance optimization)
-                for file_path in self.files[:3]:  # Check only first 3 files
-                    if get_original_filename_from_exif(file_path, self.exiftool_path):
-                        self._exif_undo_available = True
-                        break
-                self._exif_undo_checked = True
-            
-            can_undo = self._exif_undo_available
+            if hasattr(self, '_exif_undo_checked'):
+                can_undo = self._exif_undo_available
+            else:
+                # Defer the expensive ExifTool check to a background thread
+                self._start_async_exif_undo_check()
         
         if self._busy:
             self.rename_button.setEnabled(False)
@@ -211,6 +212,47 @@ class FileRenamerApp(QMainWindow):
             self.select_files_menu_button.setEnabled(True)
             self.select_folder_menu_button.setEnabled(True)
             self.clear_files_menu_button.setEnabled(True)
+
+    def _start_async_exif_undo_check(self):
+        """Run the EXIF undo-availability check off the GUI thread.
+
+        Spawns a lightweight QThread that probes up to 3 files for the
+        original-filename EXIF tag.  On completion, the cached flag is
+        set and ``_update_buttons`` is re-invoked (from the main thread
+        via a signal/slot connection).
+        """
+        # Guard against duplicate concurrent checks
+        if getattr(self, '_exif_undo_check_running', False):
+            return
+        self._exif_undo_check_running = True
+
+        from PyQt6.QtCore import QThread, pyqtSignal
+
+        files_to_check = list(self.files[:3])
+        exiftool_path = self.exiftool_path
+
+        class _ExifUndoChecker(QThread):
+            result_ready = pyqtSignal(bool)
+
+            def run(self_inner):  # noqa: N805 — nested class
+                found = False
+                for fp in files_to_check:
+                    if get_original_filename_from_exif(fp, exiftool_path):
+                        found = True
+                        break
+                self_inner.result_ready.emit(found)
+
+        def _on_result(available: bool):
+            self._exif_undo_available = available
+            self._exif_undo_checked = True
+            self._exif_undo_check_running = False
+            self._update_buttons()  # Re-evaluate with the fresh cache
+
+        checker = _ExifUndoChecker(self)
+        checker.result_ready.connect(_on_result)
+        # prevent garbage collection by keeping a reference
+        self._exif_undo_checker_ref = checker
+        checker.start()
 
     def _ui_set_busy(self, busy: bool):
         """Toggle busy state and update button states/labels."""
@@ -1182,6 +1224,14 @@ class FileRenamerApp(QMainWindow):
             self.exif_status_label.setStyleSheet("color: orange; font-weight: bold;")
     
     def rename_files_action(self):
+        # Guard: prevent starting a second rename while one is running
+        if getattr(self, '_busy', False):
+            log.warning("Rename already in progress — ignoring duplicate request")
+            return
+        if hasattr(self, 'worker') and self.worker is not None and self.worker.isRunning():
+            log.warning("Worker thread still running — ignoring duplicate request")
+            return
+
         # Defensive fallback: ensure helper methods exist (in case of partial import issues)
         if not hasattr(self, '_ui_set_busy'):
             def _fallback_ui_set_busy(busy: bool):
@@ -1241,6 +1291,7 @@ class FileRenamerApp(QMainWindow):
         log.debug(f"Benchmark ready: {self.benchmark_manager.is_ready()}, results: {len(self.benchmark_manager.benchmark_results)}")
         
         # Get time estimate from benchmark (or use fallback)
+        confidence = 0.0  # Default for fallback path
         if self.benchmark_manager.is_ready():
             log.debug("Using benchmark data for estimate")
             estimated_time, confidence = self.benchmark_manager.estimate_time(
@@ -1383,9 +1434,14 @@ class FileRenamerApp(QMainWindow):
         self.worker.start()
     
     def update_status(self, message):
-        """Update status bar with progress message"""
+        """Update status bar with progress message.
+
+        The status update is delivered via a signal/slot connection from
+        the worker thread, so Qt already schedules it on the main thread
+        event loop — no need for ``processEvents()``, which would cause
+        dangerous reentrancy.
+        """
         self.status.showMessage(message)
-        QApplication.processEvents()  # Update UI
 
     # ----------------------- Logging Controls -----------------------
     def _on_toggle_debug_logging(self, enabled: bool):
