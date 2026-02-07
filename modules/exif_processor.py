@@ -92,51 +92,6 @@ def get_exiftool_metadata_shared(image_path: str, exiftool_path: str | None = No
         return {}
 
 
-def get_cached_exif_data(file_path, method=None, exiftool_path=None):
-    """Legacy delegate — routes to ExifService.get_cached_exif_data."""
-    if _default_exif_service:
-        return _default_exif_service.get_cached_exif_data(file_path, method, exiftool_path)
-    return None, None, None
-
-
-def get_selective_cached_exif_data(
-    file_path, method=None, exiftool_path=None,
-    need_date=True, need_camera=False, need_lens=False,
-):
-    """Legacy delegate — routes to ExifService.get_selective_cached_exif_data."""
-    if _default_exif_service:
-        return _default_exif_service.get_selective_cached_exif_data(
-            file_path, method, exiftool_path,
-            need_date=need_date, need_camera=need_camera, need_lens=need_lens,
-        )
-    return None, None, None
-
-
-def extract_exif_fields_with_retry(image_path, method=None, exiftool_path=None, max_retries=3):
-    """Legacy delegate — routes to ExifService._extract_exif_fields_with_retry."""
-    if _default_exif_service:
-        return _default_exif_service._extract_exif_fields_with_retry(
-            image_path,
-            method or _default_exif_service.current_method,
-            exiftool_path,
-            max_retries,
-        )
-    return None, None, None
-
-
-def get_all_metadata(file_path, method=None, exiftool_path=None):
-    """Legacy delegate — routes to ExifService.get_all_metadata."""
-    if _default_exif_service:
-        return _default_exif_service.get_all_metadata(file_path, method, exiftool_path)
-    return {}
-
-
-def clear_global_exif_cache() -> None:
-    """Clear the ExifService cache."""
-    if _default_exif_service:
-        _default_exif_service.clear_cache()
-
-
 def cleanup_global_exiftool() -> None:
     """Clean up the ExifService's ExifTool process."""
     if _default_exif_service:

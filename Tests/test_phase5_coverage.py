@@ -249,8 +249,9 @@ class TestExtractImageNumber:
         from modules.handlers.exif_handler import extract_image_number
         p = tmp_path / "DSC01234.ARW"
         p.touch()
-        with patch("modules.handlers.exif_handler.get_exiftool_metadata_shared", return_value={}):
-            num = extract_image_number(str(p), "exiftool", "/fake/exiftool")
+        mock_service = MagicMock()
+        mock_service.extract_raw_exif = MagicMock(return_value={})
+        num = extract_image_number(str(p), "exiftool", "/fake/exiftool", exif_service=mock_service)
         # No EXIF image-number fields → None
         assert num is None
 
@@ -258,18 +259,18 @@ class TestExtractImageNumber:
         from modules.handlers.exif_handler import extract_image_number
         p = tmp_path / "DSC01234.ARW"
         p.touch()
-        with patch("modules.handlers.exif_handler.get_exiftool_metadata_shared",
-                    return_value={"EXIF:ShutterCount": "5678"}):
-            num = extract_image_number(str(p), "exiftool", "/fake/exiftool")
+        mock_service = MagicMock()
+        mock_service.extract_raw_exif = MagicMock(return_value={"EXIF:ShutterCount": "5678"})
+        num = extract_image_number(str(p), "exiftool", "/fake/exiftool", exif_service=mock_service)
         assert num == "5678"
 
     def test_returns_number_from_image_number(self, tmp_path):
         from modules.handlers.exif_handler import extract_image_number
         p = tmp_path / "IMG_5678.JPG"
         p.touch()
-        with patch("modules.handlers.exif_handler.get_exiftool_metadata_shared",
-                    return_value={"EXIF:ImageNumber": 9999}):
-            num = extract_image_number(str(p), "exiftool", "/fake/exiftool")
+        mock_service = MagicMock()
+        mock_service.extract_raw_exif = MagicMock(return_value={"EXIF:ImageNumber": 9999})
+        num = extract_image_number(str(p), "exiftool", "/fake/exiftool", exif_service=mock_service)
         assert num == "9999"
 
     def test_returns_none_for_non_exiftool_method(self, tmp_path):

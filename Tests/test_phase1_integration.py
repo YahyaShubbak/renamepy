@@ -301,9 +301,9 @@ class TestBasicExifExtraction:
 
     @skip_no_images
     def test_extract_exif_fields(self):
-        """extract_exif_fields_with_retry should return a 3-tuple."""
+        """ExifService.get_selective_cached_exif_data should return a 3-tuple."""
         from modules.exif_processor import (
-            extract_exif_fields_with_retry, find_exiftool_path,
+            find_exiftool_path,
             cleanup_global_exiftool, set_default_exif_service
         )
         from modules.exif_service_new import ExifService
@@ -315,7 +315,7 @@ class TestBasicExifExtraction:
         service = ExifService(exiftool_path=exiftool_path)
         set_default_exif_service(service)
 
-        result = extract_exif_fields_with_retry(
+        result = service.get_selective_cached_exif_data(
             SAMPLE_FILES[0], "exiftool", exiftool_path
         )
         assert isinstance(result, tuple)

@@ -13,5 +13,5 @@ except ImportError as e:
     raise
 
 if __name__ == '__main__':
-    print('🖼️ Starte GUI...')
+    print('🖼️ Starting GUI...')
     app_main()

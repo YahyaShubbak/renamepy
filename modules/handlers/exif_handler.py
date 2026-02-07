@@ -3,21 +3,32 @@
 EXIF Handler - Image number/shutter count extraction using shared ExifTool instance.
 """
 
-from ..exif_processor import get_exiftool_metadata_shared
 from ..logger_util import get_logger
 
 log = get_logger()
 
 
-def extract_image_number(image_path, exif_method, exiftool_path):
+def extract_image_number(image_path, exif_method, exiftool_path, exif_service=None):
     """Extract image number/shutter count from image file.
     
-    Uses the shared ExifTool instance for performance.
+    Uses the ExifService instance when available, otherwise falls back
+    to a one-shot ExifTool subprocess.
+    
+    Args:
+        image_path: Path to the image file
+        exif_method: EXIF extraction method (must be 'exiftool')
+        exiftool_path: Path to ExifTool executable
+        exif_service: Optional ExifService instance for shared ExifTool process
     """
     try:
         # Get raw EXIF data using shared instance for performance
         if exif_method == "exiftool" and exiftool_path:
-            exif_data = get_exiftool_metadata_shared(image_path, exiftool_path)
+            if exif_service:
+                exif_data = exif_service.extract_raw_exif(image_path)
+            else:
+                # Fallback: import delegate for backward compatibility
+                from ..exif_processor import get_exiftool_metadata_shared
+                exif_data = get_exiftool_metadata_shared(image_path, exiftool_path)
         else:
             return None
             

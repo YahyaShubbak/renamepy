@@ -9,10 +9,7 @@ import os
 import time
 import threading
 import subprocess
-import glob
-import shutil
 from collections import OrderedDict
-from functools import lru_cache
 
 from .logger_util import get_logger
 log = get_logger()
@@ -50,31 +47,16 @@ class ExifService:
         self.current_method = "exiftool" if EXIFTOOL_AVAILABLE else None
     
     @staticmethod
-    @lru_cache(maxsize=1)
-    def _find_exiftool_path_cached():
-        """Find ExifTool executable in project directory (cached for performance)"""
-        try:
-            # Check project directory
-            project_root = os.path.dirname(os.path.dirname(__file__))
-            exiftool_dirs = glob.glob(os.path.join(project_root, "exiftool-*_64"))
-            
-            if exiftool_dirs:
-                exiftool_exe = os.path.join(exiftool_dirs[0], "exiftool(-k).exe")
-                if os.path.exists(exiftool_exe):
-                    return exiftool_exe
-            
-            # Check if exiftool is in PATH
-            if shutil.which("exiftool"):
-                return "exiftool"
-        except Exception as e:
-            # Can't use log here since this is a static method
-            pass
+    def _find_exiftool_path():
+        """Find ExifTool executable.
         
-        return None
-    
-    def _find_exiftool_path(self):
-        """Find ExifTool executable (uses cached static method)"""
-        return self._find_exiftool_path_cached()
+        Delegates to exif_processor.find_exiftool_path() which performs
+        thorough search with verification (project dir, legacy paths,
+        system PATH, common Windows locations).
+        """
+        # Import lazily to avoid circular import at module load time
+        from .exif_processor import find_exiftool_path
+        return find_exiftool_path()
     
     def clear_cache(self) -> None:
         """Clear the EXIF cache for fresh processing."""

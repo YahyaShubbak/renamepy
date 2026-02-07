@@ -236,9 +236,10 @@ class PerformanceBenchmark:
             for test_file in test_files:
                 # REAL EXIF extraction (not cached!) - this is what takes time
                 if exif_field_count > 0 and self.exiftool_path:
-                    from .exif_processor import get_exiftool_metadata_shared
+                    from .exif_service_new import ExifService
+                    bench_svc = ExifService(self.exiftool_path)
                     # This is the expensive operation - actual ExifTool call
-                    exif_data = get_exiftool_metadata_shared(test_file, self.exiftool_path)
+                    exif_data = bench_svc.extract_raw_exif(test_file)
                     if exif_data and isinstance(exif_data, dict):
                         # Access different EXIF fields (already extracted)
                         _ = exif_data.get('EXIF:DateTimeOriginal')

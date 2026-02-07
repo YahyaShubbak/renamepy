@@ -109,11 +109,10 @@ def _make_mock_exif_service(selective_side_effect=None):
 
 @contextmanager
 def _mock_all_exif(selective_side_effect=None):
-    """Patch exif_processor delegates and provide a mock ExifService.
+    """Provide a mock ExifService and patch batch_sync_exif_dates.
 
-    The rename engine now calls self.exif_service directly for EXIF
-    extraction.  We still patch the exif_processor delegates (used by
-    other call sites) and patch batch_sync_exif_dates in rename_engine.
+    The rename engine calls self.exif_service directly for EXIF
+    extraction, so no exif_processor delegates need patching.
 
     The mock ExifService is stored as _mock_all_exif.service so tests
     can pass it to _make_worker via exif_service=_mock_all_exif.service.
@@ -122,10 +121,6 @@ def _mock_all_exif(selective_side_effect=None):
     service = _make_mock_exif_service(side_effect)
     _mock_all_exif.service = service
     with (
-        patch("modules.exif_processor.get_selective_cached_exif_data", side_effect=side_effect),
-        patch("modules.exif_processor.get_exiftool_metadata_shared", return_value={}),
-        patch("modules.exif_processor.get_all_metadata", return_value={}),
-        patch("modules.exif_processor.clear_global_exif_cache"),
         patch("modules.rename_engine.batch_sync_exif_dates", return_value=([], [], {})),
     ):
         yield service
