@@ -22,7 +22,8 @@ logger = get_logger(__name__)
 
 # Safety factor calibration
 DEFAULT_SAFETY_FACTOR = 2.0
-SAFETY_FACTOR_FILE = os.path.join(os.path.dirname(__file__), '..', '.benchmark_calibration.json')
+_project_root = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
+SAFETY_FACTOR_FILE = os.path.join(_project_root, '.benchmark_calibration.json')
 
 # EXIF field patterns that may appear in filename patterns
 EXIF_FIELD_PATTERNS = [
@@ -209,12 +210,23 @@ class PerformanceBenchmark:
             BenchmarkResult if successful, None otherwise
         """
         try:
-            # Copy samples to temp directory
+            # PERF 3: Use hard links instead of full copies when possible.
+            # Hard links are instant (no I/O) and ExifTool can still read
+            # EXIF from them.  Only fall back to copy2 when EXIF writes are
+            # needed (writes modify the file data) or when linking fails
+            # (e.g., cross-volume).
             test_files = []
             for i, src in enumerate(samples):
                 ext = os.path.splitext(src)[1]
                 dst = os.path.join(temp_dir, f"test_{i}{ext}")
-                shutil.copy2(src, dst)
+                if with_exif_save:
+                    # Must copy — EXIF write would alter the original via link
+                    shutil.copy2(src, dst)
+                else:
+                    try:
+                        os.link(src, dst)
+                    except (OSError, NotImplementedError):
+                        shutil.copy2(src, dst)
                 test_files.append(dst)
             
             # Simulate rename with pattern complexity - using REAL ExifTool calls
@@ -348,12 +360,20 @@ class PerformanceBenchmark:
     def _load_safety_factor(self) -> float:
         """Load calibrated safety factor from file, or return default."""
         try:
-            if os.path.exists(SAFETY_FACTOR_FILE):
-                with open(SAFETY_FACTOR_FILE, 'r') as f:
+            real_path = os.path.realpath(SAFETY_FACTOR_FILE)
+            if not real_path.startswith(_project_root):
+                logger.warning("Safety factor file path outside project — ignoring")
+                return DEFAULT_SAFETY_FACTOR
+            if os.path.exists(real_path):
+                with open(real_path, 'r') as f:
                     data = json.load(f)
                     factor = data.get('safety_factor', DEFAULT_SAFETY_FACTOR)
+                    # Clamp to sane range even on load
+                    factor = max(1.0, min(5.0, float(factor)))
                     logger.info(f"Loaded calibrated safety factor: {factor:.2f}")
                     return factor
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            logger.warning(f"Corrupt safety factor file, using default: {e}")
         except Exception as e:
             logger.debug(f"Could not load safety factor: {e}")
         return DEFAULT_SAFETY_FACTOR
@@ -361,12 +381,19 @@ class PerformanceBenchmark:
     def _save_safety_factor(self):
         """Save calibrated safety factor to file."""
         try:
+            real_path = os.path.realpath(SAFETY_FACTOR_FILE)
+            if not real_path.startswith(_project_root):
+                logger.warning("Safety factor file path outside project — not saving")
+                return
             data = {
-                'safety_factor': self.safety_factor,
+                'safety_factor': round(self.safety_factor, 4),
                 'last_updated': time.time()
             }
-            with open(SAFETY_FACTOR_FILE, 'w') as f:
+            # Write atomically via temp file to avoid corruption on crash
+            tmp_path = real_path + '.tmp'
+            with open(tmp_path, 'w') as f:
                 json.dump(data, f, indent=2)
+            os.replace(tmp_path, real_path)
             logger.info(f"Saved calibrated safety factor: {self.safety_factor:.2f}")
         except Exception as e:
             logger.debug(f"Could not save safety factor: {e}")

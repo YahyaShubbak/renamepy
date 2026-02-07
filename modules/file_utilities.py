@@ -203,9 +203,35 @@ def get_safe_target_path(original_path, new_name):
     """
     Generate a safe target path, avoiding conflicts with existing files.
     Ignores the source file itself to allow same-name "renames".
+    
+    Args:
+        original_path: The current file path
+        new_name: The desired new filename (basename only)
+        
+    Returns:
+        A safe target path within the same directory
+        
+    Raises:
+        ValueError: If the new name would escape the source directory
     """
     directory = os.path.dirname(original_path)
+    
+    # SEC: Strip path separators and traversal components from the filename
+    # Only the basename should be used — reject embedded path components
+    basename_only = os.path.basename(new_name)
+    if basename_only != new_name or '..' in new_name:
+        log.warning(f"Path traversal attempt blocked in filename: {new_name!r}")
+        new_name = basename_only
+    
     new_path = os.path.join(directory, new_name)
+    
+    # SEC: Verify the resolved path stays within the source directory
+    resolved_dir = os.path.realpath(directory)
+    resolved_target = os.path.realpath(new_path)
+    if not resolved_target.startswith(resolved_dir + os.sep) and resolved_target != resolved_dir:
+        raise ValueError(
+            f"Target path escapes source directory: {new_path!r}"
+        )
     
     # If target is the same as source (case-insensitive on Windows), it's safe
     if os.path.normcase(original_path) == os.path.normcase(new_path):

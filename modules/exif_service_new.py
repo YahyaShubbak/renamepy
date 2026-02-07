@@ -415,7 +415,7 @@ class ExifService:
         """
         exiftool_path = exiftool_path or self._exiftool_path
 
-        if self._exiftool_instance is not None and self._exiftool_path == exiftool_path:
+        if self._exiftool_instance is not None and os.path.normpath(self._exiftool_path or '') == os.path.normpath(exiftool_path or ''):
             return  # Already running with correct path
 
         # Close stale instance

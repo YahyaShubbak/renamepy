@@ -20,7 +20,7 @@ from .file_utilities import is_media_file, sanitize_final_filename, get_safe_tar
 # Import timestamp operations from exif_processor (the only remaining use)
 from .exif_processor import batch_sync_exif_dates
 from .filename_components import build_ordered_components
-from .exif_undo_manager import write_original_filename_to_exif
+from .exif_undo_manager import write_original_filename_to_exif, batch_write_original_filenames
 
 class RenameWorkerThread(QThread):
     """Worker thread for file renaming & optional EXIF timestamp sync."""
@@ -68,7 +68,7 @@ class RenameWorkerThread(QThread):
             self._log = log_callable or (lambda *a, **k: None)
             self.exif_service = exif_service  # NEW: Store service instance
             self.save_original_to_exif = save_original_to_exif  # NEW: Persistent undo feature
-            self.timestamp_options = kwargs.get('timestamp_options') or kwargs.get('timestamp_options'.lower()) or kwargs.get('TIMESTAMP_OPTIONS') or kwargs.get('timestamp_options'.upper()) or kwargs.get('timestamp_options', None)
+            self.timestamp_options = kwargs.get('timestamp_options') or kwargs.get('TIMESTAMP_OPTIONS')
             self.leave_names = kwargs.get('leave_names', False)
             # (Dry-run feature removed)
 
@@ -179,12 +179,23 @@ class RenameWorkerThread(QThread):
 
         # ------------------------------------------------------------------
         # FAST PATH: Batch extraction via ExifService (single IPC per chunk)
+        # Reuse raw metadata from _create_continuous_counter_map if available
         # ------------------------------------------------------------------
         if self.exif_service and first_files:
-            self.progress_update.emit(f"Batch-extracting EXIF for {len(first_files)} files...")
-            raw_batch = self.exif_service.batch_get_raw_metadata(first_files, chunk_size=50)
-
-            for fp, meta in raw_batch.items():
+            # PERF 1: Reuse raw batch from continuous counter map to avoid
+            # a second full ExifTool round-trip for the same files.
+            reused_raw: dict[str, dict] = getattr(self, '_continuous_raw_cache', {})
+            remaining_files = [fp for fp in first_files if fp not in reused_raw]
+            
+            if remaining_files:
+                self.progress_update.emit(f"Batch-extracting EXIF for {len(remaining_files)} files...")
+                fresh_raw = self.exif_service.batch_get_raw_metadata(remaining_files, chunk_size=50)
+                reused_raw = {**reused_raw, **fresh_raw}
+            else:
+                self.progress_update.emit(f"Reusing EXIF cache for {len(first_files)} files (no extra extraction needed)")
+            
+            for fp in first_files:
+                meta = reused_raw.get(fp, {})
                 if meta:
                     from .exif_service_new import ExifService
                     exif_cache[fp] = {
@@ -420,6 +431,7 @@ class RenameWorkerThread(QThread):
                 elif path != first_file and self.exif_method and any([need_date, need_camera, need_lens]):
                     # Secondary file NOT in cache — fall back to per-file call
                     try:
+                        d, c, l = None, None, None
                         if self.exif_service:
                             d, c, l = self.exif_service.get_selective_cached_exif_data(
                                 path, self.exif_method, self.exiftool_path,
@@ -487,16 +499,6 @@ class RenameWorkerThread(QThread):
 
                 if os.path.normpath(path) != os.path.normpath(target_path):
                     try:
-                        # Write original filename to EXIF before renaming (if enabled)
-                        if self.save_original_to_exif and self.exiftool_path:
-                            original_filename = os.path.basename(path)
-                            success, message = write_original_filename_to_exif(
-                                path, original_filename, self.exiftool_path
-                            )
-                            if not success:
-                                self._debug(f"Warning: Could not write original filename to EXIF: {message}")
-                                # Continue with rename anyway - this is not a critical error
-                        
                         shutil.move(path, target_path)
                         renamed_files.append(target_path)
                         rename_mapping[target_path] = path
@@ -582,6 +584,7 @@ class RenameWorkerThread(QThread):
         # Step 3: Get date for each group and create (date, group) pairs
         # ------------------------------------------------------------------
         # FAST PATH: batch-extract dates via ExifService
+        # Store raw metadata for reuse by _pre_extract_exif_cache (PERF 1)
         # ------------------------------------------------------------------
         first_files = [group[0] for group in file_groups]
 
@@ -589,6 +592,8 @@ class RenameWorkerThread(QThread):
         if self.exif_service and self.exif_method and first_files:
             raw_batch = self.exif_service.batch_get_raw_metadata(first_files, chunk_size=50)
             from .exif_service_new import ExifService as _ES
+            # Save raw metadata for reuse by _pre_extract_exif_cache
+            self._continuous_raw_cache = raw_batch
             for fp, meta in raw_batch.items():
                 date_by_file[fp] = _ES.parse_date_from_raw(meta) if meta else None
 
@@ -599,6 +604,7 @@ class RenameWorkerThread(QThread):
             try:
                 # Per-file fallback when batch didn't run or returned nothing
                 if file_date is None and self.exif_method and first_file not in date_by_file:
+                    d = None
                     if self.exif_service:
                         d, _, _ = self.exif_service.get_selective_cached_exif_data(
                             first_file, self.exif_method, self.exiftool_path,
@@ -736,6 +742,31 @@ class RenameWorkerThread(QThread):
             renamed_files.extend(group_renamed)
             errors.extend(group_errors)
             rename_mapping.update(group_mapping)
+
+        # Step 6: Batch-write original filenames to EXIF (PERF 2 optimization)
+        # Instead of one ExifTool subprocess per file during rename, do a
+        # single batch call after all renames are complete.
+        if self.save_original_to_exif and self.exiftool_path and rename_mapping:
+            exif_write_pairs = []
+            for new_path, old_path in rename_mapping.items():
+                if new_path != old_path:  # Skip files that weren't actually renamed
+                    original_filename = os.path.basename(old_path)
+                    exif_write_pairs.append((new_path, original_filename))
+            
+            if exif_write_pairs:
+                self.progress_update.emit(f"Writing original filenames to EXIF for {len(exif_write_pairs)} files...")
+                successes_exif, errors_exif = batch_write_original_filenames(
+                    exif_write_pairs,
+                    self.exiftool_path,
+                    progress_callback=lambda cur, total, msg: self.progress_update.emit(
+                        f"EXIF write: {cur}/{total}"
+                    ),
+                )
+                if errors_exif:
+                    for fp, msg in errors_exif:
+                        self._debug(f"Warning: Could not write original filename to EXIF for {fp}: {msg}")
+                if successes_exif:
+                    self.progress_update.emit(f"Wrote original filenames to {len(successes_exif)} files")
 
         return renamed_files, errors, timestamp_backup, rename_mapping
     
