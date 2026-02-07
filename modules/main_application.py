@@ -2185,11 +2185,17 @@ JPG, TIFF, RAW files (CR2, NEF, ARW, etc.)
             pass
 
     def closeEvent(self, event):
-        """Handle application close event"""
-        # OPTIMIZATION: Cleanup ExifTool instance on app close
-        # This is the only place we cleanup for maximum performance
+        """Handle application close event.
+        
+        Cleans up both the instance-based ExifService and the legacy
+        global ExifTool process to prevent subprocess leaks.
+        """
+        # Cleanup instance-based ExifService
         if hasattr(self, 'exif_service') and self.exif_service:
             self.exif_service.cleanup()
+        
+        # Cleanup legacy global ExifTool instance (prevents subprocess leak)
+        cleanup_global_exiftool()
         
         # Save window geometry and state
         self.settings_manager.set_window_geometry(self.saveGeometry())

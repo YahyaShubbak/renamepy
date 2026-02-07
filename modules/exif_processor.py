@@ -42,6 +42,7 @@ from .exif_service_new import ExifService
 # These are kept for functions that are still called from outside the ExifService
 _global_exiftool_instance = None
 _global_exiftool_path = None
+_global_lock = threading.Lock()  # Thread safety for global ExifTool instance
 
 
 # Legacy wrapper functions for backward compatibility
@@ -170,13 +171,15 @@ def get_exiftool_metadata_shared(image_path, exiftool_path=None):
     """
     PERFORMANCE OPTIMIZATION: Use a shared ExifTool instance to avoid 
     the overhead of starting/stopping ExifTool for each file.
+    
+    Thread-safe: uses _global_lock to serialize access to the shared instance.
     """
     global _global_exiftool_instance, _global_exiftool_path
     
     # CRITICAL FIX: Normalize path to prevent double backslashes
     normalized_path = os.path.normpath(image_path)
     
-    # Verify file exists
+    # Verify file exists (no lock needed — read-only OS call)
     if not os.path.exists(normalized_path):
         log.warning(f"get_exiftool_metadata_shared: File not found: {normalized_path}")
         return {}
@@ -185,48 +188,54 @@ def get_exiftool_metadata_shared(image_path, exiftool_path=None):
     if not exiftool_path:
         exiftool_path = find_exiftool_path()
     
-    try:
-        # Check if we need to create/recreate the instance
-        if (_global_exiftool_instance is None or 
-            _global_exiftool_path != exiftool_path):
-            
-            # Close existing instance if needed
-            if _global_exiftool_instance is not None:
-                try:
-                    _global_exiftool_instance.terminate()
-                except Exception:
-                    pass
-            
-            # Create new instance
-            if exiftool_path and os.path.exists(exiftool_path):
-                _global_exiftool_instance = exiftool.ExifToolHelper(executable=exiftool_path)
-                log.info(f"Created ExifTool instance with: {exiftool_path}")
-            else:
-                _global_exiftool_instance = exiftool.ExifToolHelper()
-                log.info("Created default ExifTool instance")
-            
-            _global_exiftool_path = exiftool_path
-            
-            # Start the instance
-            _global_exiftool_instance.__enter__()
-        
-        # Get metadata using the shared instance with normalized path
-        meta = _global_exiftool_instance.get_metadata([normalized_path])[0]
-        return meta
-        
-    except Exception as e:
-        # If the shared instance fails, fall back to a temporary instance
-        log.warning(f"Shared ExifTool instance failed, using temporary instance: {e}")
+    with _global_lock:
         try:
-            if exiftool_path and os.path.exists(exiftool_path):
-                with exiftool.ExifToolHelper(executable=exiftool_path) as et:
-                    return et.get_metadata([normalized_path])[0]
-            else:
-                with exiftool.ExifToolHelper() as et:
-                    return et.get_metadata([normalized_path])[0]
-        except Exception as e2:
-            log.error(f"Temporary ExifTool instance also failed: {e2}")
-            return {}
+            # Check if we need to create/recreate the instance
+            if (_global_exiftool_instance is None or 
+                _global_exiftool_path != exiftool_path):
+                
+                # Close existing instance if needed
+                if _global_exiftool_instance is not None:
+                    try:
+                        _global_exiftool_instance.terminate()
+                    except Exception:
+                        pass
+                
+                # Create new instance
+                if exiftool_path and os.path.exists(exiftool_path):
+                    _global_exiftool_instance = exiftool.ExifToolHelper(executable=exiftool_path)
+                    log.info(f"Created ExifTool instance with: {exiftool_path}")
+                else:
+                    _global_exiftool_instance = exiftool.ExifToolHelper()
+                    log.info("Created default ExifTool instance")
+                
+                _global_exiftool_path = exiftool_path
+                
+                # Start the instance
+                _global_exiftool_instance.__enter__()
+            
+            # Get metadata using the shared instance with normalized path
+            meta = _global_exiftool_instance.get_metadata([normalized_path])[0]
+            return meta
+            
+        except Exception as e:
+            # If the shared instance fails, fall back to a temporary instance
+            log.warning(f"Shared ExifTool instance failed, using temporary instance: {e}")
+            # Reset the broken instance so next call creates a fresh one
+            _global_exiftool_instance = None
+            _global_exiftool_path = None
+    
+    # Fallback outside the lock — temporary instance doesn't need synchronization
+    try:
+        if exiftool_path and os.path.exists(exiftool_path):
+            with exiftool.ExifToolHelper(executable=exiftool_path) as et:
+                return et.get_metadata([normalized_path])[0]
+        else:
+            with exiftool.ExifToolHelper() as et:
+                return et.get_metadata([normalized_path])[0]
+    except Exception as e2:
+        log.error(f"Temporary ExifTool instance also failed: {e2}")
+        return {}
 
 def clear_global_exif_cache() -> None:
     """Clear any global EXIF state.
@@ -235,27 +244,26 @@ def clear_global_exif_cache() -> None:
     function is stateless (no result cache), so there is nothing to evict here.
     New code should use :class:`ExifService` instead.
     """
-    # The legacy global path does not maintain a result cache, but we
-    # reset the global instance so a fresh connection is established on
-    # the next call.
     global _global_exiftool_instance
-    if _global_exiftool_instance is not None:
-        try:
-            _global_exiftool_instance.__exit__(None, None, None)
-        except Exception:
-            pass
-        _global_exiftool_instance = None
+    with _global_lock:
+        if _global_exiftool_instance is not None:
+            try:
+                _global_exiftool_instance.__exit__(None, None, None)
+            except Exception:
+                pass
+            _global_exiftool_instance = None
 
 def cleanup_global_exiftool() -> None:
     """Clean up the global ExifTool instance when done with batch processing."""
     global _global_exiftool_instance
     
-    if _global_exiftool_instance is not None:
-        try:
-            _global_exiftool_instance.__exit__(None, None, None)
-        except Exception:
-            pass
-        _global_exiftool_instance = None
+    with _global_lock:
+        if _global_exiftool_instance is not None:
+            try:
+                _global_exiftool_instance.__exit__(None, None, None)
+            except Exception:
+                pass
+            _global_exiftool_instance = None
 
 def extract_exif_fields_with_retry(image_path, method, exiftool_path=None, max_retries=3):
     """
@@ -817,7 +825,11 @@ def _set_file_timestamp_method2(file_path, timestamp):
         return False
 
 def _set_file_timestamp_method3(file_path, dt):
-    """Method 3: PowerShell for extra robustness"""
+    """Method 3: PowerShell for extra robustness.
+    
+    Uses parameterized script block to avoid command injection
+    via file paths containing special characters.
+    """
     try:
         if os.name != 'nt':  # Not Windows
             return False
@@ -827,20 +839,28 @@ def _set_file_timestamp_method3(file_path, dt):
         # Format date for PowerShell (ISO 8601)
         ps_date = dt.strftime('%Y-%m-%dT%H:%M:%S')
         
-        # PowerShell script for robust timestamp setting
-        ps_script = f'''
-        $file = Get-Item -LiteralPath "{file_path}"
-        $date = [DateTime]::Parse("{ps_date}")
-        $file.CreationTime = $date
-        $file.LastWriteTime = $date
-        $file.LastAccessTime = $date
-        Write-Host "PowerShell timestamp sync completed"
-        '''
+        # SECURITY FIX: Use parameterized ScriptBlock via -File or
+        # pass the path as an encoded argument to avoid injection.
+        # The path and date are passed as separate arguments to
+        # a script block, never interpolated into the script string.
+        ps_script = (
+            'param($FilePath, $DateStr); '
+            '$file = Get-Item -LiteralPath $FilePath; '
+            '$date = [DateTime]::Parse($DateStr); '
+            '$file.CreationTime = $date; '
+            '$file.LastWriteTime = $date; '
+            '$file.LastAccessTime = $date; '
+            'Write-Host "PowerShell timestamp sync completed"'
+        )
         
-        # Execute PowerShell command
+        # Execute PowerShell command with path as a safe argument
         result = subprocess.run([
-            'powershell', '-Command', ps_script
-        ], capture_output=True, text=True, timeout=15)
+            'powershell', '-NoProfile', '-Command',
+            '&{' + ps_script + '}',
+            '-FilePath', str(file_path),
+            '-DateStr', ps_date
+        ], capture_output=True, text=True, timeout=15,
+           encoding='utf-8', errors='replace')
         
         if result.returncode == 0:
             log.debug("Method 3 (PowerShell) successful")
