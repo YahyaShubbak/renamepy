@@ -34,6 +34,19 @@ _global_exiftool_instance = None
 _global_exiftool_path = None
 _global_lock = threading.Lock()  # Thread safety for global ExifTool instance
 
+# Windows FILETIME constants and structure (defined once at module level)
+EPOCH_AS_FILETIME = 116444736000000000  # January 1, 1970 as Windows FILETIME
+HUNDREDS_OF_NANOSECONDS = 10000000
+
+if os.name == 'nt':
+    import ctypes
+    from ctypes import wintypes
+
+    class FILETIME(ctypes.Structure):
+        """Windows FILETIME structure for file timestamp operations."""
+        _fields_ = [("dwLowDateTime", wintypes.DWORD),
+                     ("dwHighDateTime", wintypes.DWORD)]
+
 
 # Legacy wrapper functions for backward compatibility
 def get_cached_exif_data(file_path, method, exiftool_path=None):
@@ -512,14 +525,6 @@ def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps
         # On Windows, get the real creation time using Windows API
         try:
             if os.name == 'nt':  # Windows
-                import ctypes
-                from ctypes import wintypes
-                
-                # Create FILETIME structure
-                class FILETIME(ctypes.Structure):
-                    _fields_ = [("dwLowDateTime", wintypes.DWORD),
-                               ("dwHighDateTime", wintypes.DWORD)]
-                
                 # Open file to get creation time
                 kernel32 = ctypes.windll.kernel32
                 handle = kernel32.CreateFileW(
@@ -541,9 +546,8 @@ def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps
                     if kernel32.GetFileTime(handle, ctypes.byref(creation_time), 
                                           ctypes.byref(access_time), ctypes.byref(write_time)):
                         # Convert Windows FILETIME to Unix timestamp
-                        EPOCH_AS_FILETIME = 116444736000000000
                         creation_100ns = (creation_time.dwHighDateTime << 32) + creation_time.dwLowDateTime
-                        creation_timestamp = (creation_100ns - EPOCH_AS_FILETIME) / 10000000.0
+                        creation_timestamp = (creation_100ns - EPOCH_AS_FILETIME) / HUNDREDS_OF_NANOSECONDS
                         
                         # Store the real Windows creation time
                         original_times['windows_creation_time'] = creation_timestamp
@@ -617,12 +621,7 @@ def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps
             creation_ok = True
             if set_creation and os.name == 'nt':
                 try:
-                    import ctypes
-                    from ctypes import wintypes
-                    EPOCH_AS_FILETIME = 116444736000000000
-                    ts_100ns = int((new_timestamp * 10000000) + EPOCH_AS_FILETIME)
-                    class FILETIME(ctypes.Structure):
-                        _fields_ = [("dwLowDateTime", wintypes.DWORD),("dwHighDateTime", wintypes.DWORD)]
+                    ts_100ns = int((new_timestamp * HUNDREDS_OF_NANOSECONDS) + EPOCH_AS_FILETIME)
                     ft = FILETIME()
                     ft.dwLowDateTime = ts_100ns & 0xFFFFFFFF
                     ft.dwHighDateTime = ts_100ns >> 32
@@ -696,19 +695,10 @@ def _set_file_timestamp_method3(file_path, dt):
         return False
 
 def _restore_windows_creation_time(file_path, creation_timestamp):
-    """Restore Windows creation time using Windows API"""
+    """Restore Windows creation time using Windows API."""
     try:
-        import ctypes
-        from ctypes import wintypes
-        
         # Convert timestamp to Windows FILETIME format
-        EPOCH_AS_FILETIME = 116444736000000000  # January 1, 1970 as FILETIME
-        timestamp_100ns = int((creation_timestamp * 10000000) + EPOCH_AS_FILETIME)
-        
-        # Create FILETIME structure
-        class FILETIME(ctypes.Structure):
-            _fields_ = [("dwLowDateTime", wintypes.DWORD),
-                       ("dwHighDateTime", wintypes.DWORD)]
+        timestamp_100ns = int((creation_timestamp * HUNDREDS_OF_NANOSECONDS) + EPOCH_AS_FILETIME)
         
         ft = FILETIME()
         ft.dwLowDateTime = timestamp_100ns & 0xFFFFFFFF

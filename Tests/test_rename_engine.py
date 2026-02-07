@@ -255,7 +255,7 @@ class TestRenameSmallScale:
 
         with _mock_all_exif():
             worker = _make_worker(files, **worker_overrides)
-            renamed, errors, ts_backup = worker.optimized_rename_files()
+            renamed, errors, ts_backup, _mapping = worker.optimized_rename_files()
         return files, renamed, errors
 
     def test_basic_date_prefix_number(self, tmp_path):
@@ -303,7 +303,7 @@ class TestRenameSmallScale:
 
         with _mock_all_exif():
             worker = _make_worker(files)
-            renamed, errors, _ = worker.optimized_rename_files()
+            renamed, errors, _, _mapping = worker.optimized_rename_files()
 
         for new_path in renamed:
             assert os.path.dirname(new_path) == str(sub)
@@ -317,7 +317,7 @@ class TestRenameSmallScale:
 
             with _mock_all_exif():
                 worker = _make_worker(files, separator=sep)
-                renamed, errors, _ = worker.optimized_rename_files()
+                renamed, errors, _, _mapping = worker.optimized_rename_files()
 
             assert len(errors) == 0, f"Separator '{sep}' caused errors"
             assert len(renamed) == len(files), f"Separator '{sep}' missed files"
@@ -333,7 +333,7 @@ class TestRenameSmallScale:
                 use_lens=True,
                 custom_order=["Date", "Camera", "Lens", "Number"],
             )
-            renamed, errors, _ = worker.optimized_rename_files()
+            renamed, errors, _, _mapping = worker.optimized_rename_files()
 
         assert len(errors) == 0
         if renamed:
@@ -346,7 +346,7 @@ class TestRenameSmallScale:
     def test_no_errors_on_empty_file_list(self):
         """An empty file list should produce no errors and no renames."""
         worker = _make_worker([])
-        renamed, errors, _ = worker.optimized_rename_files()
+        renamed, errors, _, _mapping = worker.optimized_rename_files()
         assert renamed == []
         assert errors == []
 
@@ -381,7 +381,7 @@ class TestRenameScalability:
 
         with _mock_all_exif():
             worker = _make_worker(files)
-            renamed, errors, _ = worker.optimized_rename_files()
+            renamed, errors, _, _mapping = worker.optimized_rename_files()
 
         error_rate = len(errors) / len(files) if files else 0
         assert error_rate < 0.05, f"Error rate {error_rate:.1%} too high"
@@ -423,7 +423,7 @@ class TestCounterLogic:
                 continuous_counter=False,
                 custom_order=["Date", "Prefix", "Number"],
             )
-            renamed, errors, _ = worker.optimized_rename_files()
+            renamed, errors, _, _mapping = worker.optimized_rename_files()
 
         assert len(errors) == 0
 
@@ -443,6 +443,6 @@ class TestCounterLogic:
                 continuous_counter=True,
                 custom_order=["Date", "Prefix", "Number"],
             )
-            renamed, errors, _ = worker.optimized_rename_files()
+            renamed, errors, _, _mapping = worker.optimized_rename_files()
 
         assert len(errors) == 0

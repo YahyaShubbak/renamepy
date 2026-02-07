@@ -8,6 +8,8 @@ import sys
 import re
 import datetime
 import time
+import shutil
+import subprocess
 from .logger_util import get_logger, set_level
 log = get_logger()
 
@@ -98,7 +100,7 @@ class FileRenamerApp(QMainWindow):
         if not hasattr(self, 'log'):
             def _early_log(msg: str):
                 if getattr(self, 'DEBUG_VERBOSE', False):
-                    self.log(msg)
+                    log.debug(msg)  # Use module-level logger to avoid infinite recursion
             self.log = _early_log  # type: ignore
         # Busy state flag
         self._busy = False
@@ -1074,7 +1076,7 @@ class FileRenamerApp(QMainWindow):
                     dt = datetime.datetime.fromtimestamp(mtime)
                     date_taken = dt.strftime('%Y%m%d')
                 else:
-                    date_taken = "20250805"  # Use current date as fallback
+                    date_taken = datetime.datetime.now().strftime('%Y%m%d')  # Use current date as fallback
             
             # Format date using the same logic as update_preview()
             if date_taken:
@@ -1206,14 +1208,34 @@ class FileRenamerApp(QMainWindow):
         self.theme_manager.apply_theme(theme_name, self)
         self.settings_manager.set_theme(theme_name)
     
+    def _detect_exiftool_version(self) -> str:
+        """Detect the installed ExifTool version by running exiftool -ver.
+        
+        Returns:
+            Version string (e.g. '13.33') or 'unknown' if detection fails.
+        """
+        if hasattr(self, '_exiftool_version'):
+            return self._exiftool_version
+        try:
+            result = subprocess.run(
+                [self.exiftool_path, '-ver'],
+                capture_output=True, text=True, timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+            )
+            self._exiftool_version = result.stdout.strip() if result.returncode == 0 else 'unknown'
+        except Exception:
+            self._exiftool_version = 'unknown'
+        return self._exiftool_version
+
     def update_exif_status(self):
         """Update EXIF method status in status bar"""
         if EXIFTOOL_AVAILABLE and self.exiftool_path:
-            self.exif_status_label.setText("EXIF method: ExifTool v13.33 (recommended) ✓")
+            version = self._detect_exiftool_version()
+            self.exif_status_label.setText(f"EXIF method: ExifTool v{version} ✓")
             self.exif_status_label.setStyleSheet("color: green; font-weight: bold;")
         else:
-            self.exif_status_label.setText("EXIF method: Pillow (limited) ⚠")
-            self.exif_status_label.setStyleSheet("color: orange; font-weight: bold;")
+            self.exif_status_label.setText("⚠ ExifTool not found — EXIF features unavailable")
+            self.exif_status_label.setStyleSheet("color: red; font-weight: bold;")
     
     def rename_files_action(self):
         # Guard: prevent starting a second rename while one is running
@@ -1491,93 +1513,59 @@ class FileRenamerApp(QMainWindow):
     # Phase 2 Refactoring: Helper functions for on_rename_finished
     # ------------------------------------------------------------------
     
-    def _create_filename_mapping(self, old_media_files, renamed_files, timestamp_backup):
+    def _create_filename_mapping_from_worker(self, rename_mapping: dict) -> dict:
         """
-        Create or update original_filenames mapping for undo functionality.
+        Build the undo mapping from the authoritative rename_mapping dict
+        produced by the worker thread during the actual rename loop.
         
         Args:
-            old_media_files: List of original file paths before rename
-            renamed_files: List of new file paths after rename
-            timestamp_backup: Dict of timestamp backups (for EXIF-only sync)
+            rename_mapping: Dict of {new_path: old_path} from the worker.
             
         Returns:
-            dict: Mapping of {current_path: original_filename}
+            dict: Mapping of {current_path: original_basename} for undo.
         """
         if not hasattr(self, 'original_filenames') or not self.original_filenames:
-            new_original_filenames = {}
-            
-            # CASE 1: Regular rename operation (renamed_files not empty)
-            if renamed_files:
-                # Group old files by directory for proper mapping
-                old_files_by_dir = {}
-                for old_file in old_media_files:
-                    directory = os.path.dirname(old_file)
-                    if directory not in old_files_by_dir:
-                        old_files_by_dir[directory] = []
-                    old_files_by_dir[directory].append(old_file)
-                
-                # Group renamed files by directory  
-                renamed_files_by_dir = {}
-                for renamed_file in renamed_files:
-                    directory = os.path.dirname(renamed_file)
-                    if directory not in renamed_files_by_dir:
-                        renamed_files_by_dir[directory] = []
-                    renamed_files_by_dir[directory].append(renamed_file)
-                
-                # Create safe mapping based on directory and order preservation
-                for directory in old_files_by_dir:
-                    old_files_in_dir = old_files_by_dir[directory]
-                    renamed_files_in_dir = renamed_files_by_dir.get(directory, [])
-                    
-                    # SAFETY CHECK: Ensure we have the same number of files
-                    if len(old_files_in_dir) != len(renamed_files_in_dir):
-                        self.log(f"WARNING: File count mismatch in {directory}")
-                        self.log(f"  Original: {len(old_files_in_dir)}, Renamed: {len(renamed_files_in_dir)}")
-                        min_count = min(len(old_files_in_dir), len(renamed_files_in_dir))
-                        old_files_in_dir = old_files_in_dir[:min_count]
-                        renamed_files_in_dir = renamed_files_in_dir[:min_count]
-                    
-                    # Map files based on their original position
-                    for old_file in old_files_in_dir:
-                        try:
-                            old_index = old_media_files.index(old_file)
-                            if old_index < len(renamed_files):
-                                renamed_file = renamed_files[old_index]
-                                original_filename = os.path.basename(old_file)
-                                new_original_filenames[renamed_file] = original_filename
-                                self.log(f"Mapping: {os.path.basename(renamed_file)} -> {original_filename}")
-                        except (ValueError, IndexError) as e:
-                            self.log(f"WARNING: Could not map {os.path.basename(old_file)}: {e}")
-            
-            # CASE 2: EXIF-only sync (no renamed files, but we have timestamp backup)
-            elif timestamp_backup and old_media_files:
-                self.log("🔄 EXIF-only sync detected - creating filename mapping for restore functionality")
-                for media_file in old_media_files:
-                    if media_file in timestamp_backup:
-                        original_filename = os.path.basename(media_file)
-                        new_original_filenames[media_file] = original_filename
-                        self.log(f"EXIF mapping: {os.path.basename(media_file)} -> {original_filename}")
-            
-            return new_original_filenames
+            # First rename — build fresh mapping
+            new_mapping = {}
+            for new_path, old_path in rename_mapping.items():
+                original_basename = os.path.basename(old_path)
+                new_mapping[new_path] = original_basename
+                self.log(f"Mapping: {os.path.basename(new_path)} -> {original_basename}")
+            return new_mapping
         else:
-            # Subsequent rename operations - update paths but keep original filenames
-            updated_original_filenames = {}
-            
-            # Map old paths to new paths
-            old_to_new_path_mapping = {}
-            for i, old_file in enumerate(old_media_files):
-                if i < len(renamed_files):
-                    old_to_new_path_mapping[old_file] = renamed_files[i]
-            
-            # Update paths in original_filenames dictionary
-            for old_path, original_filename in self.original_filenames.items():
-                if old_path in old_to_new_path_mapping:
-                    new_path = old_to_new_path_mapping[old_path]
-                    updated_original_filenames[new_path] = original_filename
+            # Subsequent rename — preserve the chain back to the *original* name
+            updated = {}
+            for new_path, old_path in rename_mapping.items():
+                # Look up the original name from the previous round
+                if old_path in self.original_filenames:
+                    updated[new_path] = self.original_filenames[old_path]
                 else:
-                    updated_original_filenames[old_path] = original_filename
+                    updated[new_path] = os.path.basename(old_path)
+            return updated
+    
+    def _create_filename_mapping_fallback(self, old_media_files, renamed_files, timestamp_backup):
+        """
+        Fallback mapping for timestamp-only operations where no rename_mapping
+        is available (e.g. leave_names mode, EXIF-only sync).
+        
+        Args:
+            old_media_files: List of original file paths.
+            renamed_files: List of new file paths (may be empty for sync-only).
+            timestamp_backup: Dict of timestamp backups.
             
-            return updated_original_filenames
+        Returns:
+            dict: Mapping of {current_path: original_basename}.
+        """
+        new_original_filenames = {}
+        
+        if timestamp_backup and old_media_files and not renamed_files:
+            # EXIF-only sync — filename didn't change, but we track for timestamp restore
+            self.log("EXIF-only sync detected - creating filename mapping for restore functionality")
+            for media_file in old_media_files:
+                if media_file in timestamp_backup:
+                    new_original_filenames[media_file] = os.path.basename(media_file)
+        
+        return new_original_filenames
     
     def _rebuild_file_list(self, renamed_files, original_non_media, old_media_files):
         """
@@ -1682,11 +1670,18 @@ class FileRenamerApp(QMainWindow):
     # End of Phase 2 helper functions
     # ------------------------------------------------------------------
     
-    def on_rename_finished(self, renamed_files, errors, timestamp_backup=None):
+    def on_rename_finished(self, renamed_files, errors, timestamp_backup=None, rename_mapping=None):
         """
         Handle completion of rename operation.
         
         Simplified version after Phase 2 refactoring - delegates to helper functions.
+        
+        Args:
+            renamed_files: List of new file paths after rename.
+            errors: List of (path, error) tuples.
+            timestamp_backup: Dict of original timestamps for undo.
+            rename_mapping: Dict of {new_path: old_path} built by the worker
+                            during the rename loop - authoritative source for undo.
         """
         # Store timestamp backup for potential undo operations
         if timestamp_backup:
@@ -1696,10 +1691,14 @@ class FileRenamerApp(QMainWindow):
         original_non_media = [f for f in self.files if not is_media_file(f)]
         old_media_files = [f for f in self.files if is_media_file(f)]
         
-        # Create or update filename mapping for undo functionality
-        self.original_filenames = self._create_filename_mapping(
-            old_media_files, renamed_files, timestamp_backup
-        )
+        # Build undo mapping from the authoritative rename_mapping
+        if rename_mapping:
+            self.original_filenames = self._create_filename_mapping_from_worker(rename_mapping)
+        else:
+            # Fallback for timestamp-only operations or legacy callers
+            self.original_filenames = self._create_filename_mapping_fallback(
+                old_media_files, renamed_files, timestamp_backup
+            )
         
         # Rebuild file list widget
         self._rebuild_file_list(renamed_files, original_non_media, old_media_files)
@@ -1743,7 +1742,8 @@ class FileRenamerApp(QMainWindow):
         """
         Check if undo operation is available and what can be restored.
         
-        Checks both in-memory original_filenames and EXIF metadata (hybrid approach).
+        Uses only in-memory data and cached async EXIF check results to
+        avoid blocking the GUI thread with synchronous ExifTool calls.
         
         Returns:
             tuple: (files_to_undo, timestamp_backup_exists, exif_backup_exists)
@@ -1754,29 +1754,29 @@ class FileRenamerApp(QMainWindow):
         # Check which files need to be undone
         files_to_undo = []
         
-        # First check in-memory tracking (current session - fastest)
+        # Check in-memory tracking (current session - fast)
         if hasattr(self, 'original_filenames') and self.original_filenames:
             for current_file, original_filename in self.original_filenames.items():
                 current_filename = os.path.basename(current_file)
                 if current_filename != original_filename and current_file in self.files:
                     files_to_undo.append((current_file, original_filename))
         
-        # Then check EXIF metadata for files not in memory (previous sessions)
-        if self.exiftool_path and hasattr(self, 'files') and self.files:
-            for file_path in self.files:
-                # Skip if already found in memory
-                if any(file_path == f[0] for f in files_to_undo):
-                    continue
-                
-                # Check EXIF for original filename
-                original_filename = get_original_filename_from_exif(file_path, self.exiftool_path)
-                current_filename = os.path.basename(file_path)
-                
-                if original_filename and original_filename != current_filename:
-                    files_to_undo.append((file_path, original_filename))
-                    # Also add to in-memory tracking for consistency
-                    if hasattr(self, 'original_filenames'):
-                        self.original_filenames[file_path] = original_filename
+        # Check cached EXIF undo results (populated by _start_async_exif_undo_check)
+        # If the async check found EXIF undo data and we have no in-memory data,
+        # run a batch read to populate the undo list (non-blocking: uses batch JSON).
+        if not files_to_undo and getattr(self, '_exif_undo_available', False):
+            if self.exiftool_path and hasattr(self, 'files') and self.files:
+                from .exif_undo_manager import batch_get_original_filenames
+                exif_results = batch_get_original_filenames(self.files, self.exiftool_path)
+                for file_path, original_filename in exif_results.items():
+                    if original_filename:
+                        current_filename = os.path.basename(file_path)
+                        if original_filename != current_filename:
+                            files_to_undo.append((file_path, original_filename))
+                            # Cache in memory for future calls
+                            if not hasattr(self, 'original_filenames'):
+                                self.original_filenames = {}
+                            self.original_filenames[file_path] = original_filename
         
         return files_to_undo, timestamp_backup_exists, exif_backup_exists
     
@@ -1870,7 +1870,7 @@ class FileRenamerApp(QMainWindow):
                         continue
                     
                     # Perform the rename
-                    os.rename(current_file, target_path)
+                    shutil.move(current_file, target_path)
                     restored_files.append(target_path)
                     path_mapping[os.path.normpath(current_file)] = target_path
                     

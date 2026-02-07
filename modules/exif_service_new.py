@@ -10,6 +10,7 @@ import threading
 import subprocess
 import glob
 import shutil
+from collections import OrderedDict
 from functools import lru_cache
 
 from .logger_util import get_logger
@@ -44,7 +45,7 @@ class ExifService:
             exiftool_path: Path to exiftool executable. If None, will auto-detect.
         """
         # Instance variables instead of globals
-        self._cache: dict = {}
+        self._cache: OrderedDict = OrderedDict()
         self._cache_lock = threading.Lock()
         self._cache_max_size = 10000  # Prevent unbounded memory growth
         self._exiftool_instance = None
@@ -303,6 +304,7 @@ class ExifService:
             # Check cache first
             with self._cache_lock:
                 if cache_key in self._cache:
+                    self._cache.move_to_end(cache_key)  # LRU: mark as recently used
                     return self._cache[cache_key]
             
             # Extract EXIF data (not cached)
@@ -355,6 +357,7 @@ class ExifService:
             # Check cache first
             with self._cache_lock:
                 if cache_key in self._cache:
+                    self._cache.move_to_end(cache_key)  # LRU: mark as recently used
                     return self._cache[cache_key]
             
             # Extract only requested EXIF fields

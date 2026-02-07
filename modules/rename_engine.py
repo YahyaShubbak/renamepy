@@ -9,6 +9,7 @@ with EXIF metadata extraction and optional timestamp synchronization.
 import os
 import re
 import datetime
+import shutil
 from collections import defaultdict
 from typing import List, Tuple, Dict, Optional, Any, Callable
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -24,7 +25,7 @@ from .exif_undo_manager import write_original_filename_to_exif
 class RenameWorkerThread(QThread):
     """Worker thread for file renaming & optional EXIF timestamp sync."""
     progress_update = pyqtSignal(str)
-    finished = pyqtSignal(list, list, dict)  # renamed_files, errors, timestamp_backup
+    finished = pyqtSignal(list, list, dict, dict)  # renamed_files, errors, timestamp_backup, rename_mapping
     error = pyqtSignal(str)
 
     def __init__(
@@ -295,7 +296,7 @@ class RenameWorkerThread(QThread):
         group: List[str], 
         date_counter: Dict[str, int], 
         exif_cache: Dict[str, Optional[Dict[str, Any]]]
-    ) -> Tuple[List[str], List[Tuple[str, str]]]:
+    ) -> Tuple[List[str], List[Tuple[str, str]], Dict[str, str]]:
         """
         Process a single file group and rename all files within it.
         
@@ -311,9 +312,11 @@ class RenameWorkerThread(QThread):
             Tuple of:
                 - renamed_files_list: List of successfully renamed file paths
                 - errors_list: List of (file_path, error_message) tuples
+                - rename_mapping: Dict mapping {new_path: old_path} for undo
         """
         renamed_files = []
         errors = []
+        rename_mapping: Dict[str, str] = {}
         
         need_date = self.use_date
         need_camera = self.use_camera
@@ -504,16 +507,18 @@ class RenameWorkerThread(QThread):
                                 self._debug(f"Warning: Could not write original filename to EXIF: {message}")
                                 # Continue with rename anyway - this is not a critical error
                         
-                        os.rename(path, target_path)
+                        shutil.move(path, target_path)
                         renamed_files.append(target_path)
+                        rename_mapping[target_path] = path
                     except Exception as e:
                         errors.append((path, str(e)))
                 else:
                     renamed_files.append(path)
+                    rename_mapping[path] = path
             except Exception as e:
                 errors.append((path, str(e)))
         
-        return renamed_files, errors
+        return renamed_files, errors, rename_mapping
     
     # ------------------------------------------------------------------
     # End of Phase 2 helper functions
@@ -530,13 +535,13 @@ class RenameWorkerThread(QThread):
             self.progress_update.emit("Starting rename operation...")
             
             # Use optimized rename function
-            renamed_files, errors, timestamp_backup = self.optimized_rename_files()
+            renamed_files, errors, timestamp_backup, rename_mapping = self.optimized_rename_files()
             
             # OPTIMIZATION: Keep ExifTool instance alive for better performance
             # Only cleanup on app close, not after each operation
             # Cache is preserved between operations for maximum speed
             
-            self.finished.emit(renamed_files, errors, timestamp_backup)
+            self.finished.emit(renamed_files, errors, timestamp_backup, rename_mapping)
         except Exception as e:
             # OPTIMIZATION: Even on error, keep ExifTool instance alive
             # It will be cleaned up when app closes
@@ -671,7 +676,7 @@ class RenameWorkerThread(QThread):
                 self._continuous_counter_map[file] = counter
             counter += 1
     
-    def optimized_rename_files(self) -> Tuple[List[str], List[Tuple[str, str]], Dict[str, Any]]:
+    def optimized_rename_files(self) -> Tuple[List[str], List[Tuple[str, str]], Dict[str, Any], Dict[str, str]]:
         """
         Main worker implementation - simplified with helper functions.
         
@@ -688,6 +693,7 @@ class RenameWorkerThread(QThread):
                 - renamed_files: List of successfully renamed file paths
                 - errors: List of (file_path, error_message) tuples
                 - timestamp_backup: Dictionary of original timestamps for undo
+                - rename_mapping: Dict of {new_path: old_path} for reliable undo
         """
         self.progress_update.emit("Starting optimized batch processing...")
 
@@ -718,7 +724,7 @@ class RenameWorkerThread(QThread):
         if self.leave_names:
             # Only syncing timestamps - early exit
             error_messages = [msg for _file, msg in sync_errors]
-            return [], error_messages, timestamp_backup
+            return [], error_messages, timestamp_backup, {}
 
         # Step 2: Group RAW/JPEG siblings
         file_groups = self._create_file_groups()
@@ -735,16 +741,18 @@ class RenameWorkerThread(QThread):
         # Step 5: Process each file group
         renamed_files = []
         errors = []
+        rename_mapping: Dict[str, str] = {}
         date_counter = {}
 
         for idx, group in enumerate(file_groups):
             self.progress_update.emit(f"Processing group {idx+1}/{len(file_groups)}")
             
-            group_renamed, group_errors = self._process_file_group(group, date_counter, exif_cache)
+            group_renamed, group_errors, group_mapping = self._process_file_group(group, date_counter, exif_cache)
             renamed_files.extend(group_renamed)
             errors.extend(group_errors)
+            rename_mapping.update(group_mapping)
 
-        return renamed_files, errors, timestamp_backup
+        return renamed_files, errors, timestamp_backup, rename_mapping
     
     def generate_new_filename(self, file, camera_model, lens_model, exif_data, timestamp_backup):
         """

@@ -419,7 +419,7 @@ class TestRenameEngineExifServicePath:
             }
         }
 
-        renamed, errors = worker._process_file_group([str(p)], {}, exif_cache)
+        renamed, errors, _mapping = worker._process_file_group([str(p)], {}, exif_cache)
 
         # Should NOT call get_all_metadata or get_selective_cached_exif_data
         mock_service.get_all_metadata.assert_not_called()

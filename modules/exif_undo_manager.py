@@ -11,6 +11,7 @@ Example: "OriginalName: _DSC8166.ARW | RenameDate: 2026:01:04 22:00:00"
 """
 
 import os
+import json
 import subprocess
 from typing import Optional, Tuple, List
 from .logger_util import get_logger
@@ -180,7 +181,10 @@ def batch_write_original_filenames(
     progress_callback=None
 ) -> Tuple[List[str], List[Tuple[str, str]]]:
     """
-    Write original filenames to multiple files in batch.
+    Write original filenames to multiple files using ExifTool batch mode.
+    
+    Uses a single ExifTool invocation for all files instead of one per file,
+    dramatically improving performance for large batches.
     
     Args:
         files: List of (file_path, original_filename) tuples
@@ -190,26 +194,89 @@ def batch_write_original_filenames(
     Returns:
         Tuple of (successes: List[str], errors: List[Tuple[str, str]])
     """
+    if not files:
+        return [], []
+    
+    if not exiftool_path or not os.path.exists(exiftool_path):
+        return [], [(f, "ExifTool executable not found") for f, _ in files]
+    
     successes = []
     errors = []
     
-    total = len(files)
-    for idx, (file_path, original_filename) in enumerate(files):
-        # Report progress
+    # Build a single batch command with all files
+    # ExifTool supports: exiftool -overwrite_original -UserComment="val1" file1 -UserComment="val2" file2 ...
+    # But the simplest batch approach is: one -UserComment=value per file using -execute
+    # We'll use the simpler approach: build args for all files in one invocation
+    CHUNK_SIZE = 50  # Process in chunks to avoid command-line length limits
+    
+    from datetime import datetime
+    
+    for chunk_start in range(0, len(files), CHUNK_SIZE):
+        chunk = files[chunk_start:chunk_start + CHUNK_SIZE]
+        cmd = [exiftool_path, "-overwrite_original"]
+        
+        for file_path, original_filename in chunk:
+            if not os.path.exists(file_path):
+                errors.append((file_path, f"File not found: {file_path}"))
+                continue
+            
+            timestamp = datetime.now().strftime("%Y:%m:%d %H:%M:%S")
+            user_comment = f"{ORIGINAL_NAME_PREFIX}{original_filename}{RENAME_DATE_PREFIX}{timestamp}"
+            cmd.extend([f"-{EXIF_USER_COMMENT_FIELD}={user_comment}", file_path])
+        
+        # Only run if we have files to process (cmd has more than just exiftool + flag)
+        if len(cmd) <= 2:
+            continue
+        
         if progress_callback:
-            progress_callback(idx + 1, total, os.path.basename(file_path))
+            progress_callback(
+                min(chunk_start + CHUNK_SIZE, len(files)),
+                len(files),
+                f"Batch {chunk_start // CHUNK_SIZE + 1}"
+            )
         
-        # Write to EXIF
-        success, message = write_original_filename_to_exif(
-            file_path,
-            original_filename,
-            exiftool_path
-        )
-        
-        if success:
-            successes.append(file_path)
-        else:
-            errors.append((file_path, message))
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
+                timeout=60
+            )
+            
+            if result.returncode == 0:
+                # All files in this chunk succeeded
+                for file_path, _ in chunk:
+                    if os.path.exists(file_path):
+                        successes.append(file_path)
+            else:
+                # Batch failed — fall back to individual writes for this chunk
+                log.warning(f"Batch EXIF write failed, falling back to individual: {result.stderr}")
+                for file_path, original_filename in chunk:
+                    if not os.path.exists(file_path):
+                        errors.append((file_path, f"File not found: {file_path}"))
+                        continue
+                    success, message = write_original_filename_to_exif(
+                        file_path, original_filename, exiftool_path
+                    )
+                    if success:
+                        successes.append(file_path)
+                    else:
+                        errors.append((file_path, message))
+        except subprocess.TimeoutExpired:
+            log.error("Batch EXIF write timed out, falling back to individual")
+            for file_path, original_filename in chunk:
+                success, message = write_original_filename_to_exif(
+                    file_path, original_filename, exiftool_path
+                )
+                if success:
+                    successes.append(file_path)
+                else:
+                    errors.append((file_path, message))
+        except Exception as e:
+            log.error(f"Batch EXIF write error: {e}")
+            for file_path, _ in chunk:
+                errors.append((file_path, str(e)))
     
     return successes, errors
 
@@ -219,9 +286,10 @@ def batch_get_original_filenames(
     exiftool_path: str
 ) -> dict[str, Optional[str]]:
     """
-    Read original filenames from multiple files efficiently.
+    Read original filenames from multiple files efficiently using JSON output.
     
-    Uses a single ExifTool invocation for better performance.
+    Uses a single ExifTool invocation with -json for reliable structured parsing,
+    avoiding the fragile line-based stride-2 parser.
     
     Args:
         file_paths: List of file paths to read
@@ -230,7 +298,7 @@ def batch_get_original_filenames(
     Returns:
         Dictionary mapping file_path -> original_filename (or None if not found)
     """
-    result_map = {}
+    result_map: dict[str, Optional[str]] = {}
     
     try:
         if not exiftool_path or not os.path.exists(exiftool_path):
@@ -242,13 +310,14 @@ def batch_get_original_filenames(
         if not valid_files:
             return {path: None for path in file_paths}
         
-        # Build ExifTool command for batch reading
+        # Build ExifTool command with JSON output for reliable parsing
         cmd = [
             exiftool_path,
-            "-s3",  # Short output format
-            "-n",   # No print conversion
+            "-json",           # Structured JSON output
+            "-n",              # No print conversion
             f"-{EXIF_USER_COMMENT_FIELD}",
-            "-FileName",  # Also get current filename for mapping
+            "-FileName",       # Current filename for verification
+            "-SourceFile",     # Full path for reliable matching
         ] + valid_files
         
         # Execute ExifTool
@@ -260,39 +329,47 @@ def batch_get_original_filenames(
             timeout=60
         )
         
-        if result.returncode == 0:
-            # Parse output (ExifTool returns one value per line for each file)
-            lines = result.stdout.strip().split('\n')
-            
-            # Each file produces 2 lines: UserComment, FileName
-            for i in range(0, len(lines), 2):
-                if i + 1 < len(lines):
-                    user_comment = lines[i].strip()
-                    current = lines[i + 1].strip()
+        if result.returncode == 0 and result.stdout.strip():
+            try:
+                entries = json.loads(result.stdout)
+                
+                for entry in entries:
+                    source_file = entry.get("SourceFile", "")
+                    user_comment = str(entry.get("UserComment", "")) if entry.get("UserComment") else ""
                     
                     # Parse original filename from UserComment
                     original = None
                     if user_comment and ORIGINAL_NAME_PREFIX in user_comment:
-                        original = user_comment.split(ORIGINAL_NAME_PREFIX)[1]
+                        original = user_comment.split(ORIGINAL_NAME_PREFIX, 1)[1]
                         if RENAME_DATE_PREFIX.strip() in original:
-                            original = original.split(RENAME_DATE_PREFIX.strip())[0]
+                            original = original.split(RENAME_DATE_PREFIX.strip(), 1)[0]
                         original = original.strip() if original else None
                     
-                    # Find matching file path
-                    matching_path = None
+                    # Match back to our file paths by normalized SourceFile
+                    matched_path = None
+                    normalized_source = os.path.normpath(source_file)
                     for path in valid_files:
-                        if os.path.basename(path) == current:
-                            matching_path = path
+                        if os.path.normpath(path) == normalized_source:
+                            matched_path = path
                             break
                     
-                    if matching_path:
-                        result_map[matching_path] = original if original else None
+                    if matched_path:
+                        result_map[matched_path] = original if original else None
+            
+            except json.JSONDecodeError as e:
+                log.error(f"Failed to parse ExifTool JSON output: {e}")
+                # Fall back to individual reads
+                for path in valid_files:
+                    result_map[path] = get_original_filename_from_exif(path, exiftool_path)
         
         # Fill in None for any files we couldn't process
         for path in file_paths:
             if path not in result_map:
                 result_map[path] = None
                 
+    except subprocess.TimeoutExpired:
+        log.error("Batch EXIF read timed out")
+        result_map = {path: None for path in file_paths}
     except Exception as e:
         log.error(f"Error in batch_get_original_filenames: {e}")
         result_map = {path: None for path in file_paths}

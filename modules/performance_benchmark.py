@@ -252,7 +252,7 @@ class PerformanceBenchmark:
                     temp_dir,
                     f"renamed_{timestamp}_{os.path.basename(test_file)}"
                 )
-                os.rename(test_file, new_name)
+                shutil.move(test_file, new_name)
                 renamed_files.append(new_name)
             
             elapsed_time = time.perf_counter() - start_time
