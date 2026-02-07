@@ -85,7 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release of RenameFiles application
 - PyQt6-based GUI with drag & drop functionality
-- EXIF data extraction using ExifTool and Pillow
+- EXIF data extraction using ExifTool
 - Interactive preview with drag & drop component reordering
 - Support for multiple date formats
 - Custom camera prefix and additional information fields
@@ -122,7 +122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Resolution and exposure compensation
   - Flexible positioning within filename
 - **File Formats**: Support for JPEG, RAW (CR2, NEF, ARW, DNG, RAF, etc.), TIFF, PNG, BMP
-- **EXIF Methods**: ExifTool (recommended) and Pillow (fallback)
+- **EXIF Methods**: ExifTool (required)
 - **Naming Options**: Date, camera prefix, additional info, camera model, lens model, metadata
 - **Date Formats**: YYYY-MM-DD, YYYYMMDD, DD-MM-YYYY, DD_MM_YYYY, MM-DD-YYYY, MM_DD_YYYY
 - **Separators**: Dash (-), underscore (_), or none

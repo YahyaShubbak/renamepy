@@ -28,7 +28,7 @@ from .file_utilities import (
     rename_files, FileConstants, MEDIA_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS,
     is_image_file, is_video_file
 )
-from .exif_service_new import ExifService, EXIFTOOL_AVAILABLE, PIL_AVAILABLE
+from .exif_service_new import ExifService, EXIFTOOL_AVAILABLE
 from .exif_processor import (
     cleanup_global_exiftool, clear_global_exif_cache,
     find_exiftool_path, batch_restore_timestamps
@@ -130,8 +130,6 @@ class FileRenamerApp(QMainWindow):
         
         if EXIFTOOL_AVAILABLE and self.exiftool_path:
             self.exif_method = "exiftool"
-        elif PIL_AVAILABLE:
-            self.exif_method = "pillow"
         else:
             self.exif_method = None
         

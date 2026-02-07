@@ -32,13 +32,9 @@ class ExifToolWarningDialog(QDialog):
         header_layout.addStretch()
         layout.addLayout(header_layout)
         
-        # Dynamic fallback text based on current method
-        if current_method == "pillow":
-            fallback_text = "<b>Current fallback:</b> Using Pillow (limited RAW support, may miss some metadata)"
-            continue_button_text = "Continue with Pillow"
-        else:
-            fallback_text = "<b>Current status:</b> No EXIF support available (basic file operations only)"
-            continue_button_text = "Continue without EXIF"
+        # ExifTool is required — no Pillow fallback
+        fallback_text = "<b>Current status:</b> No EXIF support available. File renaming will use file timestamps only."
+        continue_button_text = "Continue without EXIF"
         
         # Main explanation text
         info_text = QLabel(f"""

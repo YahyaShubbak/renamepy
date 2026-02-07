@@ -23,12 +23,7 @@ try:
 except ImportError:
     EXIFTOOL_AVAILABLE = False
 
-try:
-    from PIL import Image
-    from PIL.ExifTags import TAGS
-    PIL_AVAILABLE = True
-except ImportError:
-    PIL_AVAILABLE = False
+# Pillow dependency removed — ExifTool is the sole EXIF backend
 
 
 class ExifService:
@@ -53,7 +48,7 @@ class ExifService:
         self._exiftool_path = exiftool_path or self._find_exiftool_path()
         
         # Set default method based on availability
-        self.current_method = "exiftool" if EXIFTOOL_AVAILABLE else ("pillow" if PIL_AVAILABLE else None)
+        self.current_method = "exiftool" if EXIFTOOL_AVAILABLE else None
     
     @staticmethod
     @lru_cache(maxsize=1)
@@ -287,7 +282,7 @@ class ExifService:
         
         Args:
             file_path: Path to the image file
-            method: 'exiftool' or 'pillow' (defaults to self.current_method)
+            method: 'exiftool' (only supported method, defaults to self.current_method)
             exiftool_path: Path to exiftool (defaults to self._exiftool_path)
         
         Returns:
@@ -328,7 +323,7 @@ class ExifService:
         
         Args:
             file_path: Path to the image file
-            method: 'exiftool' or 'pillow' (defaults to self.current_method)
+            method: 'exiftool' (only supported method, defaults to self.current_method)
             exiftool_path: Path to exiftool executable (defaults to self._exiftool_path)
             need_date: Whether to extract date information
             need_camera: Whether to extract camera model
@@ -489,26 +484,8 @@ class ExifService:
                         lens = str(lens).replace(' ', '-')
                     
                     return date, camera, lens
-                    
-                elif method == "pillow":
-                    image = Image.open(normalized_path)
-                    exif_data = image._getexif()
-                    date = None
-                    camera = None
-                    lens = None
-                    
-                    if exif_data:
-                        for tag, value in exif_data.items():
-                            decoded_tag = TAGS.get(tag, tag)
-                            if decoded_tag == "DateTimeOriginal":
-                                date = value.split(" ")[0].replace(":", "")
-                            elif decoded_tag == "Model":
-                                camera = str(value).replace(" ", "-")
-                            elif decoded_tag == "LensModel":
-                                lens = str(value).replace(" ", "-")
-                    
-                    return date, camera, lens
                 else:
+                    log.warning(f"Unsupported EXIF method: {method}")
                     return None, None, None
                     
             except Exception as e:
@@ -526,8 +503,8 @@ class ExifService:
         
         Args:
             image_path: Path to the image file
-            method: 'exiftool' or 'pillow'
-            exiftool_path: Path to exiftool executable (if using exiftool)
+            method: 'exiftool' (only supported method)
+            exiftool_path: Path to exiftool executable
             need_date: Whether to extract date information
             need_camera: Whether to extract camera model
             need_lens: Whether to extract lens model
@@ -578,36 +555,8 @@ class ExifService:
                             lens = str(lens).replace(' ', '-')
                     
                     return date, camera, lens
-                    
-                elif method == "pillow":
-                    image = Image.open(image_path)
-                    exif_data = image._getexif()
-                    date = None
-                    camera = None
-                    lens = None
-                    
-                    if exif_data:
-                        # Only process tags we actually need
-                        for tag, value in exif_data.items():
-                            decoded_tag = TAGS.get(tag, tag)
-                            
-                            if need_date and decoded_tag == "DateTimeOriginal" and not date:
-                                date = value.split(" ")[0].replace(":", "")
-                            
-                            if need_camera and decoded_tag == "Model" and not camera:
-                                camera = str(value).replace(" ", "-")
-                            
-                            if need_lens and decoded_tag == "LensModel" and not lens:
-                                lens = str(value).replace(" ", "-")
-                            
-                            # Early exit if we have everything we need
-                            if ((not need_date or date) and
-                                (not need_camera or camera) and
-                                (not need_lens or lens)):
-                                break
-                    
-                    return date, camera, lens
                 else:
+                    log.warning(f"Unsupported EXIF method: {method}")
                     return None, None, None
                     
             except Exception as e:

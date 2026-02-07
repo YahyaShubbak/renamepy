@@ -301,7 +301,7 @@ with EXIF metadata integration and customizable naming patterns.
 • Continuous numbering for multi-day shoots
 
 📊 Technical Details:
-• Supports ExifTool and Pillow for metadata
+• Powered by ExifTool for professional metadata extraction
 • Handles RAW and standard image formats
 • Qt6-based modern interface
 • Optimized for large file collections

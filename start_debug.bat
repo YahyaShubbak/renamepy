@@ -63,7 +63,6 @@ echo [OK] Alle Dateien vorhanden
 echo.
 echo [4] Pruefen auf erforderliche Module...
 python -c "import PyQt6; print('PyQt6: OK')" 2>nul || echo "PyQt6: FEHLER"
-python -c "import PIL; print('Pillow: OK')" 2>nul || echo "Pillow: FEHLER"
 python -c "import exiftool; print('PyExifTool: OK')" 2>nul || echo "PyExifTool: FEHLER"
 
 echo.

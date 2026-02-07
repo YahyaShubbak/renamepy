@@ -208,11 +208,7 @@ The project has accumulated many markdown files that need consolidation:
    - Primary EXIF data extraction
    - Must handle ExifTool binary path correctly
 
-3. **Pillow** (>= 8.0.0)
-   - Fallback image processing
-   - When ExifTool is unavailable or fails
-
-4. **ExifTool Binary**
+3. **ExifTool Binary**
    - External command-line tool
    - Platform-specific installation
    - Check availability and version

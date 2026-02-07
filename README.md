@@ -12,7 +12,6 @@ A powerful and user-friendly PyQt6 application for batch renaming image files wi
 - **EXIF Data Extraction**: Automatic camera model, lens, and date detection
 - **RAW File Support**: Works with CR2, NEF, ARW, DNG, and more
 - **ExifTool Integration**: Professional-grade metadata extraction using the excellent https://exiftool.org/
-- **Fallback to Pillow**: Alternative EXIF reading when ExifTool unavailable
 
 ### 🎯 **Flexible Naming System**
 - **Interactive Preview**: Drag & drop components to customize filename order
@@ -80,8 +79,7 @@ A powerful and user-friendly PyQt6 application for batch renaming image files wi
 ### Python Dependencies
 ```bash
 pip install PyQt6>=6.0.0        # Core GUI framework
-pip install PyExifTool>=0.5.5   # ExifTool Python wrapper (recommended)
-pip install Pillow>=8.0.0       # Fallback EXIF reader
+pip install PyExifTool>=0.5.5   # ExifTool Python wrapper (required)
 ```
 
 ### External Dependencies
@@ -170,10 +168,9 @@ Drag components in the Interactive Preview to customize order:
 
 ## 🔧 Configuration
 
-### EXIF Method Priority
-1. **ExifTool** (if available) - Best performance and compatibility
-2. **Pillow** (fallback) - Limited RAW support
-3. **File timestamps** (last resort)
+### EXIF Method
+1. **ExifTool** (required) - Best performance and compatibility
+2. **File timestamps** (fallback when ExifTool unavailable)
 
 ### Supported File Formats
 - **JPEG**: .jpg, .jpeg
@@ -186,7 +183,7 @@ Drag components in the Interactive Preview to customize order:
 ### Common Issues
 
 **Q: "No EXIF support available" message**
-A: Install PyExifTool or Pillow: `pip install PyExifTool Pillow`
+A: Install ExifTool and PyExifTool: `pip install PyExifTool` and download ExifTool from [exiftool.org](https://exiftool.org)
 
 **Q: ExifTool not detected**
 A: The application automatically searches for ExifTool in this order:
@@ -250,7 +247,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **ExifTool** by Phil Harvey - Excellent metadata extraction
 - **PyQt6** - Powerful GUI framework
-- **Pillow** - Python Imaging Library
 - **Python Community** - For the amazing ecosystem
 
 ## 📞 Support

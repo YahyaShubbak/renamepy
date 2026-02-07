@@ -109,7 +109,7 @@ or:
 
 ```powershell
 .\activate_env.bat
-python -c "import PyQt6, PIL; print('OK')"
+python -c "import PyQt6; print('OK')"
 ```
 
 ---
@@ -192,7 +192,7 @@ conda activate renamepy
 pip list
 
 # Test modules
-python -c "import PyQt6; import PIL; print('OK')"
+python -c "import PyQt6; import exiftool; print('OK')"
 
 # Reinstall everything
 .\install.ps1

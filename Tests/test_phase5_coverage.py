@@ -272,11 +272,12 @@ class TestExtractImageNumber:
             num = extract_image_number(str(p), "exiftool", "/fake/exiftool")
         assert num == "9999"
 
-    def test_returns_none_for_pillow_method(self, tmp_path):
+    def test_returns_none_for_non_exiftool_method(self, tmp_path):
+        """Non-exiftool methods should return None (Pillow removed)."""
         from modules.handlers.exif_handler import extract_image_number
         p = tmp_path / "test.jpg"
         p.touch()
-        num = extract_image_number(str(p), "pillow", None)
+        num = extract_image_number(str(p), "other", None)
         assert num is None
 
 
