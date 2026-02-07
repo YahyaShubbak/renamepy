@@ -232,12 +232,16 @@ class PerformanceBenchmark:
             # Simulate rename with pattern complexity - using REAL ExifTool calls
             start_time = time.perf_counter()
             
+            # Create ONE ExifService per scenario (not per file!)
+            bench_svc = None
+            if exif_field_count > 0 and self.exiftool_path:
+                from .exif_service_new import ExifService
+                bench_svc = ExifService(self.exiftool_path)
+            
             renamed_files = []
             for test_file in test_files:
                 # REAL EXIF extraction (not cached!) - this is what takes time
-                if exif_field_count > 0 and self.exiftool_path:
-                    from .exif_service_new import ExifService
-                    bench_svc = ExifService(self.exiftool_path)
+                if bench_svc is not None:
                     # This is the expensive operation - actual ExifTool call
                     exif_data = bench_svc.extract_raw_exif(test_file)
                     if exif_data and isinstance(exif_data, dict):
@@ -271,6 +275,10 @@ class PerformanceBenchmark:
             
             elapsed_time = time.perf_counter() - start_time
             per_file_time = elapsed_time / len(renamed_files)
+            
+            # Clean up the benchmark ExifService instance
+            if bench_svc is not None:
+                bench_svc.cleanup()
             
             return BenchmarkResult(
                 exif_field_count=exif_field_count,
