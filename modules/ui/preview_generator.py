@@ -9,6 +9,7 @@ filename previews based on current settings.
 import os
 import re
 import datetime
+import threading
 from ..file_utilities import is_media_file, is_video_file
 
 
@@ -29,10 +30,23 @@ class PreviewGenerator:
             parent: The parent FileRenamerApp instance
         """
         self.parent = parent
-        # Initialize preview EXIF cache
-        self._preview_exif_cache = {}
+        # Initialize preview EXIF cache with a lock for thread safety (EDGE 4)
+        self._preview_exif_lock = threading.Lock()
+        self._preview_exif_cache: dict[str, str | None] = {}
         self._preview_exif_file = None
-    
+
+    def get_cached_exif(self, key: str) -> str | None:
+        """Thread-safe accessor for a single preview EXIF cache value.
+
+        Args:
+            key: One of ``'date'``, ``'camera'``, ``'lens'``.
+
+        Returns:
+            The cached value, or *None* if not available.
+        """
+        with self._preview_exif_lock:
+            return self._preview_exif_cache.get(key)
+
     def update_preview(self):
         """Update the interactive preview widget with current settings"""
         # Get current settings
@@ -155,19 +169,22 @@ class PreviewGenerator:
                             preview_file, self.parent.exif_method, self.parent.exiftool_path,
                             need_date=use_date, need_camera=use_camera, need_lens=use_lens
                         )
-                        self._preview_exif_cache = {
-                            'date': date_taken,
-                            'camera': camera_model,
-                            'lens': lens_model,
-                        }
-                        self._preview_exif_file = cache_key
+                        with self._preview_exif_lock:
+                            self._preview_exif_cache = {
+                                'date': date_taken,
+                                'camera': camera_model,
+                                'lens': lens_model,
+                            }
+                            self._preview_exif_file = cache_key
                     except Exception as e:
-                        self._preview_exif_cache = {'date': None, 'camera': None, 'lens': None}
+                        with self._preview_exif_lock:
+                            self._preview_exif_cache = {'date': None, 'camera': None, 'lens': None}
                 else:
                     # Use cached values
-                    date_taken = self._preview_exif_cache.get('date')
-                    camera_model = self._preview_exif_cache.get('camera')
-                    lens_model = self._preview_exif_cache.get('lens')
+                    with self._preview_exif_lock:
+                        date_taken = self._preview_exif_cache.get('date')
+                        camera_model = self._preview_exif_cache.get('camera')
+                        lens_model = self._preview_exif_cache.get('lens')
             
             # Fallback date extraction
             if not date_taken:

@@ -205,22 +205,31 @@ class TestSanitizeFinalFilename:
 # Path validation
 # ---------------------------------------------------------------------------
 class TestValidatePathLength:
-    """Test path length validation."""
+    """Test path length validation (platform-aware)."""
 
     def test_short_path_valid(self):
         assert validate_path_length("C:\\short\\path.jpg") is True
 
-    def test_long_path_invalid(self):
-        long_path = "C:\\" + "a" * 260 + ".jpg"
+    def test_very_long_path_invalid(self):
+        """A path exceeding even long-path limits should fail."""
+        long_path = "C:\\" + "a" * 40000 + ".jpg"
         assert validate_path_length(long_path) is False
 
-    def test_exactly_at_limit(self):
-        path_250 = "x" * 250
-        assert validate_path_length(path_250) is True
+    def test_filename_component_over_255_invalid(self):
+        """Filename > 255 chars should fail regardless of total path length."""
+        long_name = "a" * 256 + ".jpg"
+        path = "C:\\Photos\\" + long_name
+        assert validate_path_length(path) is False
 
-    def test_one_over_limit(self):
-        path_251 = "x" * 251
-        assert validate_path_length(path_251) is False
+    def test_filename_component_exactly_255_valid(self):
+        """Filename of exactly 255 chars (incl extension) should be valid."""
+        name = "a" * 251 + ".jpg"  # 251 + 4 = 255
+        path = "C:\\Photos\\" + name
+        assert validate_path_length(path) is True
+
+    def test_normal_length_path_valid(self):
+        path = "C:\\Users\\photographer\\Pictures\\Vacation\\" + "photo_001.jpg"
+        assert validate_path_length(path) is True
 
 
 class TestValidatePath:

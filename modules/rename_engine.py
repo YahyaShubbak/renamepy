@@ -154,7 +154,7 @@ class RenameWorkerThread(QThread):
         Uses ExifService.batch_get_raw_metadata() to issue a single ExifTool
         IPC call per chunk of ~50 files instead of one call per file.  The raw
         metadata is parsed into date/camera/lens/all_metadata entries so that
-        _process_file_group() never needs to call ExifTool again.
+        _plan_file_group() never needs to call ExifTool again.
         
         Args:
             file_groups: List of file groups to process
@@ -302,32 +302,77 @@ class RenameWorkerThread(QThread):
         
         return (exif_datetime, file_number, first_file)
     
-    def _process_file_group(
-        self, 
-        group: List[str], 
-        date_counter: Dict[str, int], 
-        exif_cache: Dict[str, Optional[Dict[str, Any]]]
-    ) -> Tuple[List[str], List[Tuple[str, str]], Dict[str, str]]:
+    def _resolve_safe_target(
+        self,
+        original_path: str,
+        new_name: str,
+        reserved_targets: set[str],
+    ) -> str:
+        """Resolve a safe target path considering both filesystem and reserved paths.
+
+        Wraps :func:`get_safe_target_path` (which performs security checks) and
+        additionally checks against *reserved_targets* — paths that have been
+        planned for rename in Phase 1 but not yet executed.
+
+        Args:
+            original_path: Current file path on disk.
+            new_name: Desired new filename (basename only).
+            reserved_targets: Set of ``os.path.normcase``-d paths already
+                reserved by earlier plan entries.
+
+        Returns:
+            A safe, conflict-free target path.
         """
-        Process a single file group and rename all files within it.
-        
-        Extracts metadata, builds new filenames, and performs the rename operation.
-        Uses pre-extracted EXIF cache for performance.
-        
+        target = get_safe_target_path(original_path, new_name)
+
+        # If target is the source file itself, no conflict is possible
+        if os.path.normcase(target) == os.path.normcase(original_path):
+            return target
+
+        # If not reserved by another planned rename, we're good
+        if os.path.normcase(target) not in reserved_targets:
+            return target
+
+        # Conflict with a reserved (but not yet on-disk) target — find alternative
+        directory = os.path.dirname(target)
+        base_name = os.path.basename(target)
+        name, ext = os.path.splitext(base_name)
+        attempt = 1
+        while attempt <= 999:
+            alt_name = f"{name}({attempt}){ext}"
+            alt_path = os.path.join(directory, alt_name)
+            if not os.path.exists(alt_path) and os.path.normcase(alt_path) not in reserved_targets:
+                return alt_path
+            attempt += 1
+        raise RuntimeError(f"Cannot generate unique filename for {new_name}")
+
+    def _plan_file_group(
+        self,
+        group: List[str],
+        date_counter: Dict[str, int],
+        exif_cache: Dict[str, Optional[Dict[str, Any]]],
+        reserved_targets: set[str],
+    ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+        """
+        Phase 1: Compute rename plan for a single file group **without** moving files.
+
+        Extracts metadata, builds new filenames, and validates target paths.
+        Conflict resolution accounts for both on-disk files and already-reserved
+        targets from earlier groups.
+
         Args:
             group: List of file paths in this group (RAW+JPEG siblings)
             date_counter: Counter dictionary for per-date numbering {date: count}
             exif_cache: Pre-extracted EXIF cache from _pre_extract_exif_cache
+            reserved_targets: Mutable set of normcase-d paths already claimed
             
         Returns:
             Tuple of:
-                - renamed_files_list: List of successfully renamed file paths
+                - plan_entries: List of (source_path, target_path) tuples
                 - errors_list: List of (file_path, error_message) tuples
-                - rename_mapping: Dict mapping {new_path: old_path} for undo
         """
-        renamed_files = []
+        plan_entries: List[Tuple[str, str]] = []
         errors = []
-        rename_mapping: Dict[str, str] = {}
         
         need_date = self.use_date
         need_camera = self.use_camera
@@ -335,7 +380,7 @@ class RenameWorkerThread(QThread):
         
         group_existing = [p for p in group if os.path.exists(p)]
         if not group_existing:
-            return renamed_files, errors
+            return plan_entries, errors
 
         date_taken = None
         camera_model = None
@@ -490,30 +535,23 @@ class RenameWorkerThread(QThread):
                 sep = '' if self.separator == 'None' else self.separator
                 new_name = sanitize_final_filename(sep.join(parts) + os.path.splitext(path)[1])
 
-                # CRITICAL FIX: Pass original file path, not directory!
-                target_path = get_safe_target_path(path, new_name)
+                # Two-phase: resolve target considering already-reserved paths
+                target_path = self._resolve_safe_target(path, new_name, reserved_targets)
 
                 if not validate_path_length(target_path):
                     errors.append((path, f"Target path too long: {len(target_path)} chars"))
                     continue
 
-                if os.path.normpath(path) != os.path.normpath(target_path):
-                    try:
-                        shutil.move(path, target_path)
-                        renamed_files.append(target_path)
-                        rename_mapping[target_path] = path
-                    except Exception as e:
-                        errors.append((path, str(e)))
-                else:
-                    renamed_files.append(path)
-                    rename_mapping[path] = path
+                # Phase 1: record the planned rename, don't move yet
+                plan_entries.append((path, target_path))
+                reserved_targets.add(os.path.normcase(target_path))
             except Exception as e:
                 errors.append((path, str(e)))
         
-        return renamed_files, errors, rename_mapping
+        return plan_entries, errors
     
     # ------------------------------------------------------------------
-    # End of Phase 2 helper functions
+    # End of rename planning helper functions
     # ------------------------------------------------------------------
     
     def run(self) -> None:
@@ -729,19 +767,49 @@ class RenameWorkerThread(QThread):
         file_groups.sort(key=lambda g: self._get_exif_sort_key(g, exif_cache))
         self.progress_update.emit("Files sorted chronologically")
 
-        # Step 5: Process each file group
-        renamed_files = []
-        errors = []
-        rename_mapping: Dict[str, str] = {}
-        date_counter = {}
+        # Step 5: Two-phase rename (EDGE 1 — crash-safe batch rename)
+        # Phase 1: Compute ALL target names before moving anything.
+        #   This ensures naming / validation errors are caught before any
+        #   file is touched, and gives us a complete rename plan upfront.
+        # Phase 2: Execute the rename plan.  If any individual move fails
+        #   we record the error but continue (the mapping still allows undo).
 
+        renamed_files: List[str] = []
+        errors: List[Tuple[str, str]] = []
+        rename_mapping: Dict[str, str] = {}
+        date_counter: Dict[str, int] = {}
+        reserved_targets: set[str] = set()
+        all_plan_entries: List[Tuple[str, str]] = []
+
+        # --- Phase 1: Plan ---
         for idx, group in enumerate(file_groups):
-            self.progress_update.emit(f"Processing group {idx+1}/{len(file_groups)}")
-            
-            group_renamed, group_errors, group_mapping = self._process_file_group(group, date_counter, exif_cache)
-            renamed_files.extend(group_renamed)
+            self.progress_update.emit(f"Planning group {idx+1}/{len(file_groups)}")
+            group_plan, group_errors = self._plan_file_group(
+                group, date_counter, exif_cache, reserved_targets,
+            )
+            all_plan_entries.extend(group_plan)
             errors.extend(group_errors)
-            rename_mapping.update(group_mapping)
+
+        self.progress_update.emit(
+            f"Plan complete: {len(all_plan_entries)} renames, {len(errors)} errors"
+        )
+
+        # --- Phase 2: Execute ---
+        for idx, (source, target) in enumerate(all_plan_entries):
+            if idx % 50 == 0:
+                self.progress_update.emit(
+                    f"Renaming {idx+1}/{len(all_plan_entries)}"
+                )
+            try:
+                if os.path.normpath(source) != os.path.normpath(target):
+                    shutil.move(source, target)
+                    renamed_files.append(target)
+                    rename_mapping[target] = source
+                else:
+                    renamed_files.append(source)
+                    rename_mapping[source] = source
+            except Exception as e:
+                errors.append((source, str(e)))
 
         # Step 6: Batch-write original filenames to EXIF (PERF 2 optimization)
         # Instead of one ExifTool subprocess per file during rename, do a

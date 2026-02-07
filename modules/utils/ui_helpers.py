@@ -32,7 +32,9 @@ def calculate_stats(files):
         f.lower().endswith(ext) for ext in ['.png', '.bmp', '.tiff', '.tif', '.gif']
     ))
     total_images = jpeg_count + raw_count + other_images
-    videos = total - total_images
+    # EDGE 3 fix: count actual video files instead of assuming
+    # everything that isn't an image is a video.
+    videos = sum(1 for f in files if _is_video_file_canonical(f))
     
     return {
         'total_files': total,

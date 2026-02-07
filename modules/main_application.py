@@ -158,8 +158,8 @@ class FileRenamerApp(QMainWindow):
         # Restore settings
         self.restore_settings()
         
-        # Initialize EXIF cache
-        self._preview_exif_cache = {}
+        # Initialize EXIF cache (kept for backward compat; prefer preview_generator accessor)
+        self._preview_exif_cache: dict[str, str | None] = {}
         self._preview_exif_file = None  # Track which file the preview cache belongs to
         
         # Initialize performance benchmark manager
@@ -1063,8 +1063,8 @@ class FileRenamerApp(QMainWindow):
             
             # Extract date using the same logic as update_preview()
             date_taken = None
-            if hasattr(self, '_preview_exif_cache') and self._preview_exif_cache:
-                date_taken = self._preview_exif_cache.get('date')
+            if hasattr(self, 'preview_generator'):
+                date_taken = self.preview_generator.get_cached_exif('date')
             
             # Fallback date extraction (same as update_preview)
             if not date_taken:
@@ -1111,16 +1111,16 @@ class FileRenamerApp(QMainWindow):
         # Map camera and lens components
         if use_camera:
             camera_value = None
-            if hasattr(self, '_preview_exif_cache') and self._preview_exif_cache:
-                camera_value = self._preview_exif_cache.get('camera')
+            if hasattr(self, 'preview_generator'):
+                camera_value = self.preview_generator.get_cached_exif('camera')
             if not camera_value:
                 camera_value = "Camera"  # Fallback
             value_to_component[camera_value] = "Camera"
             
         if use_lens:
             lens_value = None
-            if hasattr(self, '_preview_exif_cache') and self._preview_exif_cache:
-                lens_value = self._preview_exif_cache.get('lens')
+            if hasattr(self, 'preview_generator'):
+                lens_value = self.preview_generator.get_cached_exif('lens')
             if not lens_value:
                 lens_value = "Lens"  # Fallback
             value_to_component[lens_value] = "Lens"

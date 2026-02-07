@@ -396,7 +396,7 @@ class TestRenameEngineExifServicePath:
         mock_service.clear_cache.assert_not_called()
 
     def test_process_group_uses_cached_all_metadata(self, tmp_path):
-        """_process_file_group should use all_metadata from cache, not make new ExifTool calls."""
+        """_plan_file_group should use all_metadata from cache, not make new ExifTool calls."""
         p = tmp_path / "DSC10000.jpg"
         p.touch()
 
@@ -421,7 +421,8 @@ class TestRenameEngineExifServicePath:
             }
         }
 
-        renamed, errors, _mapping = worker._process_file_group([str(p)], {}, exif_cache)
+        reserved = set()
+        plan_entries, errors = worker._plan_file_group([str(p)], {}, exif_cache, reserved)
 
         # Should NOT call get_all_metadata or get_selective_cached_exif_data
         mock_service.get_all_metadata.assert_not_called()

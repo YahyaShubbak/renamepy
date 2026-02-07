@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from functools import lru_cache
 from .logger_util import get_logger
 log = get_logger()
@@ -168,17 +169,61 @@ def sanitize_final_filename(filename):
     return sanitized
 
 def validate_path_length(file_path: str) -> bool:
-    """Validate that the file path is not too long for the filesystem.
+    """Validate that the file path is within filesystem limits.
+
+    Checks **both** the total path length and the filename component length
+    against the limits of the current operating system:
+
+    - **Windows**: 260 chars total (classic) or 32,767 with long-path support;
+      filename component max 255.
+    - **macOS / Linux**: 4096 chars total path; 255 chars filename component.
+
+    On Windows, long-path support is detected via the registry key
+    ``HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem\\LongPathsEnabled``.
 
     Args:
         file_path: The full file path to validate.
 
     Returns:
-        True if the path length is within limits, False otherwise.
+        True if both the total path and filename lengths are within limits.
     """
-    # Windows has a 260 character limit, leave buffer
-    max_length = 250
-    return len(file_path) <= max_length
+    filename = os.path.basename(file_path)
+
+    # Filename component limit is 255 on all major filesystems
+    max_filename = 255
+
+    if sys.platform == "win32":
+        max_path = _get_windows_max_path()
+    else:
+        # POSIX (Linux, macOS) — PATH_MAX is typically 4096
+        max_path = 4096
+
+    return len(file_path) <= max_path and len(filename) <= max_filename
+
+
+def _get_windows_max_path() -> int:
+    """Return the effective maximum path length on Windows.
+
+    Checks the ``LongPathsEnabled`` registry value.  If enabled, returns
+    32767 (the ``\\\\?\\`` limit).  Otherwise returns 260 (MAX_PATH) minus
+    a small safety buffer → **255**.
+
+    Returns:
+        Maximum total path length allowed on this system.
+    """
+    try:
+        import winreg
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Control\FileSystem",
+        ) as key:
+            value, _ = winreg.QueryValueEx(key, "LongPathsEnabled")
+            if value == 1:
+                return 32_767
+    except (OSError, FileNotFoundError, ImportError):
+        pass
+    # Classic Windows MAX_PATH (260) minus a small safety buffer
+    return 255
 
 def check_file_access(file_path):
     """
