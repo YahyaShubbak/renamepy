@@ -24,6 +24,35 @@ ORIGINAL_NAME_PREFIX = "OriginalName: "
 RENAME_DATE_PREFIX = " | RenameDate: "
 
 
+def _read_existing_user_comment(
+    file_path: str,
+    exiftool_path: str,
+) -> str | None:
+    """Read the current EXIF:UserComment from a file.
+
+    Returns the raw string or None if empty / unreadable.
+    """
+    try:
+        cmd = [
+            exiftool_path, "-s3",
+            f"-{EXIF_USER_COMMENT_FIELD}",
+            file_path,
+        ]
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            val = result.stdout.strip()
+            return val if val else None
+    except Exception:
+        pass
+    return None
+
+
 def write_original_filename_to_exif(
     file_path: str,
     original_filename: str,
@@ -54,6 +83,14 @@ def write_original_filename_to_exif(
         
         if not exiftool_path or not os.path.exists(exiftool_path):
             return False, "ExifTool executable not found"
+        
+        # Safety check: warn if overwriting non-renamepy UserComment data
+        existing = _read_existing_user_comment(file_path, exiftool_path)
+        if existing and ORIGINAL_NAME_PREFIX not in existing:
+            log.warning(
+                f"Overwriting existing UserComment in {file_path}: "
+                f"'{existing[:80]}...' (was not set by renamepy)"
+            )
         
         # Build the UserComment value
         user_comment = f"{ORIGINAL_NAME_PREFIX}{original_filename}"

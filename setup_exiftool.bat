@@ -2,38 +2,38 @@
 REM ============================================================================
 REM  ExifTool Setup - Batch Wrapper
 REM ============================================================================
-REM Startet das PowerShell Setup-Skript für ExifTool
+REM Launches the PowerShell setup script for ExifTool
 
 setlocal enabledelayedexpansion
 
 echo.
 echo ============================================================
-echo   ExifTool Setup fuer RenamePy
+echo   ExifTool Setup for RenamePy
 echo ============================================================
 echo.
 
-REM Prueche PowerShell
+REM Check PowerShell availability
 powershell -Command "exit" >nul 2>&1
 if errorlevel 1 (
-    echo [FEHLER] PowerShell ist nicht verfuegbar!
+    echo [ERROR] PowerShell is not available!
     pause
     exit /b 1
 )
 
-REM Starte PowerShell Setup-Skript
-echo [INFO] Starte PowerShell Setup-Skript...
+REM Launch PowerShell setup script
+echo [INFO] Starting PowerShell setup script...
 echo.
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup_exiftool.ps1" %*
 
 if errorlevel 1 (
     echo.
-    echo [FEHLER] ExifTool Setup fehlgeschlagen!
+    echo [ERROR] ExifTool setup failed!
     pause
     exit /b 1
 )
 
 echo.
-echo [OK] ExifTool Setup abgeschlossen!
+echo [OK] ExifTool setup completed!
 pause
 exit /b 0

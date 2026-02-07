@@ -1,7 +1,7 @@
 # ============================================================================
-# ExifTool Setup - Automatischer Download und Installation
+# ExifTool Setup - Automatic Download and Installation
 # ============================================================================
-# Dieses Skript laedt ExifTool herunter und entpackt es im Repository
+# This script downloads ExifTool and extracts it into the repository.
 
 param(
     [switch]$Force = $false,
@@ -11,18 +11,18 @@ param(
 $ErrorActionPreference = "Continue"
 
 # ============================================================================
-# Konfiguration
+# Configuration
 # ============================================================================
 $PROJECT_ROOT = Split-Path -Parent $MyInvocation.MyCommand.Path
 $EXIFTOOL_DIR = Join-Path $PROJECT_ROOT "exiftool-13.40_64"
 $DOWNLOAD_DIR = Join-Path $PROJECT_ROOT "temp_download"
 
-# Direkte SourceForge Download-URL (nicht Redirect-URL)
+# Direct SourceForge download URL (not a redirect URL)
 $SOURCEFORGE_URL = "https://sourceforge.net/projects/exiftool/files/exiftool-13.40_64.zip/download"
 $DIRECT_URL = "https://downloads.sourceforge.net/project/exiftool/exiftool-13.40_64.zip"
 
 # ============================================================================
-# Hilfsfunktionen fuer farbige Ausgabe
+# Helper functions for coloured output
 # ============================================================================
 function Write-ColorMessage {
     param(
@@ -39,9 +39,9 @@ function Write-ColorMessage {
     
     $symbols = @{
         Success = "[OK]"
-        Error   = "[FEHLER]"
+        Error   = "[ERROR]"
         Info    = "[INFO]"
-        Warning = "[WARNUNG]"
+        Warning = "[WARNING]"
     }
     
     $color = $colors[$Type]
@@ -56,19 +56,19 @@ function Write-Warning-Custom { param([string]$msg) Write-ColorMessage -Message 
 function Write-Error-Custom { param([string]$msg) Write-ColorMessage -Message $msg -Type "Error" }
 
 # ============================================================================
-# Funktion: Prüfe ob ExifTool bereits existiert
+# Function: Check whether ExifTool already exists
 # ============================================================================
 function Test-ExifToolExists {
     if (Test-Path $EXIFTOOL_DIR) {
-        # Pruehe beide moegliche exe Namen
+        # Check both possible exe names
         $exeFile1 = Join-Path $EXIFTOOL_DIR "exiftool.exe"
         $exeFile2 = Join-Path $EXIFTOOL_DIR "exiftool(-k).exe"
         
         $exeFile = if (Test-Path $exeFile1) { $exeFile1 } elseif (Test-Path $exeFile2) { $exeFile2 } else { $null }
         
         if ($exeFile) {
-            Write-Success "ExifTool bereits vorhanden: $EXIFTOOL_DIR"
-            Write-Success "Executable gefunden: $(Split-Path -Leaf $exeFile)"
+            Write-Success "ExifTool already present: $EXIFTOOL_DIR"
+            Write-Success "Executable found: $(Split-Path -Leaf $exeFile)"
             
             try {
                 $version = & $exeFile -ver 2>&1
@@ -76,7 +76,7 @@ function Test-ExifToolExists {
                 return $true
             }
             catch {
-                Write-Warning-Custom "Konnte Version nicht abrufen"
+                Write-Warning-Custom "Could not retrieve version"
             }
         }
     }
@@ -84,32 +84,32 @@ function Test-ExifToolExists {
 }
 
 # ============================================================================
-# Funktion: Download ExifTool
+# Function: Download ExifTool
 # ============================================================================
 function Invoke-ExifToolDownload {
-    Write-Info "Lade ExifTool herunter..."
-    Write-Info "Quelle: $DIRECT_URL"
+    Write-Info "Downloading ExifTool..."
+    Write-Info "Source: $DIRECT_URL"
     
-    # Erstelle Download-Verzeichnis
+    # Create download directory
     if (-not (Test-Path $DOWNLOAD_DIR)) {
         New-Item -ItemType Directory -Path $DOWNLOAD_DIR | Out-Null
-        Write-Info "Download-Verzeichnis erstellt"
+        Write-Info "Download directory created"
     }
     
     $zipFile = Join-Path $DOWNLOAD_DIR "exiftool-13.40_64.zip"
     
-    # Loesche alte ZIP falls vorhanden
+    # Remove old ZIP if present
     if (Test-Path $zipFile) {
         Remove-Item $zipFile -Force
     }
     
     try {
-        Write-Info "Download laeuft (dies kann 1-2 Minuten dauern)..."
+        Write-Info "Downloading (this may take 1-2 minutes)..."
         
-        # Setze TLS 1.2 fuer sichere Downloads
+        # Set TLS 1.2 for secure downloads
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         
-        # Download mit WebClient (robuster als Invoke-WebRequest)
+        # Download with WebClient (more robust than Invoke-WebRequest)
         $webClient = New-Object System.Net.WebClient
         $webClient.DownloadFile($DIRECT_URL, $zipFile)
         
@@ -117,10 +117,10 @@ function Invoke-ExifToolDownload {
             $fileSize = [math]::Round((Get-Item $zipFile).Length / 1MB, 2)
             
             if ($fileSize -lt 1.0) {
-                Write-Error-Custom "Download zu klein ($fileSize MB) - moeglicherweise Fehler"
-                Write-Info "Versuche alternative Download-Methode..."
+                Write-Error-Custom "Download too small ($fileSize MB) - possible error"
+                Write-Info "Trying alternative download method..."
                 
-                # Fallback: Invoke-WebRequest mit MaximumRedirection
+                # Fallback: Invoke-WebRequest with MaximumRedirection
                 $ProgressPreference = 'SilentlyContinue'
                 Invoke-WebRequest -Uri $SOURCEFORGE_URL -OutFile $zipFile -MaximumRedirection 10 -UseBasicParsing
                 
@@ -128,24 +128,24 @@ function Invoke-ExifToolDownload {
             }
             
             if ($fileSize -gt 10.0) {
-                Write-Success "Download abgeschlossen ($fileSize MB)"
+                Write-Success "Download completed ($fileSize MB)"
                 return $zipFile
             }
             else {
-                Write-Error-Custom "Download fehlgeschlagen - Datei zu klein ($fileSize MB)"
-                Write-Info "Erwartete Groesse: ca. 11 MB"
+                Write-Error-Custom "Download failed - file too small ($fileSize MB)"
+                Write-Info "Expected size: approx. 11 MB"
                 return $null
             }
         }
         else {
-            Write-Error-Custom "Download fehlgeschlagen - Datei nicht erstellt"
+            Write-Error-Custom "Download failed - file not created"
             return $null
         }
     }
     catch {
-        Write-Error-Custom "Download-Fehler: $($_.Exception.Message)"
-        Write-Info "Pruefe Internetverbindung und Firewall-Einstellungen"
-        Write-Info "Alternativer Download: https://exiftool.org/"
+        Write-Error-Custom "Download error: $($_.Exception.Message)"
+        Write-Info "Check your internet connection and firewall settings"
+        Write-Info "Alternative download: https://exiftool.org/"
         return $null
     }
     finally {
@@ -156,170 +156,170 @@ function Invoke-ExifToolDownload {
 }
 
 # ============================================================================
-# Funktion: Entpacke ExifTool ZIP
+# Function: Extract ExifTool ZIP
 # ============================================================================
 function Expand-ExifToolArchive {
     param([string]$ZipPath)
     
-    Write-Info "Entpacke ExifTool..."
+    Write-Info "Extracting ExifTool..."
     
     try {
-        # Entpacke in temp_download
+        # Extract into temp_download
         Expand-Archive -Path $ZipPath -DestinationPath $DOWNLOAD_DIR -Force
-        Write-Success "ZIP entpackt"
+        Write-Success "ZIP extracted"
         
-        # Pruehe ob exiftool-13.40_64 Ordner im ZIP war
+        # Check whether the exiftool-13.40_64 folder was inside the ZIP
         $unpackedDir = Join-Path $DOWNLOAD_DIR "exiftool-13.40_64"
         
         if (-not (Test-Path $unpackedDir)) {
-            Write-Error-Custom "exiftool-13.40_64 Ordner nicht gefunden nach Entpacken"
-            Write-Info "Inhalte von temp_download:"
+            Write-Error-Custom "exiftool-13.40_64 folder not found after extraction"
+            Write-Info "Contents of temp_download:"
             Get-ChildItem $DOWNLOAD_DIR | ForEach-Object { Write-Info "  - $($_.Name)" }
             return $false
         }
         
-        # Verschiebe direkt ins Repository (nicht verschachtelt!)
+        # Move directly into the repository (not nested!)
         if (Test-Path $EXIFTOOL_DIR) {
-            Write-Warning-Custom "ExifTool-Ordner existiert bereits - loesche..."
+            Write-Warning-Custom "ExifTool folder already exists - removing..."
             Remove-Item -Path $EXIFTOOL_DIR -Recurse -Force
         }
         
-        Write-Info "Verschiebe exiftool-13.40_64 ins Repository..."
+        Write-Info "Moving exiftool-13.40_64 into repository..."
         Move-Item -Path $unpackedDir -Destination $EXIFTOOL_DIR -Force
         
-        Write-Success "ExifTool installiert: $EXIFTOOL_DIR"
+        Write-Success "ExifTool installed: $EXIFTOOL_DIR"
         
-        # Pruehe beide moeglichen exe Namen
+        # Check both possible exe names
         $exeFile1 = Join-Path $EXIFTOOL_DIR "exiftool.exe"
         $exeFile2 = Join-Path $EXIFTOOL_DIR "exiftool(-k).exe"
         
         if (Test-Path $exeFile1) {
-            Write-Success "exiftool.exe gefunden"
+            Write-Success "exiftool.exe found"
             return $true
         }
         elseif (Test-Path $exeFile2) {
-            Write-Success "exiftool(-k).exe gefunden"
+            Write-Success "exiftool(-k).exe found"
             
-            # Kopiere zu exiftool.exe fuer einfachere Verwendung
+            # Copy to exiftool.exe for easier usage
             Copy-Item -Path $exeFile2 -Destination $exeFile1 -Force
-            Write-Info "Kopiert nach exiftool.exe"
+            Write-Info "Copied to exiftool.exe"
             return $true
         }
         else {
-            Write-Error-Custom "Keine exiftool.exe gefunden"
-            Write-Info "Inhalte von exiftool-13.40_64:"
+            Write-Error-Custom "No exiftool.exe found"
+            Write-Info "Contents of exiftool-13.40_64:"
             Get-ChildItem $EXIFTOOL_DIR | ForEach-Object { Write-Info "  - $($_.Name)" }
             return $false
         }
     }
     catch {
-        Write-Error-Custom "Entpacken fehlgeschlagen: $($_.Exception.Message)"
+        Write-Error-Custom "Extraction failed: $($_.Exception.Message)"
         return $false
     }
 }
 
 # ============================================================================
-# Funktion: Aufräumen
+# Function: Clean up temporary files
 # ============================================================================
 function Remove-TempDirectory {
-    Write-Info "Raeume temporaere Dateien auf..."
+    Write-Info "Cleaning up temporary files..."
     
     if (Test-Path $DOWNLOAD_DIR) {
         Remove-Item -Path $DOWNLOAD_DIR -Recurse -Force
-        Write-Success "Temp-Verzeichnis geloescht"
+        Write-Success "Temporary directory removed"
     }
 }
 
 # ============================================================================
-# Funktion: Prüfe ExifTool Funktionalität
+# Function: Verify ExifTool functionality
 # ============================================================================
 function Test-ExifToolFunctionality {
-    # Pruehe beide moegliche exe Namen
+    # Check both possible exe names
     $exeFile1 = Join-Path $EXIFTOOL_DIR "exiftool.exe"
     $exeFile2 = Join-Path $EXIFTOOL_DIR "exiftool(-k).exe"
     
     $exeFile = if (Test-Path $exeFile1) { $exeFile1 } elseif (Test-Path $exeFile2) { $exeFile2 } else { $null }
     
     if (-not $exeFile) {
-        Write-Error-Custom "Keine exiftool.exe gefunden"
+        Write-Error-Custom "No exiftool.exe found"
         return $false
     }
     
     try {
-        Write-Info "Teste ExifTool..."
+        Write-Info "Testing ExifTool..."
         $output = & $exeFile -ver 2>&1
-        Write-Success "ExifTool Version: $output"
+        Write-Success "ExifTool version: $output"
         Write-Success "Executable: $(Split-Path -Leaf $exeFile)"
         return $true
     }
     catch {
-        Write-Error-Custom "ExifTool Test fehlgeschlagen: $($_.Exception.Message)"
+        Write-Error-Custom "ExifTool test failed: $($_.Exception.Message)"
         return $false
     }
 }
 
 # ============================================================================
-# Hauptprogramm
+# Main
 # ============================================================================
 function Main {
     Write-Host ""
     Write-Host "======================================================" -ForegroundColor Cyan
-    Write-Host "  ExifTool Setup für RenamePy" -ForegroundColor Cyan
+    Write-Host "  ExifTool Setup for RenamePy" -ForegroundColor Cyan
     Write-Host "======================================================" -ForegroundColor Cyan
     Write-Host ""
     
-    Write-Info "Projekt-Verzeichnis: $PROJECT_ROOT"
-    Write-Info "ExifTool Zielordner: $EXIFTOOL_DIR"
+    Write-Info "Project directory: $PROJECT_ROOT"
+    Write-Info "ExifTool target folder: $EXIFTOOL_DIR"
     Write-Host ""
     
-    # Schritt 1: Prüfe ob bereits vorhanden
+    # Step 1: Check whether already present
     if (Test-ExifToolExists) {
         if (-not $Force) {
-            Write-Success "ExifTool bereits installiert und funktionsfähig"
-            Write-Info "Für Neuinstallation nutze: .\setup_exiftool.ps1 -Force"
+            Write-Success "ExifTool already installed and functional"
+            Write-Info "To reinstall use: .\setup_exiftool.ps1 -Force"
             return $true
         }
         else {
-            Write-Warning-Custom "Force-Flag gesetzt - Installation wird überschrieben"
+            Write-Warning-Custom "Force flag set - installation will be overwritten"
         }
     }
     
-    # Schritt 2: Download
+    # Step 2: Download
     $zipFile = Invoke-ExifToolDownload
     if (-not $zipFile) {
-        Write-Error-Custom "Installation abgebrochen"
+        Write-Error-Custom "Installation aborted"
         return $false
     }
     
-    # Schritt 3: Entpacken
+    # Step 3: Extract
     if (-not (Expand-ExifToolArchive -ZipPath $zipFile)) {
-        Write-Error-Custom "Installation abgebrochen"
+        Write-Error-Custom "Installation aborted"
         return $false
     }
     
-    # Schritt 4: Cleanup
+    # Step 4: Cleanup
     Remove-TempDirectory
     
-    # Schritt 5: Validierung
+    # Step 5: Validation
     if (-not (Test-ExifToolFunctionality)) {
-        Write-Error-Custom "ExifTool konnte nicht validiert werden"
+        Write-Error-Custom "ExifTool could not be validated"
         return $false
     }
     
-    # Erfolg
+    # Success
     Write-Host ""
     Write-Host "======================================================" -ForegroundColor Green
-    Write-Host "  ExifTool erfolgreich installiert!" -ForegroundColor Green
+    Write-Host "  ExifTool successfully installed!" -ForegroundColor Green
     Write-Host "======================================================" -ForegroundColor Green
     Write-Host ""
     
-    Write-Host "ExifTool ist jetzt verfügbar unter:" -ForegroundColor Yellow
+    Write-Host "ExifTool is now available at:" -ForegroundColor Yellow
     Write-Host "  $EXIFTOOL_DIR" -ForegroundColor Cyan
     Write-Host ""
     
-    Write-Host "Verwendung:" -ForegroundColor Yellow
-    Write-Host "  exiftool.exe <bildatei>" -ForegroundColor Cyan
-    Write-Host "  oder im Python-Code:" -ForegroundColor Cyan
+    Write-Host "Usage:" -ForegroundColor Yellow
+    Write-Host "  exiftool.exe <image_file>" -ForegroundColor Cyan
+    Write-Host "  or in Python code:" -ForegroundColor Cyan
     Write-Host "  exiftool = ExifTool('exiftool-13.40_64/exiftool.exe')" -ForegroundColor Cyan
     Write-Host ""
     
@@ -327,7 +327,7 @@ function Main {
 }
 
 # ============================================================================
-# Ausfuehrung
+# Execution
 # ============================================================================
 try {
     $success = Main
@@ -335,12 +335,12 @@ try {
         exit 0
     }
     else {
-        Write-Host "[FEHLER] Setup fehlgeschlagen" -ForegroundColor Red
+        Write-Host "[ERROR] Setup failed" -ForegroundColor Red
         exit 1
     }
 }
 catch {
-    Write-Host "[FEHLER] Kritischer Fehler: $_" -ForegroundColor Red
-    Write-Host "Stack Trace: $($_.ScriptStackTrace)" -ForegroundColor Red
+    Write-Host "[ERROR] Critical error: $_" -ForegroundColor Red
+    Write-Host "Stack trace: $($_.ScriptStackTrace)" -ForegroundColor Red
     exit 1
 }

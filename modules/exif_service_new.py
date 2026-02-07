@@ -23,8 +23,6 @@ try:
 except ImportError:
     EXIFTOOL_AVAILABLE = False
 
-# Pillow dependency removed — ExifTool is the sole EXIF backend
-
 
 class ExifService:
     """

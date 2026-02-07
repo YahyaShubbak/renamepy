@@ -1,68 +1,68 @@
 @echo off
 setlocal ENABLEDELAYEDEXPANSION
 REM ============================================================================
-REM  RenamePy - Simple Starter (mit Conda Environment)
+REM  RenamePy - Simple Starter (with Conda Environment)
 REM ============================================================================
-REM Startet die Anwendung mit Conda Environment
+REM Starts the application with Conda environment
 
 set SCRIPT_DIR=%~dp0
 cd /d "%SCRIPT_DIR%" || (
-    echo FEHLER: Pfad nicht erreichbar
+    echo ERROR: Path unreachable
     pause
     exit /b 1
 )
 
 echo ======================================
 echo   FILE RENAMER (Simple)
-echo   Pfad: %SCRIPT_DIR%
+echo   Path: %SCRIPT_DIR%
 echo ======================================
 echo.
 
-REM Aktiviere Conda Environment
+REM Activate Conda Environment
 if exist "%USERPROFILE%\miniconda3\Scripts\activate.bat" (
-    echo Aktiviere Conda Environment 'renamepy'...
+    echo Activating Conda environment 'renamepy'...
     call "%USERPROFILE%\miniconda3\Scripts\activate.bat" renamepy
     if errorlevel 1 (
-        echo FEHLER: Conda Environment konnte nicht aktiviert werden
-        echo Loesung: .\install.ps1
+        echo ERROR: Could not activate Conda environment
+        echo Solution: Run .\install.ps1
         pause
         exit /b 1
     )
 ) else (
-    echo FEHLER: Conda nicht gefunden
-    echo Installation erforderlich: .\install.bat
+    echo ERROR: Conda not found
+    echo Installation required: .\install.bat
     pause
     exit /b 1
 )
 
-REM Prüfe Python Verfügbarkeit
+REM Check Python availability
 python --version >nul 2>nul
 if errorlevel 1 (
-    echo FEHLER: Python im Environment nicht verfuegbar
+    echo ERROR: Python not available in environment
     pause
     exit /b 1
 )
 
-REM Prüfe erforderliche Dateien
+REM Check required files
 if not exist RenameFiles.py (
-    echo FEHLER: RenameFiles.py fehlt
+    echo ERROR: RenameFiles.py is missing
     pause
     exit /b 1
 )
 
 if not exist modules\ (
-    echo FEHLER: modules Ordner fehlt
+    echo ERROR: modules folder is missing
     pause
     exit /b 1
 )
 
 if not exist modules\__init__.py (
-    echo Hinweis: modules\__init__.py wird erstellt
+    echo Note: Creating modules\__init__.py
     > modules\__init__.py echo # auto-created
 )
 
-echo Python verfuegbar
-echo Starte Anwendung...
+echo Python available
+echo Starting application...
 echo.
 
 python RenameFiles.py
@@ -70,10 +70,10 @@ set EXITCODE=%ERRORLEVEL%
 
 echo.
 if %EXITCODE% neq 0 (
-    echo FEHLER: Anwendung beendet mit Code %EXITCODE%
-    echo Loesung: Fuehre zuerst .\install.ps1 aus
+    echo ERROR: Application exited with code %EXITCODE%
+    echo Solution: Run .\install.ps1 first
 ) else (
-    echo Beendet erfolgreich
+    echo Finished successfully
 )
 
 pause

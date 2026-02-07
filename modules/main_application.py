@@ -284,9 +284,6 @@ class FileRenamerApp(QMainWindow):
             self.undo_button.setEnabled(False)
             self.undo_button.setText("↶ Restore Original Names")
         self._preview_exif_file = None
-        
-        # Check for ExifTool availability and show warning if needed
-        self.check_exiftool_warning()
     
     def setup_ui(self):
         """Setup the complete original UI design"""
@@ -328,7 +325,7 @@ class FileRenamerApp(QMainWindow):
             show_warning = self.settings_manager.get_show_exiftool_warning()
             
             if show_warning:
-                dialog = ExifToolWarningDialog(self, self.exif_method)
+                dialog = ExifToolWarningDialog(self)
                 dialog.exec()
                 
                 if not dialog.should_show_again():

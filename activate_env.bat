@@ -1,3 +1,3 @@
 @echo off
-REM Aktiviere Conda Environment
+REM Activate Conda Environment
 call conda activate renamepy
