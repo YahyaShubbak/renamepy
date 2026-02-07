@@ -17,8 +17,8 @@ from PyQt6.QtCore import QThread, pyqtSignal
 # Import unified utilities from file_utilities module
 from .file_utilities import is_media_file, sanitize_final_filename, get_safe_target_path, validate_path_length
 
-# Import exif_processor module (relative only to work inside package)
-from . import exif_processor
+# Import timestamp operations from exif_processor (the only remaining use)
+from .exif_processor import batch_sync_exif_dates
 from .filename_components import build_ordered_components
 from .exif_undo_manager import write_original_filename_to_exif
 
@@ -103,7 +103,7 @@ class RenameWorkerThread(QThread):
         self.progress_update.emit("Synchronizing EXIF dates to file timestamps...")
         media_files = [f for f in self.files if is_media_file(f)]
         
-        successes, sync_errors, timestamp_backup = exif_processor.batch_sync_exif_dates(
+        successes, sync_errors, timestamp_backup = batch_sync_exif_dates(
             media_files,
             self.exiftool_path if self.exiftool_path else None,
             lambda msg: self.progress_update.emit(f"Date sync: {msg}"),
@@ -201,7 +201,7 @@ class RenameWorkerThread(QThread):
             return exif_cache
 
         # ------------------------------------------------------------------
-        # SLOW FALLBACK: Per-file extraction via exif_processor globals
+        # SLOW FALLBACK: Per-file extraction via ExifService
         # ------------------------------------------------------------------
         for idx, group in enumerate(file_groups):
             if idx % 50 == 0:
@@ -210,11 +210,11 @@ class RenameWorkerThread(QThread):
             first_file = group[0]
             if first_file not in exif_cache:
                 try:
-                    date_str, camera, lens = exif_processor.get_selective_cached_exif_data(
+                    date_str, camera, lens = self.exif_service.get_selective_cached_exif_data(
                         first_file, self.exif_method, self.exiftool_path,
                         need_date=True, need_camera=True, need_lens=True
-                    )
-                    raw_meta = exif_processor.get_exiftool_metadata_shared(first_file, self.exiftool_path)
+                    ) if self.exif_service else (None, None, None)
+                    raw_meta = self.exif_service.extract_raw_exif(first_file) if self.exif_service else {}
                     
                     exif_cache[first_file] = {
                         'date_str': date_str,
@@ -360,11 +360,6 @@ class RenameWorkerThread(QThread):
                     first_file, self.exif_method, self.exiftool_path,
                     need_date=need_date, need_camera=need_camera, need_lens=need_lens
                 )
-            else:
-                date_taken, camera_model, lens_model = exif_processor.get_selective_cached_exif_data(
-                    first_file, self.exif_method, self.exiftool_path,
-                    need_date=need_date, need_camera=need_camera, need_lens=need_lens
-                )
 
         # Fallbacks
         if need_date and not date_taken:
@@ -430,11 +425,6 @@ class RenameWorkerThread(QThread):
                                 path, self.exif_method, self.exiftool_path,
                                 need_date=need_date, need_camera=need_camera, need_lens=need_lens
                             )
-                        else:
-                            d, c, l = exif_processor.get_selective_cached_exif_data(
-                                path, self.exif_method, self.exiftool_path,
-                                need_date=need_date, need_camera=need_camera, need_lens=need_lens
-                            )
                         if need_date and d: file_date = d
                         if need_camera and c: file_cam = c
                         if need_lens and l: file_lens = l
@@ -461,7 +451,7 @@ class RenameWorkerThread(QThread):
                                 if self.exif_service:
                                     meta = self.exif_service.get_all_metadata(path, self.exif_method, self.exiftool_path) or {}
                                 else:
-                                    meta = exif_processor.get_all_metadata(path, self.exif_method, self.exiftool_path) or {}
+                                    meta = {}
                             except Exception:
                                 meta = {}
                         if meta:
@@ -611,11 +601,6 @@ class RenameWorkerThread(QThread):
                 if file_date is None and self.exif_method and first_file not in date_by_file:
                     if self.exif_service:
                         d, _, _ = self.exif_service.get_selective_cached_exif_data(
-                            first_file, self.exif_method, self.exiftool_path,
-                            need_date=True, need_camera=False, need_lens=False
-                        )
-                    else:
-                        d, _, _ = exif_processor.get_selective_cached_exif_data(
                             first_file, self.exif_method, self.exiftool_path,
                             need_date=True, need_camera=False, need_lens=False
                         )

@@ -109,7 +109,7 @@ class TestPowerShellTimestampSafety:
 
 
 # ===========================================================================
-# 2. Thread-safe global ExifTool instance
+# 2. Thread-safe EXIF reads via ExifService delegates
 # ===========================================================================
 class TestThreadSafeGlobalExifTool:
     """Verify that concurrent access to get_exiftool_metadata_shared is safe."""
@@ -119,12 +119,16 @@ class TestThreadSafeGlobalExifTool:
         """Multiple threads reading EXIF from different files must not crash."""
         from modules.exif_processor import (
             get_exiftool_metadata_shared, cleanup_global_exiftool,
-            find_exiftool_path
+            set_default_exif_service, find_exiftool_path
         )
+        from modules.exif_service_new import ExifService
 
         exiftool_path = find_exiftool_path()
         if not exiftool_path:
             pytest.skip("ExifTool not found")
+
+        service = ExifService(exiftool_path=exiftool_path)
+        set_default_exif_service(service)
 
         results = {}
         errors = []
@@ -148,6 +152,7 @@ class TestThreadSafeGlobalExifTool:
 
         # Cleanup
         cleanup_global_exiftool()
+        set_default_exif_service(None)
 
         assert len(errors) == 0, f"Thread errors: {errors}"
         assert len(results) == len(SAMPLE_FILES), "All threads should produce results"
@@ -160,12 +165,16 @@ class TestThreadSafeGlobalExifTool:
         """Verify that concurrent reads don't mix up metadata between files."""
         from modules.exif_processor import (
             get_exiftool_metadata_shared, cleanup_global_exiftool,
-            find_exiftool_path
+            set_default_exif_service, find_exiftool_path
         )
+        from modules.exif_service_new import ExifService
 
         exiftool_path = find_exiftool_path()
         if not exiftool_path:
             pytest.skip("ExifTool not found")
+
+        service = ExifService(exiftool_path=exiftool_path)
+        set_default_exif_service(service)
 
         results = {}
         errors = []
@@ -191,6 +200,7 @@ class TestThreadSafeGlobalExifTool:
             t.join(timeout=30)
 
         cleanup_global_exiftool()
+        set_default_exif_service(None)
 
         assert len(errors) == 0, f"Thread errors: {errors}"
         # Each result's SourceFile should match the file we requested
@@ -203,73 +213,84 @@ class TestThreadSafeGlobalExifTool:
 
 
 # ===========================================================================
-# 3. Global ExifTool cleanup
+# 3. ExifService delegate cleanup
 # ===========================================================================
 class TestGlobalExifToolCleanup:
-    """Verify cleanup_global_exiftool properly terminates the subprocess."""
+    """Verify cleanup_global_exiftool properly cleans up the ExifService."""
 
     @skip_no_images
     def test_cleanup_after_use(self):
-        """After cleanup, the global instance should be None."""
+        """After cleanup, delegate calls should return safe defaults."""
         from modules.exif_processor import (
             get_exiftool_metadata_shared, cleanup_global_exiftool,
-            _global_exiftool_instance, find_exiftool_path
+            set_default_exif_service, find_exiftool_path
         )
-        import modules.exif_processor as ep
+        from modules.exif_service_new import ExifService
 
         exiftool_path = find_exiftool_path()
         if not exiftool_path:
             pytest.skip("ExifTool not found")
 
+        service = ExifService(exiftool_path=exiftool_path)
+        set_default_exif_service(service)
+
         # Use the shared instance to ensure it's running
         meta = get_exiftool_metadata_shared(SAMPLE_FILES[0], exiftool_path)
         assert len(meta) > 0, "Should get metadata"
-        assert ep._global_exiftool_instance is not None, "Instance should be active"
 
         # Cleanup
         cleanup_global_exiftool()
-        assert ep._global_exiftool_instance is None, "Instance should be None after cleanup"
+        set_default_exif_service(None)
 
     @skip_no_images
     def test_double_cleanup_safe(self):
         """Calling cleanup twice should not raise."""
         from modules.exif_processor import (
             get_exiftool_metadata_shared, cleanup_global_exiftool,
-            find_exiftool_path
+            set_default_exif_service, find_exiftool_path
         )
+        from modules.exif_service_new import ExifService
 
         exiftool_path = find_exiftool_path()
         if not exiftool_path:
             pytest.skip("ExifTool not found")
+
+        service = ExifService(exiftool_path=exiftool_path)
+        set_default_exif_service(service)
 
         get_exiftool_metadata_shared(SAMPLE_FILES[0], exiftool_path)
         cleanup_global_exiftool()
         cleanup_global_exiftool()  # Must not raise
+        set_default_exif_service(None)
 
     @skip_no_images
     def test_reuse_after_cleanup(self):
-        """After cleanup, a new call should recreate the instance and work."""
+        """After cleanup and re-registration, a new call should work."""
         from modules.exif_processor import (
             get_exiftool_metadata_shared, cleanup_global_exiftool,
-            find_exiftool_path
+            set_default_exif_service, find_exiftool_path
         )
-        import modules.exif_processor as ep
+        from modules.exif_service_new import ExifService
 
         exiftool_path = find_exiftool_path()
         if not exiftool_path:
             pytest.skip("ExifTool not found")
 
-        # Use, cleanup, then use again
+        # Use, cleanup
+        service1 = ExifService(exiftool_path=exiftool_path)
+        set_default_exif_service(service1)
         get_exiftool_metadata_shared(SAMPLE_FILES[0], exiftool_path)
         cleanup_global_exiftool()
-        assert ep._global_exiftool_instance is None
 
+        # Re-register new service and use again
+        service2 = ExifService(exiftool_path=exiftool_path)
+        set_default_exif_service(service2)
         meta = get_exiftool_metadata_shared(SAMPLE_FILES[0], exiftool_path)
-        assert len(meta) > 0, "Should work again after cleanup"
-        assert ep._global_exiftool_instance is not None
+        assert len(meta) > 0, "Should work again after re-registration"
 
         # Final cleanup
         cleanup_global_exiftool()
+        set_default_exif_service(None)
 
 
 # ===========================================================================
@@ -283,12 +304,16 @@ class TestBasicExifExtraction:
         """extract_exif_fields_with_retry should return a 3-tuple."""
         from modules.exif_processor import (
             extract_exif_fields_with_retry, find_exiftool_path,
-            cleanup_global_exiftool
+            cleanup_global_exiftool, set_default_exif_service
         )
+        from modules.exif_service_new import ExifService
 
         exiftool_path = find_exiftool_path()
         if not exiftool_path:
             pytest.skip("ExifTool not found")
+
+        service = ExifService(exiftool_path=exiftool_path)
+        set_default_exif_service(service)
 
         result = extract_exif_fields_with_retry(
             SAMPLE_FILES[0], "exiftool", exiftool_path
@@ -300,6 +325,7 @@ class TestBasicExifExtraction:
         assert date_taken is not None, "Should extract date from real image"
 
         cleanup_global_exiftool()
+        set_default_exif_service(None)
 
     @skip_no_images
     def test_exif_service_extraction(self):

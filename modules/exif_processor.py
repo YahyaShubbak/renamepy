@@ -3,13 +3,14 @@
 EXIF data extraction and handling for the RenameFiles application.
 This module provides the exact same functionality as the original RenameFiles.py
 """
+from __future__ import annotations
 
 import os
 import time
-import threading
 import subprocess
 import glob
 import shutil
+from typing import TYPE_CHECKING
 
 from .logger_util import get_logger
 log = get_logger()
@@ -21,13 +22,27 @@ try:
 except ImportError:
     EXIFTOOL_AVAILABLE = False
 
-# Pillow dependency removed — ExifTool is the sole EXIF backend
+# ---------------------------------------------------------------------------
+# Module-level ExifService reference for backward-compatible delegate functions.
+# Call set_default_exif_service() once during application startup.
+# ---------------------------------------------------------------------------
 
-# Global variables for backward compatibility with legacy code
-# These are kept for functions that are still called from outside the ExifService
-_global_exiftool_instance = None
-_global_exiftool_path = None
-_global_lock = threading.Lock()  # Thread safety for global ExifTool instance
+if TYPE_CHECKING:
+    from .exif_service_new import ExifService as _ExifServiceType
+
+_default_exif_service: _ExifServiceType | None = None
+
+
+def set_default_exif_service(service: _ExifServiceType) -> None:
+    """Register the application's ExifService for backward-compatible functions.
+
+    Must be called once during startup so that legacy delegate functions
+    (``get_exiftool_metadata_shared``, ``cleanup_global_exiftool``, etc.)
+    can route calls to the canonical ExifService instance.
+    """
+    global _default_exif_service
+    _default_exif_service = service
+
 
 # Windows FILETIME constants and structure (defined once at module level)
 EPOCH_AS_FILETIME = 116444736000000000  # January 1, 1970 as Windows FILETIME
@@ -43,328 +58,89 @@ if os.name == 'nt':
                      ("dwHighDateTime", wintypes.DWORD)]
 
 
-# Legacy wrapper functions for backward compatibility
-def get_cached_exif_data(file_path, method, exiftool_path=None):
-    """
-    Legacy wrapper - calls extract_exif_fields_with_retry which uses shared ExifTool instance.
-    OPTIMIZATION: No ExifService instance created, uses global ExifTool directly.
-    """
-    return extract_exif_fields_with_retry(file_path, method, exiftool_path, max_retries=2)
+# ---------------------------------------------------------------------------
+# Thin delegates — route to the registered ExifService instance.
+#
+# These exist so that modules which import from exif_processor (handlers,
+# dialogs, file_list_manager, performance_benchmark, tests) continue to
+# work without changing their import statements.
+# ---------------------------------------------------------------------------
 
-def get_selective_cached_exif_data(file_path, method, exiftool_path=None, need_date=True, need_camera=False, need_lens=False):
-    """
-    Legacy wrapper - calls extract_selective_exif_fields which uses shared ExifTool instance.
-    OPTIMIZATION: No ExifService instance created, uses global ExifTool directly.
-    """
-    return extract_selective_exif_fields(
-        file_path, method, exiftool_path,
-        need_date=need_date, need_camera=need_camera, need_lens=need_lens
-    )
+def get_exiftool_metadata_shared(image_path: str, exiftool_path: str | None = None) -> dict:
+    """Read raw EXIF metadata via the shared ExifService.
 
-def extract_exif_fields(image_path, method, exiftool_path=None):
+    Falls back to a one-shot ExifTool subprocess if no service is registered
+    (e.g. during early startup or standalone testing).
     """
-    Extracts date, camera model, and lens model from an image using the specified method.
-    Returns (date, camera, lens) or (None, None, None) if not found.
-    """
-    return extract_exif_fields_with_retry(image_path, method, exiftool_path, max_retries=3)
-
-def extract_selective_exif_fields(image_path, method, exiftool_path=None, need_date=True, need_camera=False, need_lens=False):
-    """
-    OPTIMIZED: Extracts only the requested EXIF fields from an image.
-    This dramatically improves performance by only reading what's needed.
-    
-    Args:
-        image_path: Path to the image file
-        method: 'exiftool' (only supported method)
-        exiftool_path: Path to exiftool executable
-        need_date: Whether to extract date information
-        need_camera: Whether to extract camera model
-        need_lens: Whether to extract lens model
-    
-    Returns:
-        (date, camera, lens) - only requested fields are extracted, others are None
-    """
-    # If nothing is needed, return early
-    if not any([need_date, need_camera, need_lens]):
-        return None, None, None
-    
-    # CRITICAL FIX: Normalize path to prevent double backslashes
-    normalized_path = os.path.normpath(image_path)
-    
-    # Verify file exists
-    if not os.path.exists(normalized_path):
-        log.warning(f"extract_selective_exif_fields: File not found: {normalized_path}")
-        return None, None, None
-    
-    max_retries = 2  # Reduced retries for batch processing
-    
-    for attempt in range(max_retries):
-        try:
-            if method == "exiftool":
-                # Use shared ExifTool instance for better performance
-                meta = get_exiftool_metadata_shared(normalized_path, exiftool_path)
-                
-                # Extract only requested fields
-                date = None
-                camera = None  
-                lens = None
-                
-                if need_date:
-                    date = meta.get('EXIF:DateTimeOriginal') or meta.get('CreateDate') or meta.get('DateTimeOriginal')
-                    if date:
-                        date = date.split(' ')[0].replace(':', '')
-                
-                if need_camera:
-                    # Use the same simple approach as the working old application
-                    camera = meta.get('EXIF:Model') or meta.get('Model')
-                    if camera:
-                        camera = str(camera).replace(' ', '-')
-                
-                if need_lens:
-                    # Use the same simple approach as the working old application
-                    lens = meta.get('EXIF:LensModel') or meta.get('LensModel') or meta.get('LensInfo')
-                    if lens:
-                        lens = str(lens).replace(' ', '-')
-                
-                return date, camera, lens
-            else:
-                log.warning(f"Unsupported EXIF method: {method}")
-                return None, None, None
-                
-        except Exception as e:
-            if attempt == max_retries - 1:
-                return None, None, None
-            else:
-                time.sleep(0.05)  # Shorter pause for batch processing
-
-def get_exiftool_metadata_shared(image_path, exiftool_path=None):
-    """
-    PERFORMANCE OPTIMIZATION: Use a shared ExifTool instance to avoid 
-    the overhead of starting/stopping ExifTool for each file.
-    
-    Thread-safe: uses _global_lock to serialize access to the shared instance.
-    """
-    global _global_exiftool_instance, _global_exiftool_path
-    
-    # CRITICAL FIX: Normalize path to prevent double backslashes
-    normalized_path = os.path.normpath(image_path)
-    
-    # Verify file exists (no lock needed — read-only OS call)
-    if not os.path.exists(normalized_path):
-        log.warning(f"get_exiftool_metadata_shared: File not found: {normalized_path}")
-        return {}
-    
-    # Auto-detect ExifTool path if not provided
-    if not exiftool_path:
-        exiftool_path = find_exiftool_path()
-    
-    with _global_lock:
-        try:
-            # Check if we need to create/recreate the instance
-            if (_global_exiftool_instance is None or 
-                _global_exiftool_path != exiftool_path):
-                
-                # Close existing instance if needed
-                if _global_exiftool_instance is not None:
-                    try:
-                        _global_exiftool_instance.terminate()
-                    except Exception:
-                        pass
-                
-                # Create new instance
-                if exiftool_path and os.path.exists(exiftool_path):
-                    _global_exiftool_instance = exiftool.ExifToolHelper(executable=exiftool_path)
-                    log.info(f"Created ExifTool instance with: {exiftool_path}")
-                else:
-                    _global_exiftool_instance = exiftool.ExifToolHelper()
-                    log.info("Created default ExifTool instance")
-                
-                _global_exiftool_path = exiftool_path
-                
-                # Start the instance
-                _global_exiftool_instance.__enter__()
-            
-            # Get metadata using the shared instance with normalized path
-            meta = _global_exiftool_instance.get_metadata([normalized_path])[0]
-            return meta
-            
-        except Exception as e:
-            # If the shared instance fails, fall back to a temporary instance
-            log.warning(f"Shared ExifTool instance failed, using temporary instance: {e}")
-            # Reset the broken instance so next call creates a fresh one
-            _global_exiftool_instance = None
-            _global_exiftool_path = None
-    
-    # Fallback outside the lock — temporary instance doesn't need synchronization
+    if _default_exif_service:
+        return _default_exif_service.extract_raw_exif(image_path)
+    # Fallback: one-shot subprocess (slower but always works)
     try:
+        normalized = os.path.normpath(image_path)
+        if not os.path.exists(normalized):
+            return {}
+        if not exiftool_path:
+            exiftool_path = find_exiftool_path()
         if exiftool_path and os.path.exists(exiftool_path):
             with exiftool.ExifToolHelper(executable=exiftool_path) as et:
-                return et.get_metadata([normalized_path])[0]
+                return et.get_metadata([normalized])[0]
         else:
             with exiftool.ExifToolHelper() as et:
-                return et.get_metadata([normalized_path])[0]
-    except Exception as e2:
-        log.error(f"Temporary ExifTool instance also failed: {e2}")
+                return et.get_metadata([normalized])[0]
+    except Exception as e:
+        log.warning(f"get_exiftool_metadata_shared fallback failed: {e}")
         return {}
+
+
+def get_cached_exif_data(file_path, method=None, exiftool_path=None):
+    """Legacy delegate — routes to ExifService.get_cached_exif_data."""
+    if _default_exif_service:
+        return _default_exif_service.get_cached_exif_data(file_path, method, exiftool_path)
+    return None, None, None
+
+
+def get_selective_cached_exif_data(
+    file_path, method=None, exiftool_path=None,
+    need_date=True, need_camera=False, need_lens=False,
+):
+    """Legacy delegate — routes to ExifService.get_selective_cached_exif_data."""
+    if _default_exif_service:
+        return _default_exif_service.get_selective_cached_exif_data(
+            file_path, method, exiftool_path,
+            need_date=need_date, need_camera=need_camera, need_lens=need_lens,
+        )
+    return None, None, None
+
+
+def extract_exif_fields_with_retry(image_path, method=None, exiftool_path=None, max_retries=3):
+    """Legacy delegate — routes to ExifService._extract_exif_fields_with_retry."""
+    if _default_exif_service:
+        return _default_exif_service._extract_exif_fields_with_retry(
+            image_path,
+            method or _default_exif_service.current_method,
+            exiftool_path,
+            max_retries,
+        )
+    return None, None, None
+
+
+def get_all_metadata(file_path, method=None, exiftool_path=None):
+    """Legacy delegate — routes to ExifService.get_all_metadata."""
+    if _default_exif_service:
+        return _default_exif_service.get_all_metadata(file_path, method, exiftool_path)
+    return {}
+
 
 def clear_global_exif_cache() -> None:
-    """Clear any global EXIF state.
+    """Clear the ExifService cache."""
+    if _default_exif_service:
+        _default_exif_service.clear_cache()
 
-    For backward compatibility only. The global ``get_exiftool_metadata_shared``
-    function is stateless (no result cache), so there is nothing to evict here.
-    New code should use :class:`ExifService` instead.
-    """
-    global _global_exiftool_instance
-    with _global_lock:
-        if _global_exiftool_instance is not None:
-            try:
-                _global_exiftool_instance.__exit__(None, None, None)
-            except Exception:
-                pass
-            _global_exiftool_instance = None
 
 def cleanup_global_exiftool() -> None:
-    """Clean up the global ExifTool instance when done with batch processing."""
-    global _global_exiftool_instance
-    
-    with _global_lock:
-        if _global_exiftool_instance is not None:
-            try:
-                _global_exiftool_instance.__exit__(None, None, None)
-            except Exception:
-                pass
-            _global_exiftool_instance = None
-
-def extract_exif_fields_with_retry(image_path, method, exiftool_path=None, max_retries=3):
-    """
-    Extracts EXIF fields with retry mechanism for reliability.
-    OPTIMIZATION: Now uses shared ExifTool instance for better performance!
-    """
-    # CRITICAL FIX: Normalize path to prevent double backslashes
-    normalized_path = os.path.normpath(image_path)
-    
-    # Verify file exists
-    if not os.path.exists(normalized_path):
-        log.warning(f"extract_exif_fields_with_retry: File not found: {normalized_path}")
-        return None, None, None
-    
-    for attempt in range(max_retries):
-        try:
-            if method == "exiftool":
-                # PERFORMANCE OPTIMIZATION: Use shared ExifTool instance instead of creating new process
-                meta = get_exiftool_metadata_shared(normalized_path, exiftool_path)
-                
-                # Extract date
-                date = meta.get('EXIF:DateTimeOriginal')
-                if date:
-                    date = date.split(' ')[0].replace(':', '')
-                
-                # Extract camera model
-                camera = meta.get('EXIF:Model')
-                if camera:
-                    camera = str(camera).replace(' ', '-')
-                
-                # Extract lens model
-                lens = meta.get('EXIF:LensModel') or meta.get('LensInfo')
-                if lens:
-                    lens = str(lens).replace(' ', '-')
-                
-                return date, camera, lens
-            else:
-                log.warning(f"Unsupported EXIF method: {method}")
-                return None, None, None
-                
-        except Exception as e:
-            if attempt == max_retries - 1:
-                log.error(f"EXIF extraction failed after {max_retries} attempts: {e}")
-                return None, None, None
-            else:
-                time.sleep(0.1)
-
-def get_all_metadata(file_path, method, exiftool_path=None):
-    """
-    Extract all relevant metadata for filename generation
-    Returns dict with aperture, iso, focal_length, shutter_speed, etc.
-    """
-    try:
-        normalized_path = os.path.normpath(file_path)
-        
-        if not os.path.exists(normalized_path):
-            return {}
-        
-        metadata = {}
-        
-        if method == "exiftool" and EXIFTOOL_AVAILABLE:
-            meta = get_exiftool_metadata_shared(normalized_path, exiftool_path)
-            
-            # Extract all relevant metadata
-            if meta:
-                # Aperture (f-number)
-                aperture = meta.get('EXIF:FNumber') or meta.get('FNumber') or meta.get('EXIF:ApertureValue')
-                if aperture:
-                    try:
-                        # Convert to f/x format
-                        if isinstance(aperture, str) and '/' in aperture:
-                            num, den = aperture.split('/')
-                            aperture_val = float(num) / float(den)
-                        else:
-                            aperture_val = float(aperture)
-                        metadata['aperture'] = f"f{aperture_val:.1f}".replace('.0', '')
-                    except (ValueError, TypeError, ZeroDivisionError):
-                        pass
-                
-                # ISO
-                iso = meta.get('EXIF:ISO') or meta.get('ISO')
-                if iso:
-                    metadata['iso'] = str(iso)
-                
-                # Focal Length
-                focal = meta.get('EXIF:FocalLength') or meta.get('FocalLength')
-                if focal:
-                    try:
-                        if isinstance(focal, str) and '/' in focal:
-                            num, den = focal.split('/')
-                            focal_val = float(num) / float(den)
-                        else:
-                            focal_val = float(focal)
-                        metadata['focal_length'] = f"{focal_val:.0f}mm"
-                    except (ValueError, TypeError, ZeroDivisionError):
-                        pass
-                
-                # Shutter Speed
-                shutter = meta.get('EXIF:ExposureTime') or meta.get('ExposureTime')
-                if shutter:
-                    try:
-                        if isinstance(shutter, str) and '/' in shutter:
-                            num, den = shutter.split('/')
-                            shutter_val = float(num) / float(den)
-                            if shutter_val >= 1:
-                                metadata['shutter_speed'] = f"{shutter_val:.0f}s"
-                            else:
-                                metadata['shutter_speed'] = f"1/{int(1/shutter_val)}s"
-                        else:
-                            shutter_val = float(shutter)
-                            if shutter_val >= 1:
-                                metadata['shutter_speed'] = f"{shutter_val:.0f}s"
-                            else:
-                                metadata['shutter_speed'] = f"1/{int(1/shutter_val)}s"
-                    except (ValueError, TypeError, ZeroDivisionError):
-                        pass
-                
-                # Camera model
-                camera = meta.get('EXIF:Model') or meta.get('Model')
-                if camera:
-                    metadata['camera'] = str(camera).replace(' ', '-')
-                
-                # Lens model
-                lens = meta.get('EXIF:LensModel') or meta.get('LensModel')
-                if lens:
-                    metadata['lens'] = str(lens).replace(' ', '-')
-        
-        return metadata
-    except Exception as e:
-        log.error(f"Error extracting metadata from {file_path}: {e}")
-        return {}
+    """Clean up the ExifService's ExifTool process."""
+    if _default_exif_service:
+        _default_exif_service.cleanup()
 
 def find_exiftool_path():
     """

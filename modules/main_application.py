@@ -30,8 +30,7 @@ from .file_utilities import (
 )
 from .exif_service_new import ExifService, EXIFTOOL_AVAILABLE
 from .exif_processor import (
-    cleanup_global_exiftool, clear_global_exif_cache,
-    find_exiftool_path, batch_restore_timestamps
+    find_exiftool_path, batch_restore_timestamps, set_default_exif_service
 )
 from .rename_engine import RenameWorkerThread
 from .ui_components import InteractivePreviewWidget
@@ -125,8 +124,10 @@ class FileRenamerApp(QMainWindow):
         # EXIF method setup (copied from original)
         self.exiftool_path = self.get_exiftool_path()
         
-        # Initialize ExifService (NEW: replaces global cache and exiftool instance)
+        # Initialize ExifService (single source of truth for all EXIF operations)
         self.exif_service = ExifService(self.exiftool_path)
+        # Register with exif_processor so legacy delegate functions work
+        set_default_exif_service(self.exif_service)
         
         if EXIFTOOL_AVAILABLE and self.exiftool_path:
             self.exif_method = "exiftool"
@@ -2233,15 +2234,10 @@ JPG, TIFF, RAW files (CR2, NEF, ARW, etc.)
     def closeEvent(self, event):
         """Handle application close event.
         
-        Cleans up both the instance-based ExifService and the legacy
-        global ExifTool process to prevent subprocess leaks.
+        Cleans up the ExifService to prevent subprocess leaks.
         """
-        # Cleanup instance-based ExifService
         if hasattr(self, 'exif_service') and self.exif_service:
             self.exif_service.cleanup()
-        
-        # Cleanup legacy global ExifTool instance (prevents subprocess leak)
-        cleanup_global_exiftool()
         
         # Save window geometry and state
         self.settings_manager.set_window_geometry(self.saveGeometry())

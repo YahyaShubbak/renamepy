@@ -44,6 +44,7 @@ def _make_worker(files: list[str], **overrides) -> RenameWorkerThread:
         selected_metadata={},
         sync_exif_date=False,
         leave_names=False,
+        exif_service=None,
     )
     defaults.update(overrides)
     return RenameWorkerThread(**defaults)
@@ -93,28 +94,41 @@ def _mock_exif_for_file(
 from contextlib import contextmanager
 
 
+def _make_mock_exif_service(selective_side_effect=None):
+    """Create a mock ExifService that returns deterministic EXIF data."""
+    side_effect = selective_side_effect or _mock_exif_for_file
+    service = MagicMock()
+    service.get_selective_cached_exif_data = MagicMock(side_effect=side_effect)
+    service.get_all_metadata = MagicMock(return_value={})
+    service.extract_raw_exif = MagicMock(return_value={})
+    service.batch_get_raw_metadata = MagicMock(return_value={})
+    service.clear_cache = MagicMock()
+    service.cleanup = MagicMock()
+    return service
+
+
 @contextmanager
 def _mock_all_exif(selective_side_effect=None):
-    """Patch ALL exif_processor functions used by RenameWorkerThread.
+    """Patch exif_processor delegates and provide a mock ExifService.
 
-    The rename engine calls several exif_processor functions during
-    optimized_rename_files().  Mocking only get_selective_cached_exif_data
-    leaves get_exiftool_metadata_shared, get_all_metadata, etc. un-mocked,
-    which causes real ExifTool subprocess calls and hangs on large file sets.
+    The rename engine now calls self.exif_service directly for EXIF
+    extraction.  We still patch the exif_processor delegates (used by
+    other call sites) and patch batch_sync_exif_dates in rename_engine.
 
-    Args:
-        selective_side_effect: A callable used as side_effect for
-            get_selective_cached_exif_data.  Defaults to _mock_exif_for_file.
+    The mock ExifService is stored as _mock_all_exif.service so tests
+    can pass it to _make_worker via exif_service=_mock_all_exif.service.
     """
     side_effect = selective_side_effect or _mock_exif_for_file
+    service = _make_mock_exif_service(side_effect)
+    _mock_all_exif.service = service
     with (
         patch("modules.exif_processor.get_selective_cached_exif_data", side_effect=side_effect),
         patch("modules.exif_processor.get_exiftool_metadata_shared", return_value={}),
         patch("modules.exif_processor.get_all_metadata", return_value={}),
         patch("modules.exif_processor.clear_global_exif_cache"),
-        patch("modules.exif_processor.batch_sync_exif_dates", return_value=([], [], {})),
+        patch("modules.rename_engine.batch_sync_exif_dates", return_value=([], [], {})),
     ):
-        yield
+        yield service
 
 
 # ---------------------------------------------------------------------------
@@ -253,8 +267,8 @@ class TestRenameSmallScale:
         """Helper: create files, mock EXIF, run rename, return results."""
         files = _create_pairs(tmp_path, count=count)
 
-        with _mock_all_exif():
-            worker = _make_worker(files, **worker_overrides)
+        with _mock_all_exif() as service:
+            worker = _make_worker(files, exif_service=service, **worker_overrides)
             renamed, errors, ts_backup, _mapping = worker.optimized_rename_files()
         return files, renamed, errors
 
@@ -301,8 +315,8 @@ class TestRenameSmallScale:
         sub.mkdir()
         files = _create_pairs(sub, count=5)
 
-        with _mock_all_exif():
-            worker = _make_worker(files)
+        with _mock_all_exif() as service:
+            worker = _make_worker(files, exif_service=service)
             renamed, errors, _, _mapping = worker.optimized_rename_files()
 
         for new_path in renamed:
@@ -315,8 +329,8 @@ class TestRenameSmallScale:
             work_dir.mkdir()
             files = _create_pairs(work_dir, count=3)
 
-            with _mock_all_exif():
-                worker = _make_worker(files, separator=sep)
+            with _mock_all_exif() as service:
+                worker = _make_worker(files, separator=sep, exif_service=service)
                 renamed, errors, _, _mapping = worker.optimized_rename_files()
 
             assert len(errors) == 0, f"Separator '{sep}' caused errors"
@@ -326,12 +340,13 @@ class TestRenameSmallScale:
         """Filenames should contain camera/lens info when enabled."""
         files = _create_pairs(tmp_path, count=5)
 
-        with _mock_all_exif():
+        with _mock_all_exif() as service:
             worker = _make_worker(
                 files,
                 use_camera=True,
                 use_lens=True,
                 custom_order=["Date", "Camera", "Lens", "Number"],
+                exif_service=service,
             )
             renamed, errors, _, _mapping = worker.optimized_rename_files()
 
@@ -379,8 +394,8 @@ class TestRenameScalability:
                     os.utime(p, (ts, ts))
                     files.append(str(p))
 
-        with _mock_all_exif():
-            worker = _make_worker(files)
+        with _mock_all_exif() as service:
+            worker = _make_worker(files, exif_service=service)
             renamed, errors, _, _mapping = worker.optimized_rename_files()
 
         error_rate = len(errors) / len(files) if files else 0
@@ -416,12 +431,13 @@ class TestCounterLogic:
                 return "20240101", None, None
             return "20240102", None, None
 
-        with _mock_all_exif(selective_side_effect=mock_exif):
+        with _mock_all_exif(selective_side_effect=mock_exif) as service:
             worker = _make_worker(
                 all_files,
                 use_date=True,
                 continuous_counter=False,
                 custom_order=["Date", "Prefix", "Number"],
+                exif_service=service,
             )
             renamed, errors, _, _mapping = worker.optimized_rename_files()
 
@@ -436,12 +452,13 @@ class TestCounterLogic:
             day = "20240101" if idx < 10003 else "20240102"
             return day, None, None
 
-        with _mock_all_exif(selective_side_effect=mock_exif):
+        with _mock_all_exif(selective_side_effect=mock_exif) as service:
             worker = _make_worker(
                 files,
                 use_date=True,
                 continuous_counter=True,
                 custom_order=["Date", "Prefix", "Number"],
+                exif_service=service,
             )
             renamed, errors, _, _mapping = worker.optimized_rename_files()
 
