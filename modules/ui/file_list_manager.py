@@ -9,6 +9,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QDragMoveEvent
 
 from ..file_utilities import is_media_file, scan_directory_recursive
+from ..exif_processor import clear_global_exif_cache
 from ..logger_util import get_logger
 
 log = get_logger()
@@ -45,8 +46,9 @@ class FileListManager:
             self.update_file_list()
             
             # Clear EXIF cache when loading new files
-            from ..exif_processor import clear_global_exif_cache
             clear_global_exif_cache()
+            if hasattr(self.parent, 'exif_service'):
+                self.parent.exif_service.clear_cache()
             
             # Reset EXIF undo check cache
             if hasattr(self.parent, '_exif_undo_checked'):
@@ -70,8 +72,9 @@ class FileListManager:
             self.update_file_list()
             
             # Clear EXIF cache when loading new folder
-            from ..exif_processor import clear_global_exif_cache
             clear_global_exif_cache()
+            if hasattr(self.parent, 'exif_service'):
+                self.parent.exif_service.clear_cache()
             
             # Reset EXIF undo check cache
             if hasattr(self.parent, '_exif_undo_checked'):
@@ -99,8 +102,9 @@ class FileListManager:
         self.parent.lens_model_label.setText("(no files selected)")
         
         # Clear EXIF cache when clearing files
-        from ..exif_processor import clear_global_exif_cache
         clear_global_exif_cache()
+        if hasattr(self.parent, 'exif_service'):
+            self.parent.exif_service.clear_cache()
         
         self.update_file_list_placeholder()
         self.update_file_statistics()
@@ -158,8 +162,9 @@ class FileListManager:
                 self.parent.file_list.clear()
         
         # Clear EXIF cache when adding new files
-        from ..exif_processor import clear_global_exif_cache
         clear_global_exif_cache()
+        if hasattr(self.parent, 'exif_service'):
+            self.parent.exif_service.clear_cache()
         
         # Validate and add files
         added_count = 0

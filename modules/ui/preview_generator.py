@@ -10,7 +10,6 @@ import os
 import re
 import datetime
 from ..file_utilities import is_media_file, is_video_file
-from ..exif_processor import get_selective_cached_exif_data, get_all_metadata
 
 
 class PreviewGenerator:
@@ -152,7 +151,7 @@ class PreviewGenerator:
             if os.path.exists(preview_file):
                 if not hasattr(self, '_preview_exif_file') or self._preview_exif_file != cache_key:
                     try:
-                        date_taken, camera_model, lens_model = get_selective_cached_exif_data(
+                        date_taken, camera_model, lens_model = self.parent.exif_service.get_selective_cached_exif_data(
                             preview_file, self.parent.exif_method, self.parent.exiftool_path,
                             need_date=use_date, need_camera=use_camera, need_lens=use_lens
                         )
@@ -234,7 +233,7 @@ class PreviewGenerator:
             if needs_real_metadata:
                 try:
                     self.parent.log(f"🔍 Preview: Extracting real metadata from {os.path.basename(preview_file)}")
-                    real_metadata = get_all_metadata(preview_file, self.parent.exif_method, self.parent.exiftool_path)
+                    real_metadata = self.parent.exif_service.get_all_metadata(preview_file, self.parent.exif_method, self.parent.exiftool_path)
                     
                     # Replace Boolean flags with real values for preview
                     for key, value in self.parent.selected_metadata.items():

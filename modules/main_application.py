@@ -7,11 +7,7 @@ import os
 import sys
 import re
 import datetime
-import glob
-import webbrowser
-import traceback
 import time
-from pathlib import Path
 from .logger_util import get_logger, set_level
 log = get_logger()
 
@@ -21,8 +17,8 @@ from PyQt6.QtWidgets import (
     QFileDialog, QStatusBar, QListWidgetItem, QMessageBox, QDialog,
     QStyle, QPlainTextEdit, QScrollArea
 )
-from PyQt6.QtCore import Qt, QSettings, QThread, pyqtSignal, QMimeData, QPoint
-from PyQt6.QtGui import QIcon, QDragEnterEvent, QDropEvent, QDragMoveEvent, QFont, QAction
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QIcon, QDragEnterEvent, QDropEvent, QDragMoveEvent
 
 # Import the modular components
 from .file_utilities import (
@@ -32,11 +28,8 @@ from .file_utilities import (
 )
 from .exif_service_new import ExifService, EXIFTOOL_AVAILABLE, PIL_AVAILABLE
 from .exif_processor import (
-    get_cached_exif_data, get_selective_cached_exif_data,
-    extract_exif_fields, get_exiftool_metadata_shared, 
     cleanup_global_exiftool, clear_global_exif_cache,
-    extract_exif_fields_with_retry, find_exiftool_path,
-    get_all_metadata, batch_restore_timestamps
+    find_exiftool_path, batch_restore_timestamps
 )
 from .rename_engine import RenameWorkerThread
 from .ui_components import InteractivePreviewWidget
@@ -44,13 +37,12 @@ from .theme_manager import ThemeManager
 from .filename_components import build_ordered_components
 from .timestamp_options_dialog import TimestampSyncOptionsDialog
 from .dialogs import ExifToolWarningDialog
-from .handlers import SimpleExifHandler, SimpleFilenameGenerator, extract_image_number
+from .handlers import extract_image_number
 from .performance_benchmark import (
-    PerformanceBenchmark, BenchmarkThread, analyze_pattern_complexity
+    PerformanceBenchmark, analyze_pattern_complexity
 )
-from .exif_undo_manager import get_original_filename_from_exif, batch_get_original_filenames, get_rename_info
+from .exif_undo_manager import get_original_filename_from_exif, get_rename_info
 from .ui import FileListManager, PreviewGenerator, MainWindowUI
-from .utils.ui_helpers import calculate_stats, is_video_file as is_video_file_util
 from .state_model import RenamerState
 from .settings_manager import SettingsManager
 
@@ -395,7 +387,7 @@ class FileRenamerApp(QMainWindow):
             if is_video_file(file_path):
                 # For videos, try to extract duration info
                 if EXIFTOOL_AVAILABLE and self.exiftool_path:
-                    raw_exif_data = get_exiftool_metadata_shared(normalized_path, self.exiftool_path)
+                    raw_exif_data = self.exif_service.extract_raw_exif(normalized_path)
                     if raw_exif_data:
                         # Try to get video duration or frame count
                         duration_fields = ['QuickTime:Duration', 'Track1:MediaDuration', 'Duration', 'EXIF:Duration']
@@ -460,7 +452,7 @@ class FileRenamerApp(QMainWindow):
             
             # Extract raw EXIF data using direct function
             if self.exif_method == "exiftool" and self.exiftool_path:
-                raw_exif_data = get_exiftool_metadata_shared(normalized_file, self.exiftool_path)
+                raw_exif_data = self.exif_service.extract_raw_exif(normalized_file)
             else:
                 raw_exif_data = {}
             
@@ -991,8 +983,8 @@ class FileRenamerApp(QMainWindow):
             return
         
         try:
-            # Use the original extract_exif_fields function
-            date, camera, lens = extract_exif_fields(first_media, self.exif_method, self.exiftool_path)
+            # Use ExifService for camera/lens extraction
+            date, camera, lens = self.exif_service.get_cached_exif_data(first_media, self.exif_method, self.exiftool_path)
             
             # Store results for label update
             self.detected_camera = camera
@@ -1152,7 +1144,7 @@ class FileRenamerApp(QMainWindow):
                 
                 if needs_real_metadata:
                     try:
-                        real_metadata = get_all_metadata(preview_file, self.exif_method, self.exiftool_path)
+                        real_metadata = self.exif_service.get_all_metadata(preview_file, self.exif_method, self.exiftool_path)
                         
                         # Replace Boolean flags with real values for preview
                         for key, value in self.selected_metadata.items():

@@ -10,14 +10,7 @@ import threading
 import subprocess
 import glob
 import shutil
-# Pre-import commonly used modules (performance optimization)
-try:
-    import ctypes
-    from ctypes import wintypes
-    CTYPES_AVAILABLE = True
-except ImportError:
-    CTYPES_AVAILABLE = False
-    
+
 from .logger_util import get_logger
 log = get_logger()
 
@@ -34,9 +27,6 @@ try:
     PIL_AVAILABLE = True
 except ImportError:
     PIL_AVAILABLE = False
-
-# Import ExifService from the new dedicated module
-from .exif_service_new import ExifService
 
 # Global variables for backward compatibility with legacy code
 # These are kept for functions that are still called from outside the ExifService
@@ -328,103 +318,6 @@ def extract_exif_fields_with_retry(image_path, method, exiftool_path=None, max_r
                 return None, None, None
             else:
                 time.sleep(0.1)
-
-def extract_date_taken(image_path, method, exiftool_path=None):
-    """Extract only the date taken from an image"""
-    date, _, _ = extract_exif_fields(image_path, method, exiftool_path)
-    return date
-
-def extract_camera_model(image_path, method, exiftool_path=None):
-    """Extract only the camera model from an image"""
-    _, camera, _ = extract_exif_fields(image_path, method, exiftool_path)
-    return camera
-
-def extract_lens_model(image_path, method, exiftool_path=None):
-    """Extract only the lens model from an image"""
-    _, _, lens = extract_exif_fields(image_path, method, exiftool_path)
-    return lens
-
-def extract_image_number(image_path, method, exiftool_path=None):
-    """Extract image number from EXIF data if available"""
-    try:
-        if method == "exiftool":
-            if exiftool_path and os.path.exists(exiftool_path):
-                with exiftool.ExifToolHelper(executable=exiftool_path) as et:
-                    meta = et.get_metadata([image_path])[0]
-            else:
-                with exiftool.ExifToolHelper() as et:
-                    meta = et.get_metadata([image_path])[0]
-            
-            # Try various fields for image number
-            image_number = (meta.get('EXIF:ImageNumber') or 
-                          meta.get('ImageNumber') or 
-                          meta.get('FileNumber'))
-            
-            if image_number:
-                return str(image_number).zfill(3)
-    except Exception as e:
-        log.debug(f"Failed to extract image number: {e}")
-    
-    return None
-
-def get_file_timestamp(image_path, method, exiftool_path=None):
-    """
-    Get file timestamp using EXIF DateTimeOriginal or file system date
-    Returns timestamp string or None
-    """
-    try:
-        # First try to get EXIF date
-        date = extract_date_taken(image_path, method, exiftool_path)
-        if date:
-            return date
-        
-        # Fall back to file system modification time
-        mtime = os.path.getmtime(image_path)
-        return time.strftime("%Y%m%d", time.localtime(mtime))
-        
-    except Exception as e:
-        log.debug(f"Failed to get file timestamp: {e}")
-        return None
-
-# Legacy class for backward compatibility
-class ExifHandler:
-    """Legacy class for backward compatibility"""
-    
-    def __init__(self):
-        pass
-    
-    def extract_exif(self, file_path):
-        """Extract EXIF data using the original functions"""
-        return get_cached_exif_data(file_path, "exiftool")
-    
-    def is_exiftool_available(self):
-        """Check if ExifTool is available"""
-        return EXIFTOOL_AVAILABLE
-
-# Backward compatibility functions
-def get_exif_data(file_path: str, 
-                  method: str = "exiftool",
-                  exiftool_path: str = None,
-                  fields: list = None) -> dict:
-    """Get EXIF data (backward compatibility function)"""
-    date, camera, lens = get_cached_exif_data(file_path, method, exiftool_path)
-    return {
-        'date': date,
-        'camera': camera,
-        'lens': lens
-    }
-
-def get_selective_exif_data(file_path: str,
-                          method: str = "exiftool", 
-                          exiftool_path: str = None,
-                          fields: list = None) -> dict:
-    """Get selective EXIF data with caching (backward compatibility function)"""
-    date, camera, lens = get_cached_exif_data(file_path, method, exiftool_path)
-    return {
-        'date': date,
-        'camera': camera,
-        'lens': lens
-    }
 
 def get_all_metadata(file_path, method, exiftool_path=None):
     """
@@ -753,77 +646,6 @@ def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps
     except Exception as e:
         return False, f"Error syncing date: {e}", None
 
-def _set_file_timestamp_method1(file_path, timestamp):
-    """Method 1: Standard os.utime"""
-    try:
-        os.utime(file_path, (timestamp, timestamp))
-        log.debug("Method 1 (os.utime) successful")
-        return True
-    except Exception as e:
-        log.debug(f"Method 1 (os.utime) failed: {e}")
-        return False
-
-def _set_file_timestamp_method2(file_path, timestamp):
-    """Method 2: Windows API with SetFileTime"""
-    try:
-        if os.name != 'nt':  # Not Windows
-            return False
-            
-        import ctypes
-        from ctypes import wintypes
-        
-        # Convert to Windows FILETIME
-        EPOCH_AS_FILETIME = 116444736000000000
-        timestamp_100ns = int((timestamp * 10000000) + EPOCH_AS_FILETIME)
-        
-        # FILETIME structure
-        class FILETIME(ctypes.Structure):
-            _fields_ = [("dwLowDateTime", wintypes.DWORD),
-                       ("dwHighDateTime", wintypes.DWORD)]
-        
-        ft = FILETIME()
-        ft.dwLowDateTime = timestamp_100ns & 0xFFFFFFFF
-        ft.dwHighDateTime = timestamp_100ns >> 32
-        
-        # Open file with proper flags
-        kernel32 = ctypes.windll.kernel32
-        handle = kernel32.CreateFileW(
-            file_path,
-            0x40000000,  # GENERIC_WRITE
-            0x00000001 | 0x00000002,  # FILE_SHARE_READ | FILE_SHARE_WRITE
-            None,
-            3,  # OPEN_EXISTING
-            0x00000080,  # FILE_ATTRIBUTE_NORMAL
-            None
-        )
-        
-        if handle != -1:
-            # Set ALL file timestamps to ensure File:FileCreateDate is updated
-            result = kernel32.SetFileTime(
-                handle,
-                ctypes.byref(ft),  # Creation time (File:FileCreateDate)
-                ctypes.byref(ft),  # Last access time
-                ctypes.byref(ft)   # Last write time (File:FileModifyDate)
-            )
-            
-            kernel32.CloseHandle(handle)
-            
-            if result:
-                log.debug("Method 2 (SetFileTime) successful")
-                return True
-            else:
-                error_code = kernel32.GetLastError()
-                log.debug(f"Method 2 (SetFileTime) failed, Error: {error_code}")
-                return False
-        else:
-            error_code = kernel32.GetLastError()
-            log.debug(f"Method 2 file open failed, Error: {error_code}")
-            return False
-    
-    except Exception as e:
-        log.debug(f"Method 2 (Windows API) exception: {e}")
-        return False
-
 def _set_file_timestamp_method3(file_path, dt):
     """Method 3: PowerShell for extra robustness.
     
@@ -872,47 +694,6 @@ def _set_file_timestamp_method3(file_path, dt):
     except Exception as e:
         log.debug(f"Method 3 (PowerShell) exception: {e}")
         return False
-
-def _apply_ultimate_timestamp_sync(file_path, new_timestamp, dt):
-    """
-    Apply Ultimate Windows Timestamp Sync using multiple methods
-    
-    Args:
-        file_path: Path to the file
-        new_timestamp: Unix timestamp to set
-        dt: datetime object for PowerShell method
-        
-    Returns:
-        int: Number of successful methods
-    """
-    success_count = 0
-    log.info(f"Ultimate timestamp sync for: {os.path.basename(file_path)}")
-    log.debug(f"Target date: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
-    
-    # Method 1: Standard os.utime
-    if _set_file_timestamp_method1(file_path, new_timestamp):
-        success_count += 1
-    
-    # Method 2: Windows API with SetFileTime 
-    if _set_file_timestamp_method2(file_path, new_timestamp):
-        success_count += 1
-    
-    # Method 3: PowerShell
-    if _set_file_timestamp_method3(file_path, dt):
-        success_count += 1
-    
-    # Method 4: System flush to ensure changes are written
-    try:
-        if os.name == 'nt' and success_count > 0:
-            import ctypes
-            kernel32 = ctypes.windll.kernel32
-            kernel32.FlushFileBuffers(-1)  # Flush all system buffers
-            log.debug("Method 4 (FlushFileBuffers) successful")
-    except Exception:
-        pass
-    
-    log.info(f"Timestamp sync result: {success_count}/3 methods succeeded")
-    return success_count
 
 def _restore_windows_creation_time(file_path, creation_timestamp):
     """Restore Windows creation time using Windows API"""
