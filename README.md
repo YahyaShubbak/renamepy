@@ -90,7 +90,24 @@ pip install PyExifTool>=0.5.5   # ExifTool Python wrapper (required)
 
 ## 🚀 Installation
 
-### Option 1: Clone Repository (Recommended)
+### Option 1: Automated Installation (Recommended)
+
+**Linux (Arch / EndeavourOS / Ubuntu / Debian):**
+```bash
+git clone https://github.com/YahyaShubbak/renamepy.git
+cd renamepy
+./install.sh
+```
+The script handles everything: system dependencies (Qt6 libs, ExifTool), environment creation (Conda or venv), and package installation.
+
+**Windows:**
+```
+git clone https://github.com/YahyaShubbak/renamepy.git
+cd renamepy
+install.bat
+```
+
+### Option 2: Manual Installation
 ```bash
 git clone https://github.com/YahyaShubbak/renamepy.git
 cd renamepy
@@ -98,16 +115,22 @@ pip install -r requirements.txt
 python RenameFiles.py
 ```
 
-### Option 2: Download Release
+> ⚠️ **Linux users**: You also need Qt6 system libraries and ExifTool:
+> - **Arch**: `sudo pacman -S mesa libxcb xcb-util xcb-util-cursor libxkbcommon libxkbcommon-x11 perl-image-exiftool`
+> - **Debian/Ubuntu**: `sudo apt install libgl1 libegl1 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxkbcommon0 libxkbcommon-x11-0 libimage-exiftool-perl`
+
+### Option 3: Download Release
 1. Go to [Releases](https://github.com/YahyaShubbak/renamepy/releases)
 2. Download latest version
 3. Extract and run `RenameFiles.py`
 
 ### ExifTool Setup (Required for EXIF Data)
 
-> 💡 **No Renaming Required!** The application automatically detects both `exiftool.exe` and `exiftool(-k).exe`
+> 💡 **Linux**: ExifTool is installed automatically by `install.sh` (via pacman/apt). No extra steps needed!
 
-**Option A: Download from Official Site (Recommended)**
+> 💡 **Windows**: No Renaming Required! The application automatically detects both `exiftool.exe` and `exiftool(-k).exe`
+
+**Option A: Download from Official Site (Windows, Recommended)**
 1. Go to [exiftool.org](https://exiftool.org) and download the Windows version
 2. Extract the archive (e.g., `exiftool-13.33_64.zip`) into the program directory
 3. Keep the original folder name (e.g., `exiftool-13.33_64`) and place it in the program directory

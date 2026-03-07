@@ -284,7 +284,7 @@ class ThemeManager:
             app.setStyleSheet(_GLOBAL_STYLE.format_map(palette))
         elif theme_name == "Light":
             palette = _LIGHT
-            app.setStyleSheet("")  # Reset to Qt defaults first
+            app.setStyleSheet(_GLOBAL_STYLE.format_map(palette))
         else:  # System
             palette = _LIGHT
             app.setStyleSheet("")
