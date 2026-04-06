@@ -101,10 +101,10 @@ cd renamepy
 The script handles everything: system dependencies (Qt6 libs, ExifTool), environment creation (Conda or venv), and package installation.
 
 **Windows:**
-```
+```powershell
 git clone https://github.com/YahyaShubbak/renamepy.git
 cd renamepy
-install.bat
+powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
 ### Option 2: Manual Installation

@@ -118,7 +118,8 @@ class ExifToolWarningDialog(QDialog):
         if sys.platform == "win32":
             lines.append(
                 "<b>Option A — Automatic setup:</b> "
-                "Run <code>setup_exiftool.bat</code> from the project folder.<br><br>"
+                "Run <code>setup_exiftool.ps1</code> from the project folder "
+                "(right-click &rarr; Run with PowerShell).<br><br>"
             )
             lines.append(
                 "<b>Option B — Manual install:</b><br>"

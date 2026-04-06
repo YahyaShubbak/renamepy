@@ -82,35 +82,92 @@ function Test-CommandExists {
 }
 
 # ============================================================================
+# Function: Find Python executable
+# ============================================================================
+$script:PythonExe = $null
+
+function Find-PythonExecutable {
+    # Try multiple common commands and locations
+    $candidates = @("python", "python3")
+
+    # Try the Python Launcher for Windows (py.exe)
+    if (Test-CommandExists "py") {
+        try {
+            $pyPath = & py -3 -c "import sys; print(sys.executable)" 2>&1
+            if ($LASTEXITCODE -eq 0 -and (Test-Path $pyPath)) {
+                $candidates = @($pyPath) + $candidates
+            }
+        }
+        catch { }
+    }
+
+    # Search common Windows installation paths
+    $searchRoots = @(
+        "$env:LOCALAPPDATA\Programs\Python",
+        "$env:PROGRAMFILES\Python*",
+        "${env:PROGRAMFILES(x86)}\Python*",
+        "$env:USERPROFILE\AppData\Local\Programs\Python",
+        "$env:USERPROFILE\miniconda3",
+        "$env:USERPROFILE\anaconda3"
+    )
+
+    foreach ($root in $searchRoots) {
+        foreach ($dir in (Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue)) {
+            $exe = Join-Path $dir.FullName "python.exe"
+            if (Test-Path $exe) {
+                $candidates += $exe
+            }
+        }
+    }
+
+    # Microsoft Store Python (WindowsApps)
+    $storeDir = "$env:LOCALAPPDATA\Microsoft\WindowsApps"
+    if (Test-Path $storeDir) {
+        $storeExe = Join-Path $storeDir "python.exe"
+        if (Test-Path $storeExe) {
+            $candidates += $storeExe
+        }
+    }
+
+    foreach ($cmd in $candidates) {
+        try {
+            $output = & $cmd --version 2>&1
+            if ($LASTEXITCODE -eq 0 -and $output -match "Python (\d+\.\d+)") {
+                $version = [version]$Matches[1]
+                if ($version -ge [version]"3.10") {
+                    return $cmd
+                }
+                else {
+                    Write-Debug-Custom "Skipping $cmd (Python $version < 3.10)"
+                }
+            }
+        }
+        catch { }
+    }
+
+    return $null
+}
+
+# ============================================================================
 # Function: Check Python installation
 # ============================================================================
 function Test-PythonInstallation {
     Write-Log -Message "Checking Python installation..." -Level "Info"
-    
-    if (-not (Test-CommandExists "python")) {
-        Write-Error-Custom "Python is not installed or not in PATH!"
+
+    $found = Find-PythonExecutable
+
+    if (-not $found) {
+        Write-Error-Custom "Python >= 3.10 not found!"
+        Write-Log -Message "Searched: python, python3, py launcher, common install paths" -Level "Info"
+        Write-Log -Message "Install Python from https://www.python.org/downloads/" -Level "Info"
+        Write-Log -Message "Make sure to check 'Add Python to PATH' during installation." -Level "Info"
         return $false
     }
-    
-    try {
-        $pythonVersion = & python --version 2>&1
-        Write-Success "Python found: $pythonVersion"
-        
-        # Check Python version (at least 3.10 required for PEP 604 type hints)
-        $versionMatch = $pythonVersion -match "Python (\d+\.\d+)"
-        if ($Matches) {
-            $version = [version]$Matches[1]
-            if ($version -lt [version]"3.10") {
-                Write-Error-Custom "Python version must be at least 3.10 (found: $version)"
-                return $false
-            }
-        }
-        return $true
-    }
-    catch {
-        Write-Error-Custom "Error checking Python version: $_"
-        return $false
-    }
+
+    $script:PythonExe = $found
+    $pythonVersion = & $found --version 2>&1
+    Write-Success "Python found: $pythonVersion ($found)"
+    return $true
 }
 
 # ============================================================================
@@ -226,7 +283,7 @@ function New-VenvEnvironment {
     }
     
     Write-Log -Message "Creating venv environment '$EnvName' at $venvPath..." -Level "Info"
-    & python -m venv $venvPath
+    & $script:PythonExe -m venv $venvPath
     
     if ($LASTEXITCODE -ne 0) {
         Write-Error-Custom "Could not create venv environment"
@@ -272,8 +329,8 @@ function Install-Packages {
         }
         
         & $activateScript
-        & python -m pip install --upgrade pip 2>$null
-        & pip install -r $REQUIREMENTS_FILE
+        & $script:PythonExe -m pip install --upgrade pip 2>$null
+        & $script:PythonExe -m pip install -r $REQUIREMENTS_FILE
         $result = $LASTEXITCODE -eq 0
         deactivate 2>$null
         return $result
@@ -299,18 +356,20 @@ function Test-ExifToolInstallation {
     
     Write-Log -Message "Checking ExifTool installation..." -Level "Info"
     
-    $exiftoolDir = Join-Path $PROJECT_ROOT "exiftool-13.40_64"
-    $exiftoolExe = Join-Path $exiftoolDir "exiftool.exe"
+    # Search for any exiftool-* folder in the project
+    $exiftoolDirs = Get-ChildItem -Path $PROJECT_ROOT -Directory -Filter "exiftool*" -ErrorAction SilentlyContinue
     
-    # Check if available locally in project
-    if (Test-Path $exiftoolExe) {
-        try {
-            $exiftoolVersion = & $exiftoolExe -ver 2>&1
-            Write-Success "ExifTool found (local): Version $exiftoolVersion"
-            return
-        }
-        catch {
-            Write-Warning-Custom "ExifTool error: $_"
+    foreach ($dir in $exiftoolDirs) {
+        $exiftoolExe = Join-Path $dir.FullName "exiftool.exe"
+        if (Test-Path $exiftoolExe) {
+            try {
+                $exiftoolVersion = & $exiftoolExe -ver 2>&1
+                Write-Success "ExifTool found (local): Version $exiftoolVersion"
+                return
+            }
+            catch {
+                Write-Warning-Custom "ExifTool error: $_"
+            }
         }
     }
     
@@ -437,6 +496,76 @@ function Create-ActivationScripts {
 }
 
 # ============================================================================
+# Function: Create desktop shortcut (Windows)
+# ============================================================================
+function Create-DesktopShortcut {
+    param(
+        [string]$EnvName,
+        [bool]$UsesConda = $false
+    )
+
+    Write-Host ""
+    Write-Host "Would you like to create a desktop shortcut?" -ForegroundColor Yellow
+    Write-Host "  [Y] Yes" -ForegroundColor Cyan
+    Write-Host "  [N] No" -ForegroundColor Cyan
+    Write-Host ""
+
+    $response = Read-Host "Your choice (Y/N)"
+
+    if ($response -notmatch "^[yY]") {
+        Write-Log -Message "Desktop shortcut skipped" -Level "Info"
+        return
+    }
+
+    try {
+        $desktopPath = [Environment]::GetFolderPath("Desktop")
+        if (-not $desktopPath -or -not (Test-Path $desktopPath)) {
+            $desktopPath = Join-Path $env:USERPROFILE "Desktop"
+        }
+
+        $shortcutPath = Join-Path $desktopPath "RenamePy.lnk"
+
+        $WScriptShell = New-Object -ComObject WScript.Shell
+        $shortcut = $WScriptShell.CreateShortcut($shortcutPath)
+
+        if ($UsesConda) {
+            # Launch via cmd that activates conda then runs python
+            $condaBase = (& conda info --base 2>&1).Trim()
+            $activateBat = Join-Path $condaBase "Scripts\activate.bat"
+            $shortcut.TargetPath = "cmd.exe"
+            $shortcut.Arguments = "/c `"call `"$activateBat`" $EnvName && python RenameFiles.py`""
+        }
+        else {
+            $venvPath = Join-Path $PROJECT_ROOT $EnvName
+            $pythonExe = Join-Path $venvPath "Scripts\python.exe"
+            $shortcut.TargetPath = $pythonExe
+            $shortcut.Arguments = "RenameFiles.py"
+        }
+
+        $shortcut.WorkingDirectory = $PROJECT_ROOT
+        $shortcut.Description = "RenamePy - Advanced Photo Renaming Tool"
+        $shortcut.WindowStyle = 1  # Normal window
+
+        # Use .ico if available
+        $iconPath = Join-Path $PROJECT_ROOT "icon.ico"
+        if (Test-Path $iconPath) {
+            $shortcut.IconLocation = $iconPath
+        }
+
+        $shortcut.Save()
+
+        # Release COM object
+        [System.Runtime.Interopservices.Marshal]::ReleaseComObject($WScriptShell) | Out-Null
+
+        Write-Success "Desktop shortcut created: $shortcutPath"
+    }
+    catch {
+        Write-Warning-Custom "Could not create desktop shortcut: $_"
+        Write-Log -Message "You can start the application manually from the project folder." -Level "Info"
+    }
+}
+
+# ============================================================================
 # Main Program
 # ============================================================================
 function Main {
@@ -513,7 +642,10 @@ function Main {
     
     # Step 8: Create shortcuts
     Create-ActivationScripts -EnvName $VENV_NAME -UsesConda $usesConda
-    
+
+    # Step 9: Create desktop shortcut
+    Create-DesktopShortcut -EnvName $VENV_NAME -UsesConda $usesConda
+
     # Completion
     Write-Host ""
     Write-Host "======================================================" -ForegroundColor Green

@@ -14,12 +14,22 @@ $ErrorActionPreference = "Continue"
 # Configuration
 # ============================================================================
 $PROJECT_ROOT = Split-Path -Parent $MyInvocation.MyCommand.Path
-$EXIFTOOL_DIR = Join-Path $PROJECT_ROOT "exiftool-13.40_64"
+
+# ExifTool version — update this single value when upgrading
+$EXIFTOOL_VERSION = "13.40"
+$EXIFTOOL_ARCH = "64"
+$EXIFTOOL_FOLDER = "exiftool-${EXIFTOOL_VERSION}_${EXIFTOOL_ARCH}"
+$EXIFTOOL_ZIP = "${EXIFTOOL_FOLDER}.zip"
+
+$EXIFTOOL_DIR = Join-Path $PROJECT_ROOT $EXIFTOOL_FOLDER
 $DOWNLOAD_DIR = Join-Path $PROJECT_ROOT "temp_download"
 
-# Direct SourceForge download URL (not a redirect URL)
-$SOURCEFORGE_URL = "https://sourceforge.net/projects/exiftool/files/exiftool-13.40_64.zip/download"
-$DIRECT_URL = "https://downloads.sourceforge.net/project/exiftool/exiftool-13.40_64.zip"
+# Download URLs — ordered by reliability
+$DOWNLOAD_URLS = @(
+    "https://exiftool.org/$EXIFTOOL_ZIP",
+    "https://downloads.sourceforge.net/project/exiftool/$EXIFTOOL_ZIP",
+    "https://sourceforge.net/projects/exiftool/files/$EXIFTOOL_ZIP/download"
+)
 
 # ============================================================================
 # Helper functions for coloured output
@@ -87,8 +97,7 @@ function Test-ExifToolExists {
 # Function: Download ExifTool
 # ============================================================================
 function Invoke-ExifToolDownload {
-    Write-Info "Downloading ExifTool..."
-    Write-Info "Source: $DIRECT_URL"
+    Write-Info "Downloading ExifTool $EXIFTOOL_VERSION..."
     
     # Create download directory
     if (-not (Test-Path $DOWNLOAD_DIR)) {
@@ -96,63 +105,45 @@ function Invoke-ExifToolDownload {
         Write-Info "Download directory created"
     }
     
-    $zipFile = Join-Path $DOWNLOAD_DIR "exiftool-13.40_64.zip"
+    $zipFile = Join-Path $DOWNLOAD_DIR $EXIFTOOL_ZIP
     
     # Remove old ZIP if present
     if (Test-Path $zipFile) {
         Remove-Item $zipFile -Force
     }
     
-    try {
-        Write-Info "Downloading (this may take 1-2 minutes)..."
-        
-        # Set TLS 1.2 for secure downloads
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        
-        # Download with WebClient (more robust than Invoke-WebRequest)
-        $webClient = New-Object System.Net.WebClient
-        $webClient.DownloadFile($DIRECT_URL, $zipFile)
-        
-        if (Test-Path $zipFile) {
-            $fileSize = [math]::Round((Get-Item $zipFile).Length / 1MB, 2)
+    # Set TLS 1.2 for secure downloads
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    
+    foreach ($url in $DOWNLOAD_URLS) {
+        try {
+            Write-Info "Trying: $url"
             
-            if ($fileSize -lt 1.0) {
-                Write-Error-Custom "Download too small ($fileSize MB) - possible error"
-                Write-Info "Trying alternative download method..."
-                
-                # Fallback: Invoke-WebRequest with MaximumRedirection
-                $ProgressPreference = 'SilentlyContinue'
-                Invoke-WebRequest -Uri $SOURCEFORGE_URL -OutFile $zipFile -MaximumRedirection 10 -UseBasicParsing
-                
+            $ProgressPreference = 'SilentlyContinue'
+            Invoke-WebRequest -Uri $url -OutFile $zipFile -MaximumRedirection 10 -UseBasicParsing -TimeoutSec 60
+            
+            if (Test-Path $zipFile) {
                 $fileSize = [math]::Round((Get-Item $zipFile).Length / 1MB, 2)
-            }
-            
-            if ($fileSize -gt 10.0) {
-                Write-Success "Download completed ($fileSize MB)"
-                return $zipFile
-            }
-            else {
-                Write-Error-Custom "Download failed - file too small ($fileSize MB)"
-                Write-Info "Expected size: approx. 11 MB"
-                return $null
+                
+                if ($fileSize -gt 5.0) {
+                    Write-Success "Download completed ($fileSize MB)"
+                    return $zipFile
+                }
+                else {
+                    Write-Warning-Custom "Download too small ($fileSize MB), trying next URL..."
+                    Remove-Item $zipFile -Force -ErrorAction SilentlyContinue
+                }
             }
         }
-        else {
-            Write-Error-Custom "Download failed - file not created"
-            return $null
+        catch {
+            Write-Warning-Custom "Failed: $($_.Exception.Message)"
         }
     }
-    catch {
-        Write-Error-Custom "Download error: $($_.Exception.Message)"
-        Write-Info "Check your internet connection and firewall settings"
-        Write-Info "Alternative download: https://exiftool.org/"
-        return $null
-    }
-    finally {
-        if ($webClient) {
-            $webClient.Dispose()
-        }
-    }
+    
+    Write-Error-Custom "All download URLs failed."
+    Write-Info "Please download ExifTool manually from: https://exiftool.org/"
+    Write-Info "Extract the ZIP into the project folder: $PROJECT_ROOT"
+    return $null
 }
 
 # ============================================================================
@@ -168,11 +159,11 @@ function Expand-ExifToolArchive {
         Expand-Archive -Path $ZipPath -DestinationPath $DOWNLOAD_DIR -Force
         Write-Success "ZIP extracted"
         
-        # Check whether the exiftool-13.40_64 folder was inside the ZIP
-        $unpackedDir = Join-Path $DOWNLOAD_DIR "exiftool-13.40_64"
+        # Check whether the exiftool folder was inside the ZIP
+        $unpackedDir = Join-Path $DOWNLOAD_DIR $EXIFTOOL_FOLDER
         
         if (-not (Test-Path $unpackedDir)) {
-            Write-Error-Custom "exiftool-13.40_64 folder not found after extraction"
+            Write-Error-Custom "$EXIFTOOL_FOLDER folder not found after extraction"
             Write-Info "Contents of temp_download:"
             Get-ChildItem $DOWNLOAD_DIR | ForEach-Object { Write-Info "  - $($_.Name)" }
             return $false
@@ -184,7 +175,7 @@ function Expand-ExifToolArchive {
             Remove-Item -Path $EXIFTOOL_DIR -Recurse -Force
         }
         
-        Write-Info "Moving exiftool-13.40_64 into repository..."
+        Write-Info "Moving $EXIFTOOL_FOLDER into repository..."
         Move-Item -Path $unpackedDir -Destination $EXIFTOOL_DIR -Force
         
         Write-Success "ExifTool installed: $EXIFTOOL_DIR"
@@ -207,7 +198,7 @@ function Expand-ExifToolArchive {
         }
         else {
             Write-Error-Custom "No exiftool.exe found"
-            Write-Info "Contents of exiftool-13.40_64:"
+            Write-Info "Contents of ${EXIFTOOL_FOLDER}:"
             Get-ChildItem $EXIFTOOL_DIR | ForEach-Object { Write-Info "  - $($_.Name)" }
             return $false
         }
@@ -320,7 +311,7 @@ function Main {
     Write-Host "Usage:" -ForegroundColor Yellow
     Write-Host "  exiftool.exe <image_file>" -ForegroundColor Cyan
     Write-Host "  or in Python code:" -ForegroundColor Cyan
-    Write-Host "  exiftool = ExifTool('exiftool-13.40_64/exiftool.exe')" -ForegroundColor Cyan
+    Write-Host "  exiftool = ExifTool('$EXIFTOOL_FOLDER/exiftool.exe')" -ForegroundColor Cyan
     Write-Host ""
     
     return $true

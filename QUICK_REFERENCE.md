@@ -1,185 +1,107 @@
-# 🚀 RenamePy - Quick Reference Guide
+# RenamePy - Quick Reference Guide
 
-## Installation & Start (2 Simple Steps!)
+## Installation & Start
 
-### 1️⃣ Installation (One-time Setup)
-```bash
-install.bat
-# OR
-.\install.ps1
+### 1. Installation (One-time Setup)
+
+**Windows (PowerShell):**
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
-### 2️⃣ Start Application (Anytime)
+**Linux / macOS:**
 ```bash
-start_simple.bat
-# OR
-start_debug.bat     # With debug information
+./install.sh
+```
+
+### 2. Start Application
+
+**Windows:**
+```
+start.bat
+start.bat --debug    # With debug information
+```
+
+**Linux / macOS:**
+```bash
+conda activate renamepy && python RenameFiles.py
+# or (if using venv):
+source .venv/bin/activate && python RenameFiles.py
 ```
 
 ---
 
-## 📁 Key Files
+## Key Files
 
 | File | Purpose | When to Use |
 |------|---------|-------------|
-| **install.bat** | Installation | Once only! |
-| **start_simple.bat** | Start app | Always use this |
-| **start_debug.bat** | With debug output | For troubleshooting |
-| **activate_env.bat** | Manual activation | Optional |
+| **install.ps1** | Windows installation | Once only |
+| **install.sh** | Linux/macOS installation | Once only |
+| **start.bat** | Start app (Windows) | Always |
+| **activate_env.bat** | Manual env activation | Optional |
+| **setup_exiftool.ps1** | Install ExifTool | If ExifTool is missing |
 | **README.md** | Complete guide | For detailed help |
 
 ---
 
-## 🆘 Quick Solutions
+## Quick Solutions
 
 ### "ModuleNotFoundError: PyQt6"
 ```bash
-# If installation didn't work:
-→ Use start_simple.bat
-→ It automatically activates the conda environment
+# Reinstall packages:
+conda activate renamepy
+pip install -r requirements.txt
 ```
 
 ### "Conda not found"
 ```bash
-→ Install Miniconda: https://docs.conda.io/miniconda.html
-→ Then run: install.bat
+# Install Miniconda: https://docs.conda.io/miniconda.html
+# Then run install.ps1 / install.sh again
 ```
 
 ### "Python not found"
 ```bash
-→ Install Python: https://www.python.org/
-→ ✓ Check "Add to PATH" during installation!
-→ Restart system
-→ Then run: install.bat
+# Install Python: https://www.python.org/
+# Check "Add to PATH" during installation!
+# Restart system, then run install.ps1 again
 ```
 
 ### "Still not working"
-```bash
-start_debug.bat
+```
+start.bat --debug
 # Read output and check README.md → Troubleshooting section
 ```
 
 ---
 
-## 💾 Environments
+## Environments
 
 After installation, you have two options:
 
 ```
-Two possibilities:
-
 [A] Conda Environment (Recommended)
-    C:\Users\<User>\miniconda3\envs\renamepy\
+    Windows: C:\Users\<User>\miniconda3\envs\renamepy\
+    Linux:   ~/miniconda3/envs/renamepy/
     → Use: conda activate renamepy
 
-[B] Venv Environment (if -ForceVenv used)
-    .\renamepy\
-    → Use: .\renamepy\Scripts\Activate.ps1
+[B] Venv Environment (if -ForceVenv used or no Conda)
+    Windows: .\renamepy\  or  .\.venv\
+    Linux:   ./.venv/
+    → Use: source .venv/bin/activate
 ```
 
 ---
 
-## 🔄 Daily Usage
+## Checklist
 
-```bash
-# Option 1 (Simple - Recommended):
-start_simple.bat
-→ Everything automatic
-
-# Option 2 (Manual):
-conda activate renamepy
-python RenameFiles.py
-
-# Option 3 (Debug Mode):
-start_debug.bat
-→ Detailed information
-```
-
----
-
-## 📊 Post-Installation Status
-
-Check with:
-```powershell
-conda env list
-# Should display: renamepy ← Conda
-```
-
-or:
-
-```powershell
-.\activate_env.bat
-python -c "import PyQt6; print('OK')"
-```
-
----
-
-## 🎯 The Three Starter Scripts Explained
-
-```
-start_simple.bat
-└─ Normal usage
-   └─ Starts the application
-   └─ Minimal console output
-   └─ ← USE THIS ONE!
-
-start_file_renamer.bat
-└─ Alternative to simple
-   └─ Functionally identical
-   └─ Different name only
-
-start_debug.bat
-└─ Debug mode
-   └─ Shows Python information
-   └─ Checks all modules
-   └─ ← USE WHEN TROUBLESHOOTING
-```
-
----
-
-## ⚙️ If Something Is Missing
-
-```bash
-# Install missing packages
-conda activate renamepy
-pip install -r requirements.txt
-
-# Or complete reinstall
-.\install.ps1
-```
-
----
-
-## 📞 Documentation
-
-```
-Quick start?
-→ You're reading it ✓
-
-Full understanding?
-→ README.md
-
-Installation details?
-→ Check install.bat comments
-
-Technical documentation?
-→ CHANGELOG.md (version history)
-```
-
----
-
-## ✅ Checklist
-
-- [ ] `install.bat` executed successfully
-- [ ] `start_simple.bat` works
+- [ ] `install.ps1` / `install.sh` executed successfully
+- [ ] `start.bat` / `python RenameFiles.py` works
 - [ ] GUI window opens
 - [ ] No errors in console
 
-→ **Done!** 🎉
-
 ---
 
-## 🆘 Emergency Commands
+## Emergency Commands
 
 ```powershell
 # Check installation
@@ -195,7 +117,10 @@ pip list
 python -c "import PyQt6; import exiftool; print('OK')"
 
 # Reinstall everything
-.\install.ps1
+# Windows:
+powershell -ExecutionPolicy Bypass -File install.ps1
+# Linux:
+./install.sh
 ```
 
 ---
