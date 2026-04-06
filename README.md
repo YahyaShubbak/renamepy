@@ -101,11 +101,12 @@ cd renamepy
 The script handles everything: system dependencies (Qt6 libs, ExifTool), environment creation (Conda or venv), and package installation.
 
 **Windows:**
-```powershell
+```batch
 git clone https://github.com/YahyaShubbak/renamepy.git
 cd renamepy
-powershell -ExecutionPolicy Bypass -File install.ps1
+install.bat
 ```
+> 💡 Double-click `install.bat` — it handles PowerShell execution policy automatically. ExifTool is downloaded and installed as part of the process (latest version is detected automatically).
 
 ### Option 2: Manual Installation
 ```bash

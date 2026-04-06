@@ -13,25 +13,44 @@ cd "$SCRIPT_DIR"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
+ORANGE='\033[38;5;208m'
 NC='\033[0m' # No Color
 BOLD='\033[1m'
 
 LINE="==============================================================================="
 
 # Helper functions
-print_header() { echo -e "${CYAN}${LINE}${NC}"; }
+print_header()  { echo -e "${ORANGE}${LINE}${NC}"; }
 print_ok()      { echo -e "  ${GREEN}[OK]${NC} $1"; }
 print_error()   { echo -e "  ${RED}[ERROR]${NC} $1"; }
 print_warning() { echo -e "  ${YELLOW}[WARNING]${NC} $1"; }
-print_info()    { echo -e "  ${BLUE}[INFO]${NC} $1"; }
+print_info()    { echo -e "  ${ORANGE}[INFO]${NC} $1"; }
+
+# Ask user to confirm a step. Default is YES (Enter = proceed).
+# Usage: confirm_step "Step name" "Description" || exit 1
+confirm_step() {
+    local step="$1"
+    local desc="${2:-}"
+    echo ""
+    echo -e " The following step will be performed:"
+    echo -e "   ${ORANGE}${step}${NC}"
+    if [ -n "$desc" ]; then
+        echo -e "   ${desc}"
+    fi
+    echo ""
+    read -p " Do you want to continue? [[Y]/n]: " _resp
+    if [[ "$_resp" =~ ^[Nn]$ ]]; then
+        print_warning "Aborted by user."
+        return 1
+    fi
+    return 0
+}
 
 # ============================================================================
 #  Welcome
 # ============================================================================
 clear
-echo -e "${CYAN}"
+echo -e "${ORANGE}"
 cat << "EOF"
 ===============================================================================
 
@@ -93,7 +112,7 @@ install_system_deps() {
         done
         if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
             print_warning "Missing system packages: ${MISSING_PKGS[*]}"
-            read -p "  Install them now with pacman? (Y/n): " DO_INSTALL
+            read -p "  Install them now with pacman? [[Y]/n]: " DO_INSTALL
             if [[ ! "$DO_INSTALL" =~ ^[Nn]$ ]]; then
                 sudo pacman -S --needed --noconfirm "${MISSING_PKGS[@]}"
                 print_ok "System packages installed."
@@ -120,7 +139,7 @@ install_system_deps() {
         done
         if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
             print_warning "Missing system packages: ${MISSING_PKGS[*]}"
-            read -p "  Install them now with apt? (Y/n): " DO_INSTALL
+            read -p "  Install them now with apt? [[Y]/n]: " DO_INSTALL
             if [[ ! "$DO_INSTALL" =~ ^[Nn]$ ]]; then
                 sudo apt-get update && sudo apt-get install -y "${MISSING_PKGS[@]}"
                 print_ok "System packages installed."
@@ -190,10 +209,10 @@ if [ -n "$CONDA_EXE" ] && [ -x "$CONDA_EXE" ]; then
     print_ok "Conda found: $CONDA_EXE"
     echo ""
     echo -e "  Choose environment type:"
-    echo -e "    ${CYAN}[1]${NC} Conda environment (recommended if you use conda)"
-    echo -e "    ${CYAN}[2]${NC} Python venv (lightweight, no conda needed)"
+    echo -e "    ${ORANGE}[1]${NC} Conda environment (recommended if you use conda)"
+    echo -e "    ${ORANGE}[2]${NC} Python venv (lightweight, no conda needed)"
     echo ""
-    read -p "  Your choice (1/2) [1]: " ENV_CHOICE
+    read -p "  Your choice [[1]/2]: " ENV_CHOICE
     if [[ "$ENV_CHOICE" == "2" ]]; then
         print_info "Using Python venv."
     else
@@ -225,7 +244,7 @@ if [ "$USE_CONDA" = true ]; then
     if conda env list | grep -q "^${ENV_NAME} "; then
         print_warning "Conda environment '$ENV_NAME' already exists."
         echo ""
-        read -p "  Recreate it? All changes will be lost! (Y/n): " RECREATE
+        read -p "  Recreate it? All changes will be lost! [y/[N]]: " RECREATE
         if [[ ! "$RECREATE" =~ ^[Nn]$ ]]; then
             echo "  Removing existing environment..."
             conda remove -n "$ENV_NAME" --all -y
@@ -251,7 +270,7 @@ else
     if [ -d "$VENV_DIR" ]; then
         print_warning "venv directory already exists: $VENV_DIR"
         echo ""
-        read -p "  Recreate it? (Y/n): " RECREATE
+        read -p "  Recreate it? [y/[N]]: " RECREATE
         if [[ ! "$RECREATE" =~ ^[Nn]$ ]]; then
             rm -rf "$VENV_DIR"
             print_ok "Old venv removed."
@@ -276,8 +295,24 @@ echo ""
 echo -e "${BOLD}[4/6] Installing Python packages...${NC}"
 echo ""
 
+# Read and display package list from requirements.txt
+echo " The following packages will be installed:"
+while IFS= read -r line || [ -n "$line" ]; do
+    # Skip comments and blank lines
+    [[ "$line" =~ ^\s*# ]] && continue
+    [[ -z "${line// }" ]] && continue
+    echo -e "   ${ORANGE}${line}${NC}"
+done < requirements.txt
+echo ""
+read -p " Do you want to continue? [[Y]/n]: " _pkg_resp
+if [[ "$_pkg_resp" =~ ^[Nn]$ ]]; then
+    print_warning "Aborted by user."
+    exit 1
+fi
+echo ""
+
 echo "  Upgrading pip..."
-pip install --upgrade pip --quiet
+pip install --upgrade pip
 
 echo "  Installing requirements..."
 pip install -r requirements.txt || {
@@ -319,7 +354,7 @@ echo ""
 # ============================================================================
 #  Step 6: Desktop Shortcut (Linux)
 # ============================================================================
-read -p " Would you like to create a desktop shortcut? (Y/n): " CREATE_SHORTCUT
+read -p " Create a desktop shortcut for RenamePy? [[Y]/n]: " CREATE_SHORTCUT
 
 if [[ ! "$CREATE_SHORTCUT" =~ ^[Nn]$ ]]; then
     echo ""
@@ -387,23 +422,28 @@ fi
 echo ""
 print_header
 echo ""
-echo -e " All done! Start the application with:"
+echo -e " ${ORANGE}All done! RenamePy is ready.${NC}"
 echo ""
+
 if [ "$USE_CONDA" = true ]; then
-    echo -e "   ${CYAN}conda activate $ENV_NAME && python RenameFiles.py${NC}"
+    echo -e "  To start manually later:"
+    echo -e "   ${GREEN}conda activate $ENV_NAME && python RenameFiles.py${NC}"
 else
-    echo -e "   ${CYAN}source .venv/bin/activate && python RenameFiles.py${NC}"
+    echo -e "  To start manually later:"
+    echo -e "   ${GREEN}source .venv/bin/activate && python RenameFiles.py${NC}"
 fi
-echo -e "   or use the desktop shortcut (if created)."
 echo ""
-echo -e " If you encounter problems:"
-echo -e "   1. Open a terminal in the project folder"
-if [ "$USE_CONDA" = true ]; then
-    echo -e "   2. Run: ${CYAN}conda activate $ENV_NAME${NC}"
-else
-    echo -e "   2. Run: ${CYAN}source .venv/bin/activate${NC}"
+echo -e "  ${GREEN}[R]${NC}  Start RenamePy now"
+echo -e "  ${NC}[any other key]  Exit${NC}"
+echo ""
+read -p " [Any key] / R: " _launch
+if [[ "$_launch" =~ ^[Rr]$ ]]; then
+    echo ""
+    print_info "Launching RenamePy..."
+    if [ "$USE_CONDA" = true ]; then
+        conda run -n "$ENV_NAME" python "$SCRIPT_DIR/RenameFiles.py"
+    else
+        python "$SCRIPT_DIR/RenameFiles.py"
+    fi
 fi
-echo -e "   3. Start: ${CYAN}python RenameFiles.py${NC}"
-echo ""
-print_header
-echo ""
+

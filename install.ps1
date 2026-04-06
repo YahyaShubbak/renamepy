@@ -27,7 +27,7 @@ $Colors = @{
     Success = "Green"
     Error   = "Red"
     Warning = "Yellow"
-    Info    = "Cyan"
+    Info    = "DarkYellow"
     Debug   = "Gray"
 }
 
@@ -63,6 +63,73 @@ function Write-Warning-Custom {
 function Write-Debug-Custom {
     param([string]$Message)
     Write-Log -Message $Message -Level "Debug"
+}
+
+# ============================================================================
+# Function: Ask user to confirm a step before proceeding
+# Returns $true if confirmed, $false if aborted
+# ============================================================================
+function Confirm-Step {
+    param(
+        [string]$StepName,
+        [string]$Description = "",
+        # Optional list of items to display (e.g. package names)
+        [string[]]$ItemList = @()
+    )
+
+    Write-Host ""
+    Write-Host "The following step will be performed:" -ForegroundColor White
+    Write-Host "  $StepName" -ForegroundColor DarkYellow
+    if ($Description) {
+        Write-Host "  $Description" -ForegroundColor Gray
+    }
+
+    if ($ItemList.Count -gt 0) {
+        Write-Host ""
+        foreach ($item in $ItemList) {
+            Write-Host "  $item" -ForegroundColor DarkYellow
+        }
+    }
+
+    Write-Host ""
+    # [Y] = default (Enter accepts), n = must be typed explicitly
+    $response = Read-Host "Do you want to continue? [[Y]/n]"
+    if ([string]$response -eq "" -or $response -match "^[yY]") {
+        return $true
+    }
+
+    Write-Warning-Custom "Aborted by user."
+    return $false
+}
+
+# ============================================================================
+# Function: Launch RenamePy after installation
+# ============================================================================
+function Start-RenamePy {
+    param(
+        [string]$EnvName,
+        [string]$CondaTool = $null,
+        [bool]$UsesConda = $false
+    )
+
+    Write-Host ""
+    Write-Log -Message "Starting RenamePy..." -Level "Info"
+
+    try {
+        if ($UsesConda) {
+            & $CondaTool run -n $EnvName python (Join-Path $PROJECT_ROOT "RenameFiles.py")
+        }
+        else {
+            $pythonExe = Join-Path $PROJECT_ROOT "$EnvName\Scripts\python.exe"
+            if (-not (Test-Path $pythonExe)) {
+                $pythonExe = $script:PythonExe
+            }
+            & $pythonExe (Join-Path $PROJECT_ROOT "RenameFiles.py")
+        }
+    }
+    catch {
+        Write-Error-Custom "Could not start RenamePy: $_"
+    }
 }
 
 # ============================================================================
@@ -232,11 +299,9 @@ function New-CondaEnvironment {
     
     if (Test-Path $envFullPath) {
         Write-Warning-Custom "Conda environment '$EnvName' already exists at $envFullPath"
-        $response = Read-Host "Do you want to delete and recreate the environment? (yes/no)"
+        $response = Read-Host "Delete and recreate the environment? [y/[N]]"
         
-        if ($response -eq "yes") {
-            Write-Log -Message "Deleting existing environment..." -Level "Info"
-            & $CondaTool env remove -n $EnvName -y
+        if ($response -match "^[yY]") {
             if ($LASTEXITCODE -ne 0) {
                 Write-Error-Custom "Could not delete environment"
                 return $false
@@ -270,9 +335,9 @@ function New-VenvEnvironment {
     
     if (Test-Path $venvPath) {
         Write-Warning-Custom "Venv environment '$EnvName' already exists at $venvPath"
-        $response = Read-Host "Do you want to delete and recreate the environment? (yes/no)"
+        $response = Read-Host "Delete and recreate the environment? [y/[N]]"
         
-        if ($response -eq "yes") {
+        if ($response -match "^[yY]") {
             Write-Log -Message "Deleting existing environment..." -Level "Info"
             Remove-Item -Path $venvPath -Recurse -Force
         }
@@ -310,13 +375,14 @@ function Install-Packages {
     }
     
     Write-Log -Message "Installing packages with pip..." -Level "Info"
+    Write-Host ""
     
     # Activate venv or conda environment
     if ($UsesConda) {
         # Use conda run instead of activating
         Write-Log -Message "Using conda for installation..." -Level "Debug"
-        & $CondaTool run -n $EnvName pip install --upgrade pip
-        & $CondaTool run -n $EnvName pip install -r $REQUIREMENTS_FILE
+        & $CondaTool run -n $EnvName pip install --upgrade pip --progress-bar on
+        & $CondaTool run -n $EnvName pip install -r $REQUIREMENTS_FILE --progress-bar on
     }
     else {
         # Activate venv
@@ -329,8 +395,8 @@ function Install-Packages {
         }
         
         & $activateScript
-        & $script:PythonExe -m pip install --upgrade pip 2>$null
-        & $script:PythonExe -m pip install -r $REQUIREMENTS_FILE
+        & $script:PythonExe -m pip install --upgrade pip --progress-bar on
+        & $script:PythonExe -m pip install -r $REQUIREMENTS_FILE --progress-bar on
         $result = $LASTEXITCODE -eq 0
         deactivate 2>$null
         return $result
@@ -391,14 +457,11 @@ function Test-ExifToolInstallation {
     Write-Log -Message "ExifTool is optional for extended EXIF functions." -Level "Info"
     Write-Host ""
     
-    Write-Host "Would you like to automatically download and install ExifTool?" -ForegroundColor Yellow
-    Write-Host "  [Y] Yes, automatically download (~10 MB)" -ForegroundColor Cyan
-    Write-Host "  [N] No, install manually later" -ForegroundColor Cyan
+    Write-Host "  exiftool  (~10 MB, from exiftool.org)" -ForegroundColor DarkYellow
     Write-Host ""
+    $response = Read-Host "Download and install ExifTool automatically? [[Y]/n]"
     
-    $response = Read-Host "Your choice (Y/N)"
-    
-    if ($response -match "^[yY]") {
+    if ([string]$response -eq "" -or $response -match "^[yY]") {
         Write-Log -Message "Starting ExifTool setup..." -Level "Info"
         $setupScript = Join-Path $PROJECT_ROOT "setup_exiftool.ps1"
         
@@ -505,14 +568,9 @@ function Create-DesktopShortcut {
     )
 
     Write-Host ""
-    Write-Host "Would you like to create a desktop shortcut?" -ForegroundColor Yellow
-    Write-Host "  [Y] Yes" -ForegroundColor Cyan
-    Write-Host "  [N] No" -ForegroundColor Cyan
-    Write-Host ""
+    $response = Read-Host "Create a desktop shortcut for RenamePy? [[Y]/n]"
 
-    $response = Read-Host "Your choice (Y/N)"
-
-    if ($response -notmatch "^[yY]") {
+    if ([string]$response -ne "" -and $response -notmatch "^[yY]") {
         Write-Log -Message "Desktop shortcut skipped" -Level "Info"
         return
     }
@@ -570,9 +628,19 @@ function Create-DesktopShortcut {
 # ============================================================================
 function Main {
     Clear-Host
-    Write-Host "======================================================" -ForegroundColor Cyan
-    Write-Host "  RenamePy Installation Script v$SCRIPT_VERSION" -ForegroundColor Cyan
-    Write-Host "======================================================" -ForegroundColor Cyan
+
+    # Orange ANSI color (works in Windows Terminal & modern PowerShell)
+    $o = [char]27 + "[38;5;208m"
+    $r = [char]27 + "[0m"
+
+    Write-Host ""
+    Write-Host "${o} ____  _____ _   _    _    __  __ _____ ______   ___${r}"
+    Write-Host "${o}|  _ \| ____| \ | |  / \  |  \/  | ____|  _ \ \ / / |${r}"
+    Write-Host "${o}| |_) |  _| |  \| | / _ \ | |\/| |  _| | |_) \ V /  |${r}"
+    Write-Host "${o}|  _ <| |___| |\  |/ ___ \| |  | | |___|  __/ | |   |${r}"
+    Write-Host "${o}|_| \_\_____|_| \_/_/   \_\_|  |_|_____|_|    |_|   |${r}"
+    Write-Host ""
+    Write-Host "  Installation Script v$SCRIPT_VERSION" -ForegroundColor DarkYellow
     Write-Host ""
     
     # Step 1: Check Python
@@ -593,6 +661,11 @@ function Main {
     $usesConda = $condaInfo.Available -and -not $ForceVenv
     
     # Step 4: Create environment
+    $envType = if ($usesConda) { "Conda" } else { "venv" }
+    if (-not (Confirm-Step -StepName "Create $envType environment" -Description "Creates the Python environment '$VENV_NAME' for RenamePy.")) {
+        exit 1
+    }
+
     Write-Host ""
     Write-Log -Message "========== Environment Creation ==========" -Level "Info"
     
@@ -609,7 +682,15 @@ function Main {
         }
     }
     
-    # Step 5: Install packages
+    # Step 5: Install packages - read requirements.txt and display package list
+    $packageLines = Get-Content $REQUIREMENTS_FILE -ErrorAction SilentlyContinue |
+        Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() -ne '' }
+
+    $pkgDesc = "The following packages will be installed into the [${VENV_NAME}] environment:"
+    if (-not (Confirm-Step -StepName "Install Python packages" -Description $pkgDesc -ItemList $packageLines)) {
+        exit 1
+    }
+
     Write-Host ""
     Write-Log -Message "========== Package Installation ==========" -Level "Info"
     
@@ -646,28 +727,33 @@ function Main {
     # Step 9: Create desktop shortcut
     Create-DesktopShortcut -EnvName $VENV_NAME -UsesConda $usesConda
 
-    # Completion
+    # ============ Completion Screen ============
+    $o = [char]27 + "[38;5;208m"
+    $r = [char]27 + "[0m"
     Write-Host ""
-    Write-Host "======================================================" -ForegroundColor Green
-    Write-Host "  Installation completed successfully!" -ForegroundColor Green
-    Write-Host "======================================================" -ForegroundColor Green
+    Write-Host "${o}  ======================================================${r}"
+    Write-Host "${o}  RenamePy installed successfully!${r}"
+    Write-Host "${o}  ======================================================${r}"
     Write-Host ""
-    
+
     if ($usesConda) {
-        Write-Host "Activate the environment with:" -ForegroundColor Yellow
-        Write-Host "  conda activate $VENV_NAME" -ForegroundColor Cyan
+        Write-Host "  To start manually later:" -ForegroundColor DarkYellow
+        Write-Host "    conda activate $VENV_NAME && python RenameFiles.py" -ForegroundColor Green
     }
     else {
-        Write-Host "Activate the environment with:" -ForegroundColor Yellow
-        Write-Host "  .\$VENV_NAME\Scripts\Activate.ps1" -ForegroundColor Cyan
-        Write-Host "  or:" -ForegroundColor Yellow
-        Write-Host "  .\activate_env.bat" -ForegroundColor Cyan
+        Write-Host "  To start manually later:" -ForegroundColor DarkYellow
+        Write-Host "    .\activate_env.bat && python RenameFiles.py" -ForegroundColor Green
     }
-    
+
     Write-Host ""
-    Write-Host "Start the application with:" -ForegroundColor Yellow
-    Write-Host "  python RenameFiles.py" -ForegroundColor Cyan
+    Write-Host "  [R]  Start RenamePy now" -ForegroundColor Green
+    Write-Host "  [any other key]  Exit" -ForegroundColor Gray
     Write-Host ""
+
+    $choice = Read-Host "[Any key] / R"
+    if ($choice -match "^[rR]") {
+        Start-RenamePy -EnvName $VENV_NAME -CondaTool $condaInfo.Tool -UsesConda $usesConda
+    }
 }
 
 # ============================================================================

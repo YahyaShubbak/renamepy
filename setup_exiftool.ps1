@@ -15,21 +15,10 @@ $ErrorActionPreference = "Continue"
 # ============================================================================
 $PROJECT_ROOT = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-# ExifTool version — update this single value when upgrading
-$EXIFTOOL_VERSION = "13.40"
+# ExifTool architecture
 $EXIFTOOL_ARCH = "64"
-$EXIFTOOL_FOLDER = "exiftool-${EXIFTOOL_VERSION}_${EXIFTOOL_ARCH}"
-$EXIFTOOL_ZIP = "${EXIFTOOL_FOLDER}.zip"
 
-$EXIFTOOL_DIR = Join-Path $PROJECT_ROOT $EXIFTOOL_FOLDER
 $DOWNLOAD_DIR = Join-Path $PROJECT_ROOT "temp_download"
-
-# Download URLs — ordered by reliability
-$DOWNLOAD_URLS = @(
-    "https://exiftool.org/$EXIFTOOL_ZIP",
-    "https://downloads.sourceforge.net/project/exiftool/$EXIFTOOL_ZIP",
-    "https://sourceforge.net/projects/exiftool/files/$EXIFTOOL_ZIP/download"
-)
 
 # ============================================================================
 # Helper functions for coloured output
@@ -66,18 +55,62 @@ function Write-Warning-Custom { param([string]$msg) Write-ColorMessage -Message 
 function Write-Error-Custom { param([string]$msg) Write-ColorMessage -Message $msg -Type "Error" }
 
 # ============================================================================
+# Function: Resolve latest ExifTool version and build download URLs
+# ============================================================================
+function Get-ExifToolLatestVersion {
+    Write-Info "Detecting latest ExifTool version from exiftool.org..."
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $html = (Invoke-WebRequest -Uri 'https://exiftool.org/' -UseBasicParsing -TimeoutSec 20).Content
+        $match = [regex]::Match($html, 'exiftool-([\.\d]+)_64\.zip')
+        if ($match.Success) {
+            $version = $match.Groups[1].Value
+            Write-Info "Latest version detected: $version"
+            return $version
+        }
+    }
+    catch {
+        Write-Warning-Custom "Could not detect version online: $($_.Exception.Message)"
+    }
+
+    # Fallback to a known-good version
+    $fallback = "13.54"
+    Write-Warning-Custom "Falling back to version $fallback"
+    return $fallback
+}
+
+# ============================================================================
+# Function: Initialise version-dependent globals (called once in Main)
+# ============================================================================
+$script:EXIFTOOL_VERSION = $null
+$script:EXIFTOOL_FOLDER  = $null
+$script:EXIFTOOL_ZIP     = $null
+$script:EXIFTOOL_DIR     = $null
+$script:DOWNLOAD_URLS    = @()
+
+function Initialize-ExifToolGlobals {
+    $script:EXIFTOOL_VERSION = Get-ExifToolLatestVersion
+    $script:EXIFTOOL_FOLDER  = "exiftool-$($script:EXIFTOOL_VERSION)_${EXIFTOOL_ARCH}"
+    $script:EXIFTOOL_ZIP     = "$($script:EXIFTOOL_FOLDER).zip"
+    $script:EXIFTOOL_DIR     = Join-Path $PROJECT_ROOT $script:EXIFTOOL_FOLDER
+    $script:DOWNLOAD_URLS    = @(
+        "https://exiftool.org/$($script:EXIFTOOL_ZIP)"
+    )
+}
+
+# ============================================================================
 # Function: Check whether ExifTool already exists
 # ============================================================================
 function Test-ExifToolExists {
-    if (Test-Path $EXIFTOOL_DIR) {
+    if (Test-Path $script:EXIFTOOL_DIR) {
         # Check both possible exe names
-        $exeFile1 = Join-Path $EXIFTOOL_DIR "exiftool.exe"
-        $exeFile2 = Join-Path $EXIFTOOL_DIR "exiftool(-k).exe"
+        $exeFile1 = Join-Path $script:EXIFTOOL_DIR "exiftool.exe"
+        $exeFile2 = Join-Path $script:EXIFTOOL_DIR "exiftool(-k).exe"
         
         $exeFile = if (Test-Path $exeFile1) { $exeFile1 } elseif (Test-Path $exeFile2) { $exeFile2 } else { $null }
         
         if ($exeFile) {
-            Write-Success "ExifTool already present: $EXIFTOOL_DIR"
+            Write-Success "ExifTool already present: $($script:EXIFTOOL_DIR)"
             Write-Success "Executable found: $(Split-Path -Leaf $exeFile)"
             
             try {
@@ -97,7 +130,7 @@ function Test-ExifToolExists {
 # Function: Download ExifTool
 # ============================================================================
 function Invoke-ExifToolDownload {
-    Write-Info "Downloading ExifTool $EXIFTOOL_VERSION..."
+    Write-Info "Downloading ExifTool $($script:EXIFTOOL_VERSION)..."
     
     # Create download directory
     if (-not (Test-Path $DOWNLOAD_DIR)) {
@@ -105,7 +138,7 @@ function Invoke-ExifToolDownload {
         Write-Info "Download directory created"
     }
     
-    $zipFile = Join-Path $DOWNLOAD_DIR $EXIFTOOL_ZIP
+    $zipFile = Join-Path $DOWNLOAD_DIR $script:EXIFTOOL_ZIP
     
     # Remove old ZIP if present
     if (Test-Path $zipFile) {
@@ -115,7 +148,7 @@ function Invoke-ExifToolDownload {
     # Set TLS 1.2 for secure downloads
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     
-    foreach ($url in $DOWNLOAD_URLS) {
+    foreach ($url in $script:DOWNLOAD_URLS) {
         try {
             Write-Info "Trying: $url"
             
@@ -140,10 +173,10 @@ function Invoke-ExifToolDownload {
         }
     }
     
-    Write-Error-Custom "All download URLs failed."
-    Write-Info "Please download ExifTool manually from: https://exiftool.org/"
-    Write-Info "Extract the ZIP into the project folder: $PROJECT_ROOT"
-    return $null
+        Write-Warning-Custom "All download URLs failed."
+        Write-Info "Please download ExifTool manually from: https://exiftool.org/"
+        Write-Info "Extract the ZIP into the project folder: $PROJECT_ROOT"
+        return $null
 }
 
 # ============================================================================
@@ -160,29 +193,29 @@ function Expand-ExifToolArchive {
         Write-Success "ZIP extracted"
         
         # Check whether the exiftool folder was inside the ZIP
-        $unpackedDir = Join-Path $DOWNLOAD_DIR $EXIFTOOL_FOLDER
+        $unpackedDir = Join-Path $DOWNLOAD_DIR $script:EXIFTOOL_FOLDER
         
         if (-not (Test-Path $unpackedDir)) {
-            Write-Error-Custom "$EXIFTOOL_FOLDER folder not found after extraction"
+            Write-Error-Custom "$($script:EXIFTOOL_FOLDER) folder not found after extraction"
             Write-Info "Contents of temp_download:"
             Get-ChildItem $DOWNLOAD_DIR | ForEach-Object { Write-Info "  - $($_.Name)" }
             return $false
         }
         
         # Move directly into the repository (not nested!)
-        if (Test-Path $EXIFTOOL_DIR) {
+        if (Test-Path $script:EXIFTOOL_DIR) {
             Write-Warning-Custom "ExifTool folder already exists - removing..."
-            Remove-Item -Path $EXIFTOOL_DIR -Recurse -Force
+            Remove-Item -Path $script:EXIFTOOL_DIR -Recurse -Force
         }
         
-        Write-Info "Moving $EXIFTOOL_FOLDER into repository..."
-        Move-Item -Path $unpackedDir -Destination $EXIFTOOL_DIR -Force
+        Write-Info "Moving $($script:EXIFTOOL_FOLDER) into repository..."
+        Move-Item -Path $unpackedDir -Destination $script:EXIFTOOL_DIR -Force
         
-        Write-Success "ExifTool installed: $EXIFTOOL_DIR"
+        Write-Success "ExifTool installed: $($script:EXIFTOOL_DIR)"
         
         # Check both possible exe names
-        $exeFile1 = Join-Path $EXIFTOOL_DIR "exiftool.exe"
-        $exeFile2 = Join-Path $EXIFTOOL_DIR "exiftool(-k).exe"
+        $exeFile1 = Join-Path $script:EXIFTOOL_DIR "exiftool.exe"
+        $exeFile2 = Join-Path $script:EXIFTOOL_DIR "exiftool(-k).exe"
         
         if (Test-Path $exeFile1) {
             Write-Success "exiftool.exe found"
@@ -198,8 +231,8 @@ function Expand-ExifToolArchive {
         }
         else {
             Write-Error-Custom "No exiftool.exe found"
-            Write-Info "Contents of ${EXIFTOOL_FOLDER}:"
-            Get-ChildItem $EXIFTOOL_DIR | ForEach-Object { Write-Info "  - $($_.Name)" }
+            Write-Info "Contents of $($script:EXIFTOOL_FOLDER):"
+            Get-ChildItem $script:EXIFTOOL_DIR | ForEach-Object { Write-Info "  - $($_.Name)" }
             return $false
         }
     }
@@ -226,8 +259,8 @@ function Remove-TempDirectory {
 # ============================================================================
 function Test-ExifToolFunctionality {
     # Check both possible exe names
-    $exeFile1 = Join-Path $EXIFTOOL_DIR "exiftool.exe"
-    $exeFile2 = Join-Path $EXIFTOOL_DIR "exiftool(-k).exe"
+    $exeFile1 = Join-Path $script:EXIFTOOL_DIR "exiftool.exe"
+    $exeFile2 = Join-Path $script:EXIFTOOL_DIR "exiftool(-k).exe"
     
     $exeFile = if (Test-Path $exeFile1) { $exeFile1 } elseif (Test-Path $exeFile2) { $exeFile2 } else { $null }
     
@@ -260,7 +293,12 @@ function Main {
     Write-Host ""
     
     Write-Info "Project directory: $PROJECT_ROOT"
-    Write-Info "ExifTool target folder: $EXIFTOOL_DIR"
+    Write-Host ""
+
+    # Resolve version and globals first
+    Initialize-ExifToolGlobals
+
+    Write-Info "ExifTool target folder: $($script:EXIFTOOL_DIR)"
     Write-Host ""
     
     # Step 1: Check whether already present
@@ -305,13 +343,13 @@ function Main {
     Write-Host ""
     
     Write-Host "ExifTool is now available at:" -ForegroundColor Yellow
-    Write-Host "  $EXIFTOOL_DIR" -ForegroundColor Cyan
+    Write-Host "  $($script:EXIFTOOL_DIR)" -ForegroundColor Cyan
     Write-Host ""
     
     Write-Host "Usage:" -ForegroundColor Yellow
     Write-Host "  exiftool.exe <image_file>" -ForegroundColor Cyan
     Write-Host "  or in Python code:" -ForegroundColor Cyan
-    Write-Host "  exiftool = ExifTool('$EXIFTOOL_FOLDER/exiftool.exe')" -ForegroundColor Cyan
+    Write-Host "  exiftool = ExifTool('$($script:EXIFTOOL_FOLDER)/exiftool.exe')" -ForegroundColor Cyan
     Write-Host ""
     
     return $true
