@@ -52,7 +52,7 @@ for cmd in python3 python; do
         ver=$("$cmd" --version 2>&1)
         major=$("$cmd" -c "import sys; print(sys.version_info.major)")
         minor=$("$cmd" -c "import sys; print(sys.version_info.minor)")
-        if [ "$major" -ge 3 ] && [ "$minor" -ge 9 ]; then
+        if [ "$major" -eq 3 ] && [ "$minor" -ge 9 ]; then
             PY="$cmd"
             break
         fi
@@ -188,7 +188,21 @@ if [ "$EXIF_FOUND" -eq 0 ]; then
                 unzip -q "$ZIP_TMP" -d "$SCRIPT_DIR"
             else
                 log_warn "unzip not found – trying python..."
-                "$PY" -c "import zipfile, sys; zipfile.ZipFile('$ZIP_TMP').extractall('$SCRIPT_DIR')"
+                # Write to a temp script to safely extract (guards against path traversal)
+                PYEXTRACT="/tmp/renamepy_extract_$$.py"
+                cat > "$PYEXTRACT" << 'PYEOF'
+import zipfile, os, sys
+zip_path, dest = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(zip_path) as zf:
+    for member in zf.infolist():
+        member_path = os.path.normpath(member.filename)
+        if member_path.startswith("..") or os.path.isabs(member_path):
+            print(f"[WARN] Skipping unsafe path: {member.filename}", file=sys.stderr)
+            continue
+        zf.extract(member, dest)
+PYEOF
+                "$PY" "$PYEXTRACT" "$ZIP_TMP" "$SCRIPT_DIR"
+                rm -f "$PYEXTRACT"
             fi
             rm -f "$ZIP_TMP"
 
