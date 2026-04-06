@@ -218,13 +218,15 @@ else { Write-Warn "RenameFiles.py missing"; $valid = $false }
 if ($valid) { Write-Success "Installation successfully validated!" }
 else { Write-Warn "Validation completed with warnings" }
 
-# Create convenience activation batch file
+# Create convenience activation batch file (activates env only – does not auto-launch the app)
 $activateBat = Join-Path $ScriptDir "activate_env.bat"
 if ($condaExe -and -not (Test-Path $activateBat)) {
     @"
 @echo off
 call conda activate renamepy
-python RenameFiles.py
+echo.
+echo RenamePy environment activated.
+echo Run: python RenameFiles.py
 "@ | Set-Content $activateBat
     Write-Success "Activation script created: $activateBat"
 }
