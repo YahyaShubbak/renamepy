@@ -39,6 +39,7 @@ desktop.ini
 
 # Windows specific
 *.lnk
+activate_env.bat
 
 # Test files and temporary data
 test_images/
