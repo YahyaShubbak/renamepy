@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..exif_processor import batch_restore_timestamps
+from ..backup_journal import clear_backup as _clear_journal_backup
 
 if TYPE_CHECKING:
     from ..main_application import FileRenamerApp
@@ -181,18 +182,20 @@ class UndoHandler:
             Tuple of (files_to_undo, timestamp_backup_exists, exif_backup_exists).
         """
         app = self.app
-        timestamp_backup_exists = hasattr(app, "timestamp_backup") and bool(
-            getattr(app, "timestamp_backup")
-        )
-        exif_backup_exists = hasattr(app, "exif_backup") and bool(
-            getattr(app, "exif_backup")
-        )
+        # timestamp_backup/exif_backup/original_filenames are @property
+        # delegates to RenamerState fields with dict default_factory (see
+        # state_model.py), always present once FileRenamerApp.__init__ has
+        # run - which is guaranteed before any undo action can be triggered
+        # by the user. hasattr() here would always be True; checking
+        # truthiness directly is equivalent and clearer.
+        timestamp_backup_exists = bool(app.timestamp_backup)
+        exif_backup_exists = bool(app.exif_backup)
 
         # Check which files need to be undone
         files_to_undo: list[tuple[str, str]] = []
 
         # Check in-memory tracking (current session — fast)
-        if hasattr(app, "original_filenames") and app.original_filenames:
+        if app.original_filenames:
             for current_file, original_filename in app.original_filenames.items():
                 current_filename = os.path.basename(current_file)
                 if current_filename != original_filename and current_file in app.files:
@@ -200,7 +203,7 @@ class UndoHandler:
 
         # Check cached EXIF undo results (populated by _start_async_exif_undo_check)
         if not files_to_undo and getattr(app, "_exif_undo_available", False):
-            if app.exiftool_path and hasattr(app, "files") and app.files:
+            if app.exiftool_path and app.files:
                 from ..exif_undo_manager import batch_get_original_filenames
 
                 exif_results = batch_get_original_filenames(
@@ -211,9 +214,9 @@ class UndoHandler:
                         current_filename = os.path.basename(file_path)
                         if original_filename != current_filename:
                             files_to_undo.append((file_path, original_filename))
-                            # Cache in memory for future calls
-                            if not hasattr(app, "original_filenames"):
-                                app.original_filenames = {}
+                            # Cache in memory for future calls. app.original_filenames
+                            # is always a real dict (RenamerState default_factory=dict),
+                            # so it's always safe to index into directly.
                             app.original_filenames[file_path] = original_filename
 
         return files_to_undo, timestamp_backup_exists, exif_backup_exists
@@ -231,7 +234,7 @@ class UndoHandler:
         self._set_ui_enabled(False)
 
         # Restore file timestamps
-        if hasattr(app, "timestamp_backup") and app.timestamp_backup:
+        if app.timestamp_backup:  # always a real dict (RenamerState default)
             try:
                 ts_success, ts_errors = batch_restore_timestamps(
                     app.timestamp_backup,
@@ -245,11 +248,12 @@ class UndoHandler:
                             f"File timestamp restore failed for {os.path.basename(file_path)}: {err}"
                         )
                 app.timestamp_backup = {}
+                _clear_journal_backup("timestamp_backup")
             except Exception as e:
                 errors.append(f"File timestamp restore error: {e}")
 
         # Restore EXIF timestamps
-        if hasattr(app, "exif_backup") and app.exif_backup:
+        if app.exif_backup:  # always a real dict (RenamerState default)
             try:
                 from ..exif_processor import batch_restore_exif_timestamps
 
@@ -269,6 +273,7 @@ class UndoHandler:
                             f"EXIF timestamp restore failed for {os.path.basename(file_path)}: {err}"
                         )
                 app.exif_backup = {}
+                _clear_journal_backup("exif_backup")
             except Exception as e:
                 errors.append(f"EXIF timestamp restore error: {e}")
 
@@ -358,7 +363,7 @@ class UndoHandler:
         errors: list[str] = []
 
         # Restore file timestamps
-        if hasattr(app, "timestamp_backup") and app.timestamp_backup:
+        if app.timestamp_backup:  # always a real dict (RenamerState default)
             app.log("🔄 Restoring original file timestamps...")
             try:
                 timestamp_successes, timestamp_errors = batch_restore_timestamps(
@@ -379,12 +384,13 @@ class UndoHandler:
                             f"{os.path.basename(file_path)}: {error_msg}"
                         )
                 app.timestamp_backup = {}
+                _clear_journal_backup("timestamp_backup")
             except Exception as e:
                 app.log(f"❌ Error during file timestamp restore: {e}")
                 errors.append(f"File timestamp restore error: {e}")
 
         # Restore EXIF timestamps
-        if hasattr(app, "exif_backup") and app.exif_backup:
+        if app.exif_backup:  # always a real dict (RenamerState default)
             app.log("🔄 Restoring original EXIF timestamps...")
             try:
                 from ..exif_processor import batch_restore_exif_timestamps
@@ -409,6 +415,7 @@ class UndoHandler:
                             f"{os.path.basename(file_path)}: {error_msg}"
                         )
                 app.exif_backup = {}
+                _clear_journal_backup("exif_backup")
             except Exception as e:
                 app.log(f"❌ Error during EXIF timestamp restore: {e}")
                 errors.append(f"EXIF timestamp restore error: {e}")

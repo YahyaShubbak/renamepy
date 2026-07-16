@@ -414,6 +414,12 @@ class MainWindowUI:
         window.file_list.itemDoubleClicked.connect(window.show_selected_exif)
         window.file_list.itemClicked.connect(window.show_media_info)
         
+        # Right-click menu as a discoverable alternative to the single/
+        # double-click gestures below, which aren't obvious without the
+        # hint label or tooltip being read first.
+        window.file_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        window.file_list.customContextMenuRequested.connect(window.show_file_list_context_menu)
+        
         # File Statistics
         window.file_stats_label = QLabel()
         window.file_stats_label.setStyleSheet("""

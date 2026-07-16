@@ -492,9 +492,15 @@ def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None
     Returns:
         tuple: (successes: list, errors: list, backup_data: dict)
     """
+    from .backup_journal import PersistedBackupDict
+
     successes = []
     errors = []
-    backup_data = {}
+    # PersistedBackupDict writes each entry to the on-disk undo journal the
+    # instant it's captured - i.e. before sync_exif_date_to_file_date() below
+    # performs the actual (destructive) timestamp write for that file. This
+    # means a crash mid-batch never loses the backup for files already done.
+    backup_data = PersistedBackupDict("timestamp_backup")
 
     # Fast path: prefetch all EXIF datetimes via the registered ExifService
     # (reuses the shared ExifTool process) or fall back to a one-shot helper.

@@ -52,3 +52,4 @@ jobs:
         # Test rename_engine module
         python -c "from modules.rename_engine import RenameWorkerThread; print('RenameWorkerThread: OK')"
         echo "All critical imports successful!"
+python -c "from modules.main_application import FileRenamerApp; print('FileRenamerApp: OK')"

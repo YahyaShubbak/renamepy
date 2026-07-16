@@ -3,5 +3,6 @@
 from .file_list_manager import FileListManager
 from .preview_generator import PreviewGenerator
 from .main_window_ui import MainWindowUI
+from .metadata_dialog_manager import MetadataDialogManager
 
-__all__ = ['FileListManager', 'PreviewGenerator', 'MainWindowUI']
+__all__ = ['FileListManager', 'PreviewGenerator', 'MainWindowUI', 'MetadataDialogManager']

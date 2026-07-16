@@ -17,13 +17,19 @@ from dataclasses import dataclass
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from .logger_util import get_logger
+from .backup_journal import get_app_data_dir
 
 logger = get_logger(__name__)
 
 # Safety factor calibration
 DEFAULT_SAFETY_FACTOR = 2.0
-_project_root = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
-SAFETY_FACTOR_FILE = os.path.join(_project_root, '.benchmark_calibration.json')
+# Legacy location (project-relative). Older installs may have calibration
+# data here; kept only so _load_safety_factor can migrate it once. New
+# writes never go here - a project-relative path can be read-only if the
+# app is installed somewhere like Program Files.
+_legacy_project_root = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
+_LEGACY_SAFETY_FACTOR_FILE = os.path.join(_legacy_project_root, '.benchmark_calibration.json')
+SAFETY_FACTOR_FILE = os.path.join(get_app_data_dir(), 'benchmark_calibration.json')
 
 # EXIF field patterns that may appear in filename patterns
 EXIF_FIELD_PATTERNS = [
@@ -368,13 +374,10 @@ class PerformanceBenchmark:
     
     def _load_safety_factor(self) -> float:
         """Load calibrated safety factor from file, or return default."""
+        self._migrate_legacy_safety_factor_file()
         try:
-            real_path = os.path.realpath(SAFETY_FACTOR_FILE)
-            if not real_path.startswith(_project_root):
-                logger.warning("Safety factor file path outside project — ignoring")
-                return DEFAULT_SAFETY_FACTOR
-            if os.path.exists(real_path):
-                with open(real_path, 'r') as f:
+            if os.path.exists(SAFETY_FACTOR_FILE):
+                with open(SAFETY_FACTOR_FILE, 'r') as f:
                     data = json.load(f)
                     factor = data.get('safety_factor', DEFAULT_SAFETY_FACTOR)
                     # Clamp to sane range even on load
@@ -386,23 +389,40 @@ class PerformanceBenchmark:
         except Exception as e:
             logger.debug(f"Could not load safety factor: {e}")
         return DEFAULT_SAFETY_FACTOR
-    
+
+    @staticmethod
+    def _migrate_legacy_safety_factor_file():
+        """One-time migration of calibration data from the old project-relative
+        location to the new writable app-data location, so upgrading users
+        don't lose calibration they've already built up. Safe to call
+        repeatedly - it's a no-op once the legacy file is gone.
+        """
+        try:
+            if os.path.exists(_LEGACY_SAFETY_FACTOR_FILE) and not os.path.exists(SAFETY_FACTOR_FILE):
+                shutil.copyfile(_LEGACY_SAFETY_FACTOR_FILE, SAFETY_FACTOR_FILE)
+                logger.info(
+                    f"Migrated benchmark calibration from {_LEGACY_SAFETY_FACTOR_FILE} "
+                    f"to {SAFETY_FACTOR_FILE}"
+                )
+                try:
+                    os.remove(_LEGACY_SAFETY_FACTOR_FILE)
+                except OSError:
+                    pass  # Not writable (e.g. protected install dir) - harmless to leave it
+        except Exception as e:
+            logger.debug(f"Could not migrate legacy safety factor file: {e}")
+
     def _save_safety_factor(self):
         """Save calibrated safety factor to file."""
         try:
-            real_path = os.path.realpath(SAFETY_FACTOR_FILE)
-            if not real_path.startswith(_project_root):
-                logger.warning("Safety factor file path outside project — not saving")
-                return
             data = {
                 'safety_factor': round(self.safety_factor, 4),
                 'last_updated': time.time()
             }
             # Write atomically via temp file to avoid corruption on crash
-            tmp_path = real_path + '.tmp'
+            tmp_path = SAFETY_FACTOR_FILE + '.tmp'
             with open(tmp_path, 'w') as f:
                 json.dump(data, f, indent=2)
-            os.replace(tmp_path, real_path)
+            os.replace(tmp_path, SAFETY_FACTOR_FILE)
             logger.info(f"Saved calibrated safety factor: {self.safety_factor:.2f}")
         except Exception as e:
             logger.debug(f"Could not save safety factor: {e}")

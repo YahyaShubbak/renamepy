@@ -35,11 +35,16 @@ class TimeShiftWorker(QThread):
     def run(self):
         """Apply time shift to all files and create EXIF backup"""
         from ..exif_processor import get_exiftool_metadata_shared
+        from ..backup_journal import PersistedBackupDict
         import subprocess
         
         success_count = 0
         errors = []
-        exif_backup = {}  # Store original EXIF timestamps for undo
+        # PersistedBackupDict writes each file's backup to the on-disk undo
+        # journal immediately - before the -overwrite_original ExifTool call
+        # below runs for that file - so a crash mid-batch can't lose backups
+        # for files already processed.
+        exif_backup = PersistedBackupDict("exif_backup")
         total_files = len(self.files)
         
         # Calculate time delta

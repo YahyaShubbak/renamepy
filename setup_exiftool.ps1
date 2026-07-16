@@ -5,7 +5,8 @@
 
 param(
     [switch]$Force = $false,
-    [switch]$Verbose = $false
+    [switch]$Verbose = $false,
+    [switch]$SkipChecksumVerification = $false
 )
 
 $ErrorActionPreference = "Continue"
@@ -180,6 +181,89 @@ function Invoke-ExifToolDownload {
 }
 
 # ============================================================================
+# Function: Fetch the official SHA-256 checksum for our ZIP from exiftool.org
+# ============================================================================
+function Get-ExifToolChecksum {
+    <#
+    .SYNOPSIS
+        Fetches the official SHA-256 checksum for a specific ExifTool
+        distribution file from exiftool.org's published per-version
+        checksum list, e.g. https://exiftool.org/checksums-13.59.txt
+
+        That file contains lines like:
+            SHA2-256(exiftool-13.59_64.zip)= 44b512b25af500724ba579d...
+
+    .OUTPUTS
+        The lowercase hex SHA-256 string, or $null if it could not be
+        retrieved or the filename was not found in the list.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Version,
+        [Parameter(Mandatory = $true)][string]$ZipFileName
+    )
+
+    $checksumUrl = "https://exiftool.org/checksums-$Version.txt"
+    Write-Info "Fetching official checksum list: $checksumUrl"
+
+    try {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $content = (Invoke-WebRequest -Uri $checksumUrl -UseBasicParsing -TimeoutSec 20).Content
+    }
+    catch {
+        Write-Warning-Custom "Could not fetch official checksums from ${checksumUrl}: $($_.Exception.Message)"
+        return $null
+    }
+
+    $pattern = "SHA2-256\(" + [regex]::Escape($ZipFileName) + "\)=\s*([0-9a-fA-F]{64})"
+    $match = [regex]::Match($content, $pattern)
+    if ($match.Success) {
+        return $match.Groups[1].Value.ToLowerInvariant()
+    }
+
+    Write-Warning-Custom "Checksum list did not contain an entry for $ZipFileName"
+    return $null
+}
+
+# ============================================================================
+# Function: Verify the downloaded ZIP against the official checksum
+# ============================================================================
+function Test-ExifToolChecksum {
+    <#
+    .SYNOPSIS
+        Verifies a downloaded file's SHA-256 hash against the official
+        value published on exiftool.org.
+
+    .OUTPUTS
+        One of: 'Match', 'Mismatch', 'Unavailable' (checksum could not be
+        retrieved, e.g. exiftool.org unreachable).
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$ZipPath,
+        [Parameter(Mandatory = $true)][string]$Version,
+        [Parameter(Mandatory = $true)][string]$ZipFileName
+    )
+
+    $expected = Get-ExifToolChecksum -Version $Version -ZipFileName $ZipFileName
+    if (-not $expected) {
+        return 'Unavailable'
+    }
+
+    Write-Info "Verifying SHA-256 checksum against exiftool.org..."
+    $actual = (Get-FileHash -Path $ZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    if ($actual -eq $expected) {
+        Write-Success "Checksum verified: $actual"
+        return 'Match'
+    }
+    else {
+        Write-Error-Custom "CHECKSUM MISMATCH - the downloaded file does not match exiftool.org's published hash!"
+        Write-Error-Custom "  Expected: $expected"
+        Write-Error-Custom "  Actual:   $actual"
+        return 'Mismatch'
+    }
+}
+
+# ============================================================================
 # Function: Extract ExifTool ZIP
 # ============================================================================
 function Expand-ExifToolArchive {
@@ -318,6 +402,34 @@ function Main {
     if (-not $zipFile) {
         Write-Error-Custom "Installation aborted"
         return $false
+    }
+    
+    # Step 2b: Verify integrity against exiftool.org's published SHA-256
+    # before extracting/installing an executable this app will shell out to
+    # for every EXIF read and write.
+    if (-not $SkipChecksumVerification) {
+        $checksumResult = Test-ExifToolChecksum -ZipPath $zipFile -Version $script:EXIFTOOL_VERSION -ZipFileName $script:EXIFTOOL_ZIP
+
+        if ($checksumResult -eq 'Mismatch') {
+            Write-Error-Custom "The downloaded file does not match the official checksum and will NOT be installed."
+            Write-Error-Custom "This could mean a corrupted download or a tampered file - do not install it manually without investigating further."
+            Remove-Item -Path $zipFile -Force -ErrorAction SilentlyContinue
+            return $false
+        }
+        elseif ($checksumResult -eq 'Unavailable') {
+            Write-Warning-Custom "Could not verify the download's integrity (exiftool.org's checksum page was unreachable)."
+            $response = Read-Host "Install anyway without verification? [y/[N]]"
+            if ($response -notmatch '^[Yy]') {
+                Write-Info "Installation aborted."
+                Write-Info "You can try again later, or verify manually against https://exiftool.org/checksums-$($script:EXIFTOOL_VERSION).txt"
+                Remove-Item -Path $zipFile -Force -ErrorAction SilentlyContinue
+                return $false
+            }
+            Write-Warning-Custom "Proceeding without checksum verification, at the user's request."
+        }
+    }
+    else {
+        Write-Warning-Custom "Checksum verification skipped (-SkipChecksumVerification was specified)"
     }
     
     # Step 3: Extract

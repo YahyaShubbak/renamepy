@@ -45,18 +45,24 @@ class FileListManager:
             self.update_file_list()
             
             # Clear EXIF cache when loading new files
-            if hasattr(self.parent, 'exif_service'):
-                self.parent.exif_service.clear_cache()
+            # self.parent.exif_service is initialized unconditionally in
+            # FileRenamerApp.__init__ before any UI signal can fire, so it
+            # always exists here.
+            self.parent.exif_service.clear_cache()
             
-            # Reset EXIF undo check cache
+            # Reset EXIF undo check cache. Unlike exif_service, this really
+            # is an optional one-shot cache flag (set only after the async
+            # check completes, deleted here to force a re-check) - hasattr
+            # is the right tool for "has this been computed yet".
             if hasattr(self.parent, '_exif_undo_checked'):
                 del self.parent._exif_undo_checked
             
             self.parent.extract_camera_info()
             
-            # Update buttons to check for EXIF undo data
-            if hasattr(self.parent, '_update_buttons'):
-                self.parent._update_buttons()
+            # Update buttons to check for EXIF undo data. _update_buttons()
+            # is a real method on FileRenamerApp and safely no-ops if the
+            # UI isn't built yet, so no existence guard is needed here.
+            self.parent._update_buttons()
             
             # Start background benchmark with loaded files
             self._start_background_benchmark()
@@ -70,18 +76,16 @@ class FileListManager:
             self.update_file_list()
             
             # Clear EXIF cache when loading new folder
-            if hasattr(self.parent, 'exif_service'):
-                self.parent.exif_service.clear_cache()
+            self.parent.exif_service.clear_cache()
             
-            # Reset EXIF undo check cache
+            # Reset EXIF undo check cache (genuine cache-existence check - see select_files)
             if hasattr(self.parent, '_exif_undo_checked'):
                 del self.parent._exif_undo_checked
             
             self.parent.extract_camera_info()
             
             # Update buttons to check for EXIF undo data
-            if hasattr(self.parent, '_update_buttons'):
-                self.parent._update_buttons()
+            self.parent._update_buttons()
             
             # Start background benchmark with loaded files
             self._start_background_benchmark()
@@ -99,8 +103,7 @@ class FileListManager:
         self.parent.lens_model_label.setText("(no files selected)")
         
         # Clear EXIF cache when clearing files
-        if hasattr(self.parent, 'exif_service'):
-            self.parent.exif_service.clear_cache()
+        self.parent.exif_service.clear_cache()
         
         self.update_file_list_placeholder()
         self.update_file_statistics()
@@ -158,8 +161,7 @@ class FileListManager:
                 self.parent.file_list.clear()
         
         # Clear EXIF cache when adding new files
-        if hasattr(self.parent, 'exif_service'):
-            self.parent.exif_service.clear_cache()
+        self.parent.exif_service.clear_cache()
         
         # Validate and add files
         added_count = 0
@@ -196,13 +198,12 @@ class FileListManager:
         # CRITICAL FIX: Enable rename button when files are present
         self.parent.rename_button.setEnabled(len(self.parent.files) > 0)
         
-        # Reset EXIF undo check cache
+        # Reset EXIF undo check cache (genuine cache-existence check - see select_files)
         if hasattr(self.parent, '_exif_undo_checked'):
             del self.parent._exif_undo_checked
         
         # Update buttons to check for EXIF undo data
-        if hasattr(self.parent, '_update_buttons'):
-            self.parent._update_buttons()
+        self.parent._update_buttons()
         
         # Start background benchmark with loaded files
         if added_count > 0:
@@ -221,15 +222,16 @@ class FileListManager:
             log.debug(f"Only {len(self.parent.files)} files - need at least 3")
             return
         
-        # Don't start a new benchmark if one is already running
-        if hasattr(self.parent, 'benchmark_thread') and self.parent.benchmark_thread and self.parent.benchmark_thread.isRunning():
+        # Don't start a new benchmark if one is already running.
+        # self.parent.benchmark_thread is always set (to None initially) in
+        # FileRenamerApp.__init__, so only the None/isRunning check is
+        # actually meaningful here.
+        if self.parent.benchmark_thread and self.parent.benchmark_thread.isRunning():
             log.debug("Benchmark already running - skipping")
             return
         
-        # Check if benchmark_manager exists
-        if not hasattr(self.parent, 'benchmark_manager'):
-            log.error("benchmark_manager does not exist on parent!")
-            return
+        # self.parent.benchmark_manager is also initialized unconditionally
+        # in __init__, so it's always present here - no guard needed.
         
         # Import here to avoid circular imports
         from ..performance_benchmark import BenchmarkThread
