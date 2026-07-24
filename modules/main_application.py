@@ -350,7 +350,13 @@ class FileRenamerApp(QMainWindow):
         # the window with empty space on first launch. restore_settings()
         # (called after setup_ui() in __init__) will override this with the
         # user's own saved geometry on subsequent launches, if any exists.
-        self.resize(760, 850)
+        self.resize(940, 640)
+        # Qt otherwise computes an effective minimum size from the widgets'
+        # own size hints (long checkbox labels, etc.), which can end up
+        # larger than people expect and stop the window shrinking further.
+        # Set an explicit, small floor instead so it can always be resized
+        # down if wanted.
+        self.setMinimumSize(560, 420)
         
         # Connect callbacks after UI is created
         self._connect_ui_callbacks()
@@ -464,6 +470,10 @@ class FileRenamerApp(QMainWindow):
         """Handle lens checkbox changes and sync with metadata"""
         self.metadata_dialog_manager.on_lens_checkbox_changed()
 
+    def on_shooting_setting_checkbox_changed(self, key):
+        """Handle ISO/Aperture/Shutter/Focal Length checkbox changes"""
+        self.metadata_dialog_manager.on_shooting_setting_checkbox_changed(key)
+
     def extract_essential_metadata(self, full_metadata, file_path):
         """Extract the most relevant metadata for human users"""
         return self.metadata_dialog_manager.extract_essential_metadata(full_metadata, file_path)
@@ -476,6 +486,7 @@ class FileRenamerApp(QMainWindow):
         """Extract camera and lens info from first media file (copied from original)"""
         if not self.files:
             self.update_camera_lens_labels()
+            self.update_shooting_settings_labels()
             return
         
         # Use first media file for detection (prioritize images, then videos)
@@ -487,6 +498,7 @@ class FileRenamerApp(QMainWindow):
         
         if not first_media:
             self.update_camera_lens_labels()
+            self.update_shooting_settings_labels()
             return
         
         try:
@@ -502,8 +514,29 @@ class FileRenamerApp(QMainWindow):
             self.detected_camera = None
             self.detected_lens = None
         
+        # Detect ISO/Aperture/Shutter/Focal Length availability from the
+        # same file's raw EXIF data, so the corresponding checkboxes can be
+        # disabled when the field genuinely isn't there (e.g. a video file,
+        # or a camera that doesn't record focal length).
+        self.detected_shooting_settings = {}
+        try:
+            raw_exif = self.exif_service.extract_raw_exif(first_media) or {}
+            iso = raw_exif.get('EXIF:ISO') or raw_exif.get('MakerNotes:SonyISO')
+            aperture = raw_exif.get('EXIF:FNumber') or raw_exif.get('Composite:Aperture')
+            shutter = raw_exif.get('EXIF:ExposureTime')
+            focal_length = raw_exif.get('EXIF:FocalLength')
+            self.detected_shooting_settings = {
+                'iso': iso,
+                'aperture': aperture,
+                'shutter': shutter,
+                'focal_length': focal_length,
+            }
+        except Exception as e:
+            self.log(f"Error extracting shooting settings from {first_media}: {e}")
+        
         # Update labels
         self.update_camera_lens_labels()
+        self.update_shooting_settings_labels()
 
     def update_camera_lens_labels(self):
         """Update the camera and lens model labels (copied from original)"""
@@ -526,6 +559,67 @@ class FileRenamerApp(QMainWindow):
         else:
             self.lens_model_label.setText("(not detected)")
             self.lens_model_label.setStyleSheet("color: orange; font-style: italic;")
+
+    def update_shooting_settings_labels(self):
+        """Update the ISO/Aperture/Shutter/Focal Length labels, and enable
+        or disable each checkbox depending on whether that field is
+        actually present in the detected file's EXIF data - a field that
+        isn't there (e.g. no focal length on some cameras, no EXIF at all
+        on a video file) shouldn't be clickable.
+        """
+        detected = getattr(self, 'detected_shooting_settings', {}) or {}
+        
+        for key, checkbox in self.shooting_setting_checkboxes.items():
+            label = self.shooting_setting_labels[key]
+            value = detected.get(key)
+            
+            if not self.files or not self.exif_method:
+                label.setText("(no files selected)")
+                label.setStyleSheet("color: gray; font-style: italic;")
+                available = False
+            elif value:
+                display = self._format_shooting_setting_display(key, value)
+                label.setText(f"({display})")
+                label.setStyleSheet("color: green; font-style: italic;")
+                available = True
+            else:
+                label.setText("(not available)")
+                label.setStyleSheet("color: orange; font-style: italic;")
+                available = False
+            
+            checkbox.setEnabled(available)
+            if not available and checkbox.isChecked():
+                # Field disappeared (e.g. files changed to a set without
+                # it) - uncheck and drop the stale flag rather than leaving
+                # a checked-but-disabled box with a flag nothing will
+                # resolve at rename time.
+                checkbox.blockSignals(True)
+                checkbox.setChecked(False)
+                checkbox.blockSignals(False)
+                self.selected_metadata.pop(key, None)
+
+    @staticmethod
+    def _format_shooting_setting_display(key, value):
+        """Format a raw EXIF value for the small status label, matching the
+        same conventions already used in the Essential Metadata dialog
+        (MetadataDialogManager.extract_essential_metadata) so the two
+        places agree on what "aperture"/"shutter"/etc. look like.
+        """
+        if key == 'iso':
+            return f"ISO {value}"
+        if key == 'aperture':
+            return f"f/{value}"
+        if key == 'shutter':
+            try:
+                exp_val = float(value)
+                if exp_val < 1:
+                    return f"1/{int(1 / exp_val)}s"
+                return f"{exp_val}s"
+            except (ValueError, TypeError, ZeroDivisionError):
+                return f"{value}"
+        if key == 'focal_length':
+            return f"{value}mm" if 'mm' not in str(value).lower() else str(value)
+        return str(value)
     
     def update_preview(self):
         """Update the interactive preview widget with current settings - delegates to PreviewGenerator"""

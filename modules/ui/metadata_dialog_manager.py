@@ -502,6 +502,19 @@ class MetadataDialogManager:
         # Now update preview with the corrected metadata
         self.parent.update_preview()
     
+    def on_shooting_setting_checkbox_changed(self, key):
+        """Handle ISO/Aperture/Shutter/Focal Length checkbox changes.
+
+        Unlike camera/lens (a single value shared across the batch), these
+        vary shot to shot, so we store a boolean flag rather than a fixed
+        value - the actual value is resolved per file at rename time (see
+        BOOLEAN_META_KEYS in filename_components.py, which already handles
+        'iso', 'aperture', 'shutter', 'focal_length' this way).
+        """
+        checkbox = self.parent.shooting_setting_checkboxes[key]
+        checked = checkbox.isChecked()
+        self.on_metadata_checkbox_changed(key, True, checked, user_action=True)
+    
     def extract_essential_metadata(self, full_metadata, file_path):
         """Extract the most relevant metadata for human users"""
         lines = full_metadata.split('\n')

@@ -101,6 +101,8 @@ class FileListManager:
         
         self.parent.camera_model_label.setText("(no files selected)")
         self.parent.lens_model_label.setText("(no files selected)")
+        self.parent.detected_shooting_settings = {}
+        self.parent.update_shooting_settings_labels()
         
         # Clear EXIF cache when clearing files
         self.parent.exif_service.clear_cache()

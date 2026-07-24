@@ -10,7 +10,8 @@ import os
 import webbrowser
 from PyQt6.QtWidgets import (
     QListWidget, QDialog, QVBoxLayout, QLabel, QPushButton, QPlainTextEdit,
-    QCheckBox, QHBoxLayout, QListWidgetItem, QStyledItemDelegate, QStyle, QApplication
+    QCheckBox, QHBoxLayout, QListWidgetItem, QStyledItemDelegate, QStyle, QApplication,
+    QWidget
 )
 from PyQt6.QtCore import Qt, QMimeData, pyqtSignal, QSize
 from PyQt6.QtGui import QDrag, QPainter, QFont, QFontMetrics
@@ -439,3 +440,67 @@ The interactive preview shows you exactly how your files will be renamed, with a
         button_layout.addStretch()
         
         layout.addLayout(button_layout)
+
+
+class CollapsibleSection(QWidget):
+    """A collapsible section with a toggle-button header.
+
+    Used to move less-frequently-used options (continuous counter, EXIF
+    date sync, time-shift-related toggles) out of the always-visible
+    surface, so the primary naming controls aren't visually competing with
+    things most people touch far less often. Collapsed by default.
+
+    Exposes addLayout()/addWidget() so existing UI-setup code that already
+    calls those on a plain layout can target this section with a one-line
+    change, without needing to restructure how each row itself is built.
+    """
+
+    def __init__(self, title, parent=None):
+        super().__init__(parent)
+        self._title = title
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 4, 0, 0)
+        outer.setSpacing(4)
+
+        self.toggle_button = QPushButton()
+        self.toggle_button.setCheckable(True)
+        self.toggle_button.setChecked(False)
+        self.toggle_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.toggle_button.setStyleSheet("""
+            QPushButton {
+                text-align: left;
+                padding: 6px 10px;
+                border: 1px solid palette(mid);
+                border-radius: 4px;
+                background-color: palette(button);
+            }
+            QPushButton:hover {
+                background-color: palette(light);
+            }
+        """)
+        self.toggle_button.clicked.connect(self._on_toggled)
+        outer.addWidget(self.toggle_button)
+
+        self.content_widget = QWidget()
+        self.content_layout = QVBoxLayout(self.content_widget)
+        self.content_layout.setContentsMargins(6, 6, 0, 2)
+        self.content_layout.setSpacing(6)
+        outer.addWidget(self.content_widget)
+
+        self.content_widget.setVisible(False)
+        self._update_title()
+
+    def _on_toggled(self):
+        self.content_widget.setVisible(self.toggle_button.isChecked())
+        self._update_title()
+
+    def _update_title(self):
+        arrow = "\u25be" if self.toggle_button.isChecked() else "\u25b8"
+        self.toggle_button.setText(f"{arrow} {self._title}")
+
+    def addLayout(self, layout):
+        self.content_layout.addLayout(layout)
+
+    def addWidget(self, widget):
+        self.content_layout.addWidget(widget)
