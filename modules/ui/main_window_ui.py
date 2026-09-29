@@ -144,6 +144,13 @@ class MainWindowUI:
             window.action_time_shift.triggered.connect(window.show_time_shift_dialog)
             tools_menu.addAction(window.action_time_shift)
 
+            # Discard pending undo data
+            tools_menu.addSeparator()
+            window.action_forget_undo = QAction('Forget Undo Data...', window)
+            window.action_forget_undo.setStatusTip('Discard saved original names/timestamps so the current state becomes final')
+            window.action_forget_undo.triggered.connect(window.forget_undo_data)
+            tools_menu.addAction(window.action_forget_undo)
+
     def _setup_theme_selector(self, window):
         theme_row = QHBoxLayout()
         theme_label = QLabel("Theme:")
@@ -444,7 +451,7 @@ class MainWindowUI:
         """)
         window.checkbox_save_original_to_exif.setToolTip(
             "💾 Persistent Undo Feature\n\n"
-            "Saves the original filename in EXIF metadata before renaming.\n\n"
+            "Saves the original filename in the file's metadata when renaming.\n\n"
             "Benefits:\n"
             "• Undo renames even after closing the application\n"
             "• Each file carries its own rename history\n"
@@ -453,8 +460,9 @@ class MainWindowUI:
             "⚠️ Performance Note:\n"
             "Adds ~50-200ms per file to rename time.\n"
             "With 100+ files, this can add 5-20 seconds.\n\n"
-            "Note: Requires ExifTool. Original filename is stored in\n"
-            "EXIF UserComment field."
+            "Note: Requires ExifTool. The original filename is stored in\n"
+            "the standard XMP tag PreservedFileName (an existing one is kept).\n"
+            "This modifies the files themselves, including RAW files."
         )
         sync_date_layout.addWidget(window.checkbox_save_original_to_exif)
         

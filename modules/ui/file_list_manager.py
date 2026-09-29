@@ -8,10 +8,17 @@ from PyQt6.QtWidgets import QFileDialog, QMessageBox, QListWidgetItem
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QDragMoveEvent
 
-from ..file_utilities import is_media_file, scan_directory_recursive
+from ..file_utilities import (
+    is_media_file, is_system_artifact, media_file_dialog_filter, scan_directory_recursive,
+)
 from ..logger_util import get_logger
 
 log = get_logger()
+
+PLACEHOLDER_TEXT = (
+    "📁 Drag and drop folders/files here or use buttons below\n"
+    "📄 Supports images (JPG, RAW) and videos (MP4, MOV, etc.)"
+)
 
 
 class FileListManager:
@@ -35,60 +42,17 @@ class FileListManager:
     def select_files(self):
         """Select individual media files"""
         files, _ = QFileDialog.getOpenFileNames(
-            self.parent, "Select Media Files", "", 
-            "Media Files (*.jpg *.jpeg *.png *.cr2 *.nef *.arw *.mp4 *.mov);;All Files (*)"
+            self.parent, "Select Media Files", "",
+            media_file_dialog_filter()
         )
         if files:
-            # Filter to only media files
-            media_files = [f for f in files if is_media_file(f)]
-            self.parent.files.extend(media_files)
-            self.update_file_list()
-            
-            # Clear EXIF cache when loading new files
-            # self.parent.exif_service is initialized unconditionally in
-            # FileRenamerApp.__init__ before any UI signal can fire, so it
-            # always exists here.
-            self.parent.exif_service.clear_cache()
-            
-            # Reset EXIF undo check cache. Unlike exif_service, this really
-            # is an optional one-shot cache flag (set only after the async
-            # check completes, deleted here to force a re-check) - hasattr
-            # is the right tool for "has this been computed yet".
-            if hasattr(self.parent, '_exif_undo_checked'):
-                del self.parent._exif_undo_checked
-            
-            self.parent.extract_camera_info()
-            
-            # Update buttons to check for EXIF undo data. _update_buttons()
-            # is a real method on FileRenamerApp and safely no-ops if the
-            # UI isn't built yet, so no existence guard is needed here.
-            self.parent._update_buttons()
-            
-            # Start background benchmark with loaded files
-            self._start_background_benchmark()
+            self.add_files_to_list(files)
     
     def select_folder(self):
         """Select folder and scan for media files"""
         folder = QFileDialog.getExistingDirectory(self.parent, "Select Folder")
         if folder:
-            media_files = scan_directory_recursive(folder)
-            self.parent.files.extend(media_files)
-            self.update_file_list()
-            
-            # Clear EXIF cache when loading new folder
-            self.parent.exif_service.clear_cache()
-            
-            # Reset EXIF undo check cache (genuine cache-existence check - see select_files)
-            if hasattr(self.parent, '_exif_undo_checked'):
-                del self.parent._exif_undo_checked
-            
-            self.parent.extract_camera_info()
-            
-            # Update buttons to check for EXIF undo data
-            self.parent._update_buttons()
-            
-            # Start background benchmark with loaded files
-            self._start_background_benchmark()
+            self.add_files_to_list(scan_directory_recursive(folder))
     
     def clear_file_list(self):
         """Clear the file list"""
@@ -125,10 +89,7 @@ class FileListManager:
     def update_file_list_placeholder(self):
         """Add placeholder text when file list is empty"""
         if self.parent.file_list.count() == 0:
-            placeholder_item = QListWidgetItem(
-                "📁 Drag and drop folders/files here or use buttons below\n"
-                "📄 Supports images (JPG, RAW) and videos (MP4, MOV, etc.)"
-            )
+            placeholder_item = QListWidgetItem(PLACEHOLDER_TEXT)
             placeholder_item.setFlags(Qt.ItemFlag.NoItemFlags)  # Make it non-selectable
             placeholder_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.parent.file_list.addItem(placeholder_item)
@@ -151,35 +112,32 @@ class FileListManager:
         self.parent.file_stats_label.show()
     
     def add_files_to_list(self, files):
-        """Add files to the file list"""
-        # Clear existing files when adding new ones
-        if files and self.parent.files:
-            self.clear_file_list()
-        
-        # Remove placeholder if present
-        if self.parent.file_list.count() == 1:
-            item = self.parent.file_list.item(0)
-            if item and item.text() == "Drop files here or click 'Select Files' to begin":
-                self.parent.file_list.clear()
-        
-        # Clear EXIF cache when adding new files
-        self.parent.exif_service.clear_cache()
-        
-        # Validate and add files
+        """Add files to the file list.
+
+        Used by the buttons and by drag & drop alike. New files are appended
+        to the current list; files that are already loaded (same path,
+        compared case-insensitively where the OS is) are skipped, so loading
+        a folder twice can't make the rename touch a file twice.
+        """
+        known = {self._path_key(p) for p in self.parent.files}
         added_count = 0
+        duplicate_count = 0
         inaccessible_files = []
-        
+
         for file in files:
-            if is_media_file(file) and os.path.exists(file):
-                if file not in self.parent.files:
-                    self.parent.files.append(file)
-                    item = QListWidgetItem(os.path.basename(file))
-                    item.setData(Qt.ItemDataRole.UserRole, file)
-                    self.parent.file_list.addItem(item)
-                    added_count += 1
-            else:
+            if not is_media_file(file) or is_system_artifact(file):
+                continue
+            if not os.path.isfile(file):
                 inaccessible_files.append(file)
-        
+                continue
+            key = self._path_key(file)
+            if key in known:
+                duplicate_count += 1
+                continue
+            known.add(key)
+            self.parent.files.append(file)
+            added_count += 1
+
         # Show warning for inaccessible files
         if inaccessible_files:
             QMessageBox.warning(
@@ -187,29 +145,42 @@ class FileListManager:
                 "Inaccessible Files", 
                 f"Some files could not be accessed:\n" + "\n".join(inaccessible_files[:5])
             )
-        
+
+        if added_count == 0 and not duplicate_count:
+            return
+
+        self.update_file_list()
+
         # Update status
-        if added_count > 0:
-            self.parent.status.showMessage(f"Added {added_count} files", 3000)
-        
-        # Update preview and extract camera info when files are added
-        self.parent.update_preview()
-        self.parent.extract_camera_info()
-        self.update_file_statistics()
-        
-        # CRITICAL FIX: Enable rename button when files are present
-        self.parent.rename_button.setEnabled(len(self.parent.files) > 0)
-        
-        # Reset EXIF undo check cache (genuine cache-existence check - see select_files)
+        message = f"Added {added_count} files"
+        if duplicate_count:
+            message += f" ({duplicate_count} already in the list)"
+        self.parent.status.showMessage(message, 3000)
+
+        # Clear EXIF cache when loading new files
+        self.parent.exif_service.clear_cache()
+
+        # Reset EXIF undo check cache. Unlike exif_service, this really
+        # is an optional one-shot cache flag (set only after the async
+        # check completes, deleted here to force a re-check) - hasattr
+        # is the right tool for "has this been computed yet".
         if hasattr(self.parent, '_exif_undo_checked'):
             del self.parent._exif_undo_checked
-        
+
+        # Extract camera info and refresh the preview for the new files
+        self.parent.extract_camera_info()
+        self.parent.update_preview()
+
         # Update buttons to check for EXIF undo data
         self.parent._update_buttons()
-        
+
         # Start background benchmark with loaded files
         if added_count > 0:
             self._start_background_benchmark()
+
+    @staticmethod
+    def _path_key(path):
+        return os.path.normcase(os.path.abspath(path))
     
     def _start_background_benchmark(self):
         """Start background benchmark with currently loaded files"""
@@ -244,7 +215,7 @@ class FileListManager:
         
         # Start benchmark thread
         self.parent.benchmark_thread = BenchmarkThread(
-            sample_files=self.parent.files,
+            sample_files=list(self.parent.files),  # a snapshot: renames change the live list
             exiftool_path=self.parent.exiftool_path,
             max_samples=sample_count
         )
@@ -309,6 +280,8 @@ class FileListManager:
         files = []
         for url in event.mimeData().urls():
             file_path = url.toLocalFile()
+            if not file_path:
+                continue
             if os.path.isfile(file_path) and is_media_file(file_path):
                 files.append(file_path)
             elif os.path.isdir(file_path):

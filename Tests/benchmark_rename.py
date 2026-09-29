@@ -17,6 +17,12 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+# Keep the undo journal of these throw-away renames out of the user's real
+# app-data directory.
+from modules import backup_journal as _backup_journal
+_JOURNAL_DIR = tempfile.mkdtemp(prefix="renamepy_bench_journal_")
+_backup_journal.get_app_data_dir = lambda: _JOURNAL_DIR
+
 BILBAO_DIR = r"C:\Users\yshub\Desktop\Bilbao"
 
 
@@ -80,7 +86,7 @@ def run_benchmark(files: list[str], label: str) -> float:
     )
 
     start = time.perf_counter()
-    renamed, errors, ts_backup = worker.optimized_rename_files()
+    renamed, errors, _ts_backup, _mapping = worker.optimized_rename_files()
     elapsed = time.perf_counter() - start
 
     service.cleanup()

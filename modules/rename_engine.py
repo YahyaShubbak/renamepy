@@ -9,7 +9,6 @@ with EXIF metadata extraction and optional timestamp synchronization.
 import os
 import re
 import datetime
-import shutil
 from collections import defaultdict
 from typing import List, Tuple, Dict, Optional, Any, Callable
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -18,12 +17,29 @@ from .logger_util import get_logger
 log = get_logger()
 
 # Import unified utilities from file_utilities module
-from .file_utilities import is_media_file, sanitize_final_filename, get_safe_target_path, validate_path_length
+from .file_utilities import (
+    is_media_file, sanitize_final_filename, get_safe_target_path, validate_path_length, safe_rename,
+)
 
 # Import timestamp operations from exif_processor (the only remaining use)
 from .exif_processor import batch_sync_exif_dates
 from .filename_components import build_ordered_components
-from .exif_undo_manager import write_original_filename_to_exif, batch_write_original_filenames
+from .exif_undo_manager import batch_write_original_filenames
+from .exif_service_new import ExifService
+from . import backup_journal
+
+
+def _last_number(path: str) -> int:
+    """Last number in the file name (the camera's sequence number, not the year)."""
+    numbers = re.findall(r'(\d+)', os.path.basename(path))
+    return int(numbers[-1]) if numbers else 0
+
+
+def _mtime_or_zero(path: str) -> float:
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
 
 class RenameWorkerThread(QThread):
     """Worker thread for file renaming & optional EXIF timestamp sync."""
@@ -73,7 +89,13 @@ class RenameWorkerThread(QThread):
             self.save_original_to_exif = save_original_to_exif  # NEW: Persistent undo feature
             self.timestamp_options = kwargs.get('timestamp_options') or kwargs.get('TIMESTAMP_OPTIONS')
             self.leave_names = kwargs.get('leave_names', False)
+            # {current_path: original_basename} from earlier renames, so a
+            # second rename still remembers the name before the first one.
+            self.prior_originals: Dict[str, str] = dict(kwargs.get('prior_originals') or {})
             # (Dry-run feature removed)
+
+    def _original_name_of(self, path: str) -> str:
+        return self.prior_originals.get(path, os.path.basename(path))
 
     def _debug(self, msg: str) -> None:
         """Log debug message safely.
@@ -174,11 +196,14 @@ class RenameWorkerThread(QThread):
         
         self.progress_update.emit("Pre-extracting EXIF data for all files...")
 
-        # Collect unique first-files from each group
+        # Collect every file of every group: one batched IPC call is cheap,
+        # while secondary files of RAW+JPG pairs missing from the cache would
+        # otherwise each cost a separate ExifTool round-trip later.
         first_files = []
         for group in file_groups:
-            if group[0] not in exif_cache:
-                first_files.append(group[0])
+            for path in group:
+                if path not in exif_cache:
+                    first_files.append(path)
 
         # ------------------------------------------------------------------
         # FAST PATH: Batch extraction via ExifService (single IPC per chunk)
@@ -200,7 +225,6 @@ class RenameWorkerThread(QThread):
             for fp in first_files:
                 meta = reused_raw.get(fp, {})
                 if meta:
-                    from .exif_service_new import ExifService
                     exif_cache[fp] = {
                         'date_str': ExifService.parse_date_from_raw(meta),
                         'camera': ExifService.parse_camera_from_raw(meta),
@@ -243,67 +267,38 @@ class RenameWorkerThread(QThread):
         self.progress_update.emit("EXIF pre-extraction complete")
         return exif_cache
     
-    def _get_exif_sort_key(self, group: List[str], exif_cache: Dict[str, Optional[Dict[str, Any]]]) -> Tuple[datetime.datetime, int, str]:
+    @staticmethod
+    def _capture_timestamp(path: str, raw_meta: Optional[Dict[str, Any]]) -> float:
+        """Capture time as a POSIX timestamp (EXIF/QuickTime, else mtime).
+
+        A float rather than a datetime: naive (EXIF) and zone-aware
+        (QuickTime) datetimes cannot be compared with each other.
+        """
+        dt = ExifService.parse_datetime_from_raw(raw_meta) if raw_meta else None
+        if dt is not None:
+            try:
+                return dt.timestamp()
+            except (OverflowError, OSError, ValueError):
+                pass
+        return _mtime_or_zero(path)
+
+    def _get_exif_sort_key(self, group: List[str], exif_cache: Dict[str, Optional[Dict[str, Any]]]) -> Tuple[float, int, str]:
         """
         Generate sort key for chronological ordering based on EXIF timestamp.
-        
-        Uses EXIF DateTimeOriginal field when available, falls back to file
+
+        Uses the capture date/time when available, falls back to file
         modification time, then filename number as tiebreaker.
-        
+
         Args:
             group: File group (list of file paths)
             exif_cache: Pre-extracted EXIF cache from _pre_extract_exif_cache
-            
+
         Returns:
-            Tuple of (datetime, file_number, filename) for stable sorting
+            Tuple of (timestamp, file_number, filename) for stable sorting
         """
         first_file = group[0]
-        exif_datetime = None
-        
-        # Use pre-extracted EXIF cache (PERFORMANCE OPTIMIZATION)
-        if first_file in exif_cache and exif_cache[first_file]:
-            cached_exif = exif_cache[first_file]
-            date_str = cached_exif.get('date_str')
-            raw_meta = cached_exif.get('raw_meta')
-            
-            if date_str and raw_meta:
-                # Look for DateTimeOriginal with time
-                datetime_fields = [
-                    'EXIF:DateTimeOriginal',
-                    'EXIF:CreateDate', 
-                    'QuickTime:CreateDate',
-                    'QuickTime:CreationDate'
-                ]
-                for field in datetime_fields:
-                    if field in raw_meta:
-                        dt_str = raw_meta[field]
-                        try:
-                            import datetime as dt_module
-                            if ':' in dt_str:
-                                dt_str_clean = dt_str.replace(':', '-', 2)
-                                exif_datetime = dt_module.datetime.strptime(dt_str_clean, "%Y-%m-%d %H:%M:%S")
-                                break
-                        except Exception as e:
-                            log.debug(f"Could not parse EXIF datetime from {field}: {e}")
-        
-        # Fallback to file modification time
-        if not exif_datetime:
-            try:
-                import datetime as dt_module
-                mtime = os.path.getmtime(first_file)
-                exif_datetime = dt_module.datetime.fromtimestamp(mtime)
-            except Exception:
-                import datetime as dt_module
-                exif_datetime = dt_module.datetime(1970, 1, 1)
-        
-        # Extract LAST number from filename as tiebreaker
-        # Use the last number to get the actual sequence number (e.g., '003')
-        # instead of the first number which is often the year (e.g., '2025')
-        basename = os.path.basename(first_file)
-        all_numbers = re.findall(r'(\d+)', basename)
-        file_number = int(all_numbers[-1]) if all_numbers else 0
-        
-        return (exif_datetime, file_number, first_file)
+        raw_meta = (exif_cache.get(first_file) or {}).get('raw_meta')
+        return (self._capture_timestamp(first_file, raw_meta), _last_number(first_file), first_file)
     
     def _resolve_safe_target(
         self,
@@ -630,13 +625,13 @@ class RenameWorkerThread(QThread):
         first_files = [group[0] for group in file_groups]
 
         date_by_file: Dict[str, Optional[str]] = {}
+        raw_batch: Dict[str, Dict[str, Any]] = {}
         if self.exif_service and self.exif_method and first_files:
             raw_batch = self.exif_service.batch_get_raw_metadata(first_files, chunk_size=50)
-            from .exif_service_new import ExifService as _ES
             # Save raw metadata for reuse by _pre_extract_exif_cache
             self._continuous_raw_cache = raw_batch
             for fp, meta in raw_batch.items():
-                date_by_file[fp] = _ES.parse_date_from_raw(meta) if meta else None
+                date_by_file[fp] = ExifService.parse_date_from_raw(meta) if meta else None
 
         for group in file_groups:
             first_file = group[0]
@@ -677,30 +672,18 @@ class RenameWorkerThread(QThread):
                     date_group_pairs.append((file_date, group))
                 except Exception as e2:
                     log.debug(f"Ultimate date fallback failed for {first_file}: {e2}")
-        # Step 4: Sort by date, then by original file order (using file modification time as fallback)
+        # Step 4: Sort by date, then capture time (mtime fallback), then the
+        # camera's sequence number. Every key has the same element types, so
+        # equal dates and times never end up comparing an int with a str.
         def get_sort_key(date_group):
             date, group = date_group
             first_file = group[0]
-            try:
-                basename = os.path.basename(first_file)
-                all_numbers = re.findall(r'(\d+)', basename)
-                if all_numbers:
-                    # Use the last number as tiebreaker (actual sequence number)
-                    # instead of the first (often the year)
-                    file_number = int(all_numbers[-1])
-                    try:
-                        mtime = os.path.getmtime(first_file)
-                        return (date, mtime, file_number, first_file)
-                    except Exception:
-                        return (date, file_number, first_file)
-                else:
-                    try:
-                        mtime = os.path.getmtime(first_file)
-                        return (date, mtime, first_file)
-                    except Exception:
-                        return (date, 0, first_file)
-            except Exception:
-                return (date, 0, first_file)
+            return (
+                date,
+                self._capture_timestamp(first_file, raw_batch.get(first_file)),
+                _last_number(first_file),
+                first_file,
+            )
         date_group_pairs.sort(key=get_sort_key)
         # Step 5: Assign continuous counter numbers to GROUPS
         counter = 1
@@ -756,8 +739,7 @@ class RenameWorkerThread(QThread):
         
         if self.leave_names:
             # Only syncing timestamps - early exit
-            error_messages = [msg for _file, msg in sync_errors]
-            return [], error_messages, timestamp_backup, {}
+            return [], list(sync_errors), timestamp_backup, {}
 
         # Step 2: Group RAW/JPEG siblings
         file_groups = self._create_file_groups()
@@ -779,7 +761,9 @@ class RenameWorkerThread(QThread):
         #   we record the error but continue (the mapping still allows undo).
 
         renamed_files: List[str] = []
-        errors: List[Tuple[str, str]] = []
+        errors: List[Tuple[str, str]] = [
+            (path, f"Timestamp sync: {msg}") for path, msg in sync_errors
+        ]
         rename_mapping: Dict[str, str] = {}
         date_counter: Dict[str, int] = {}
         reserved_targets: set[str] = set()
@@ -798,7 +782,24 @@ class RenameWorkerThread(QThread):
             f"Plan complete: {len(all_plan_entries)} renames, {len(errors)} errors"
         )
 
+        # Journal the plan *before* touching any file, so a crash or kill in
+        # the middle of Phase 2 still leaves enough on disk to undo every
+        # rename that did happen. Entries for renames that end up not
+        # happening are removed again below.
+        planned_moves = [
+            (source, target) for source, target in all_plan_entries
+            if os.path.normpath(source) != os.path.normpath(target)
+        ]
+        if planned_moves:
+            backup_journal.update_entries({
+                "original_filenames": {
+                    "set": {target: self._original_name_of(source) for source, target in planned_moves},
+                },
+            })
+
         # --- Phase 2: Execute ---
+        moved: Dict[str, str] = {}
+        failed_targets: List[str] = []
         for idx, (source, target) in enumerate(all_plan_entries):
             if idx % 50 == 0:
                 self.progress_update.emit(
@@ -806,38 +807,43 @@ class RenameWorkerThread(QThread):
                 )
             try:
                 if os.path.normpath(source) != os.path.normpath(target):
-                    shutil.move(source, target)
+                    safe_rename(source, target)
                     renamed_files.append(target)
                     rename_mapping[target] = source
+                    moved[source] = target
                 else:
                     renamed_files.append(source)
                     rename_mapping[source] = source
             except Exception as e:
                 errors.append((source, str(e)))
+                failed_targets.append(target)
+
+        # Settle the journal: renamed files are now tracked under their new
+        # path only; backups of timestamps/EXIF follow the file.
+        if planned_moves:
+            backup_journal.update_entries({
+                "original_filenames": {"remove": list(moved) + failed_targets},
+            })
+            backup_journal.rekey_journal(moved)
 
         # Step 6: Batch-write original filenames to EXIF (PERF 2 optimization)
         # Instead of one ExifTool subprocess per file during rename, do a
         # single batch call after all renames are complete.
-        if self.save_original_to_exif and self.exiftool_path and rename_mapping:
-            exif_write_pairs = []
-            for new_path, old_path in rename_mapping.items():
-                if new_path != old_path:  # Skip files that weren't actually renamed
-                    original_filename = os.path.basename(old_path)
-                    exif_write_pairs.append((new_path, original_filename))
-            
-            if exif_write_pairs:
-                self.progress_update.emit(f"Writing original filenames to EXIF for {len(exif_write_pairs)} files...")
-                successes_exif, errors_exif = batch_write_original_filenames(
-                    exif_write_pairs,
-                    self.exiftool_path,
-                    progress_callback=lambda cur, total, msg: self.progress_update.emit(
-                        f"EXIF write: {cur}/{total}"
-                    ),
-                )
-                if errors_exif:
-                    for fp, msg in errors_exif:
-                        self._debug(f"Warning: Could not write original filename to EXIF for {fp}: {msg}")
-                if successes_exif:
-                    self.progress_update.emit(f"Wrote original filenames to {len(successes_exif)} files")
+        if self.save_original_to_exif and self.exiftool_path and moved:
+            exif_write_pairs = [
+                (target, self._original_name_of(source)) for source, target in moved.items()
+            ]
+            self.progress_update.emit(f"Writing original filenames to metadata for {len(exif_write_pairs)} files...")
+            successes_exif, errors_exif = batch_write_original_filenames(
+                exif_write_pairs,
+                self.exiftool_path,
+                progress_callback=lambda cur, total, msg: self.progress_update.emit(
+                    f"Metadata write: {cur}/{total}"
+                ),
+            )
+            for fp, msg in errors_exif:
+                errors.append((fp, f"Renamed, but original name not saved to metadata: {msg}"))
+            if successes_exif:
+                self.progress_update.emit(f"Wrote original filenames to {len(successes_exif)} files")
 
         return renamed_files, errors, timestamp_backup, rename_mapping

@@ -23,13 +23,15 @@ def calculate_stats(files):
     jpeg_count = sum(1 for f in files if f.lower().endswith(('.jpg', '.jpeg')))
     raw_count = sum(1 for f in files if any(
         f.lower().endswith(ext) for ext in [
-            '.cr2', '.nef', '.arw', '.orf', '.rw2', '.dng', '.raw', 
+            '.cr2', '.cr3', '.nef', '.arw', '.orf', '.rw2', '.dng', '.raw',
             '.sr2', '.pef', '.raf', '.3fr', '.erf', '.kdc', '.mos', 
             '.nrw', '.srw', '.x3f'
         ]
     ))
     other_images = sum(1 for f in files if any(
-        f.lower().endswith(ext) for ext in ['.png', '.bmp', '.tiff', '.tif', '.gif']
+        f.lower().endswith(ext) for ext in [
+            '.png', '.bmp', '.tiff', '.tif', '.gif', '.heic', '.heif', '.avif', '.webp'
+        ]
     ))
     total_images = jpeg_count + raw_count + other_images
     # EDGE 3 fix: count actual video files instead of assuming

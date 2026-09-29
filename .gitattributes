@@ -1,2 +1,14 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Windows scripts need CRLF: cmd.exe mis-parses labels/goto in batch files
+# with LF-only line endings (e.g. when the repository is downloaded as ZIP).
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Shell scripts must keep LF, or bash fails with "$'\r': command not found".
+*.sh text eol=lf
+
+# Binary assets
+*.ico binary

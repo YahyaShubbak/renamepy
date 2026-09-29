@@ -1,57 +1,156 @@
 #!/usr/bin/env python3
 """
-EXIF Undo Manager - Persistent undo functionality via EXIF metadata.
+EXIF Undo Manager - Persistent undo functionality via file metadata.
 
-This module provides functionality to store original filenames in EXIF metadata,
-enabling undo operations even after closing the application. Uses standard EXIF
-UserComment field to store the original filename in a simple format.
+Stores each file's original filename inside the file itself, enabling undo
+operations even after closing the application.
 
-Format: "OriginalName: <filename> | RenameDate: <timestamp>"
-Example: "OriginalName: _DSC8166.ARW | RenameDate: 2026:01:04 22:00:00"
+The name is written to ``XMP-xmpMM:PreservedFileName`` - the standard XMP
+tag for exactly this purpose (Adobe Lightroom/Bridge use it too). It is only
+created if it doesn't exist yet, so renaming a file a second time keeps the
+name it had *before the first* rename, and the user's own EXIF comments are
+never touched.
+
+Older versions of this application stored the name in ``EXIF:UserComment``
+as ``"OriginalName: <filename> | RenameDate: <timestamp>"``; that format is
+still read for backward compatibility.
 """
 from __future__ import annotations
 
 import os
 import json
+import tempfile
 import subprocess
 from typing import Optional, Tuple, List
 from .logger_util import get_logger
 
 log = get_logger()
 
-# EXIF field for storing original filename (using standard UserComment field)
+# Tag the original filename is stored in
+PRESERVED_FILENAME_TAG = "XMP-xmpMM:PreservedFileName"
+
+# Legacy format (read-only)
 EXIF_USER_COMMENT_FIELD = "EXIF:UserComment"
 ORIGINAL_NAME_PREFIX = "OriginalName: "
 RENAME_DATE_PREFIX = " | RenameDate: "
 
+# UTF-8 file names on every platform (see exif_service_new.EXIFTOOL_CHARSET_ARGS)
+_CHARSET_ARGS = ["-charset", "filename=utf8"]
 
-def _read_existing_user_comment(
-    file_path: str,
-    exiftool_path: str,
-) -> str | None:
-    """Read the current EXIF:UserComment from a file.
+# Files per ExifTool invocation. File names go through an argument file,
+# so this only bounds the work per subprocess, not the command-line length.
+CHUNK_SIZE = 200
 
-    Returns the raw string or None if empty / unreadable.
+
+def _run_exiftool(cmd: List[str], timeout: int) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        timeout=timeout,
+    )
+
+
+def _write_argfile(lines: List[str]) -> str:
+    """Write ExifTool arguments (one per line, UTF-8) to a temporary file.
+
+    Passing file names via ``-@ ARGFILE`` avoids the Windows command-line
+    length limit (~32k characters) for large batches.
     """
-    try:
-        cmd = [
-            exiftool_path, "-s3",
-            f"-{EXIF_USER_COMMENT_FIELD}",
-            file_path,
-        ]
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            val = result.stdout.strip()
-            return val if val else None
-    except Exception:
-        pass
-    return None
+    fd, path = tempfile.mkstemp(prefix="renamepy_", suffix=".args")
+    with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(lines))
+        f.write("\n")
+    return path
+
+
+def _parse_legacy_user_comment(comment) -> Tuple[Optional[str], Optional[str]]:
+    """Parse ``"OriginalName: <name> | RenameDate: <date>"``."""
+    if not comment:
+        return None, None
+    comment = str(comment)
+    if ORIGINAL_NAME_PREFIX not in comment:
+        return None, None
+    rest = comment.split(ORIGINAL_NAME_PREFIX, 1)[1]
+    rename_date = None
+    marker = RENAME_DATE_PREFIX.strip()
+    if marker in rest:
+        rest, rename_date = rest.split(marker, 1)
+        rename_date = rename_date.strip() or None
+    name = rest.strip()
+    return (name or None), rename_date
+
+
+def _read_rename_info(file_paths: List[str], exiftool_path: str) -> dict:
+    """Read the stored original name (and legacy rename date) of many files.
+
+    Returns:
+        ``{path: {"original_filename": str|None, "rename_date": str|None,
+        "legacy_marker": bool}}`` for every path in *file_paths*;
+        ``legacy_marker`` tells whether EXIF:UserComment holds this
+        application's old-format marker.
+    """
+    empty = {"original_filename": None, "rename_date": None, "legacy_marker": False}
+    result = {path: dict(empty) for path in file_paths}
+
+    if not exiftool_path or not os.path.exists(exiftool_path):
+        log.warning("ExifTool executable not found")
+        return result
+
+    valid_files = [f for f in file_paths if os.path.exists(f)]
+    if not valid_files:
+        return result
+    by_norm = {os.path.normpath(p): p for p in valid_files}
+
+    for start in range(0, len(valid_files), CHUNK_SIZE):
+        chunk = valid_files[start:start + CHUNK_SIZE]
+        argfile = _write_argfile(chunk)
+        try:
+            cmd = [
+                exiftool_path, "-json", *_CHARSET_ARGS,
+                f"-{PRESERVED_FILENAME_TAG}", f"-{EXIF_USER_COMMENT_FIELD}",
+                "-@", argfile,
+            ]
+            proc = _run_exiftool(cmd, timeout=120)
+            # ExifTool exits with 1 if *any* file could not be read, but still
+            # prints JSON for all the others - so parse stdout regardless.
+            if not proc.stdout.strip():
+                if proc.returncode != 0:
+                    log.warning(f"ExifTool failed to read metadata: {proc.stderr.strip()}")
+                continue
+            try:
+                entries = json.loads(proc.stdout)
+            except json.JSONDecodeError as e:
+                log.error(f"Failed to parse ExifTool JSON output: {e}")
+                continue
+            for entry in entries:
+                path = by_norm.get(os.path.normpath(str(entry.get("SourceFile", ""))))
+                if not path:
+                    continue
+                preserved = entry.get("PreservedFileName")
+                legacy_name, legacy_date = _parse_legacy_user_comment(entry.get("UserComment"))
+                if preserved:
+                    result[path] = {"original_filename": str(preserved).strip() or None,
+                                    "rename_date": None,
+                                    "legacy_marker": bool(legacy_name)}
+                elif legacy_name:
+                    result[path] = {"original_filename": legacy_name,
+                                    "rename_date": legacy_date,
+                                    "legacy_marker": True}
+        except subprocess.TimeoutExpired:
+            log.error("ExifTool read operation timed out")
+        except Exception as e:
+            log.error(f"Error reading original filenames from metadata: {e}")
+        finally:
+            try:
+                os.remove(argfile)
+            except OSError:
+                pass
+
+    return result
 
 
 def write_original_filename_to_exif(
@@ -61,80 +160,26 @@ def write_original_filename_to_exif(
     add_timestamp: bool = True
 ) -> Tuple[bool, str]:
     """
-    Write original filename to EXIF UserComment field using ExifTool.
-    
-    Stores data in format: "OriginalName: <filename> | RenameDate: <timestamp>"
-    
+    Store the original filename in the file's metadata using ExifTool.
+
+    The tag is only created if absent, so an older original name is kept.
+
     Args:
         file_path: Path to the file to update
         original_filename: Original filename (basename only, without path)
         exiftool_path: Path to ExifTool executable
-        add_timestamp: Whether to also add a rename timestamp
-        
+        add_timestamp: Ignored; kept for backward compatibility (the legacy
+            UserComment format carried a rename date).
+
     Returns:
         Tuple of (success: bool, message: str)
-        
-    Raises:
-        FileNotFoundError: If ExifTool executable not found
     """
-    try:
-        # Validate inputs
-        if not os.path.exists(file_path):
-            return False, f"File not found: {file_path}"
-        
-        if not exiftool_path or not os.path.exists(exiftool_path):
-            return False, "ExifTool executable not found"
-        
-        # Safety check: warn if overwriting non-renamepy UserComment data
-        existing = _read_existing_user_comment(file_path, exiftool_path)
-        if existing and ORIGINAL_NAME_PREFIX not in existing:
-            log.warning(
-                f"Overwriting existing UserComment in {file_path}: "
-                f"'{existing[:80]}...' (was not set by renamepy)"
-            )
-        
-        # Build the UserComment value
-        user_comment = f"{ORIGINAL_NAME_PREFIX}{original_filename}"
-        
-        if add_timestamp:
-            from datetime import datetime
-            timestamp = datetime.now().strftime("%Y:%m:%d %H:%M:%S")
-            user_comment += f"{RENAME_DATE_PREFIX}{timestamp}"
-        
-        # Build ExifTool command
-        cmd = [
-            exiftool_path,
-            "-overwrite_original",  # Don't create backup files
-            f"-{EXIF_USER_COMMENT_FIELD}={user_comment}",
-            file_path
-        ]
-        
-        # Execute ExifTool
-        log.debug(f"Writing original filename to EXIF: {original_filename} -> {file_path}")
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
-            timeout=30
-        )
-        
-        if result.returncode == 0:
-            log.debug(f"Successfully wrote original filename to EXIF: {file_path}")
-            return True, "Original filename written to metadata"
-        else:
-            error_msg = result.stderr.strip() or result.stdout.strip()
-            log.warning(f"ExifTool failed to write metadata: {error_msg}")
-            return False, f"ExifTool error: {error_msg}"
-            
-    except subprocess.TimeoutExpired:
-        error_msg = "ExifTool operation timed out"
-        log.error(f"{error_msg}: {file_path}")
-        return False, error_msg
-    except Exception as e:
-        error_msg = f"Error writing original filename to EXIF: {e}"
-        log.error(error_msg)
-        return False, error_msg
+    successes, errors = batch_write_original_filenames(
+        [(file_path, original_filename)], exiftool_path
+    )
+    if successes:
+        return True, "Original filename written to metadata"
+    return False, errors[0][1] if errors else "Unknown error"
 
 
 def get_original_filename_from_exif(
@@ -142,75 +187,19 @@ def get_original_filename_from_exif(
     exiftool_path: str
 ) -> Optional[str]:
     """
-    Read original filename from EXIF UserComment field using ExifTool.
-    
-    Parses format: "OriginalName: <filename> | RenameDate: <timestamp>"
-    
+    Read the stored original filename of one file.
+
     Args:
         file_path: Path to the file to read
         exiftool_path: Path to ExifTool executable
-        
+
     Returns:
         Original filename (basename) if found, None otherwise
     """
-    try:
-        # Validate inputs
-        if not os.path.exists(file_path):
-            log.warning(f"File not found: {file_path}")
-            return None
-        
-        if not exiftool_path or not os.path.exists(exiftool_path):
-            log.warning("ExifTool executable not found")
-            return None
-        
-        # Build ExifTool command to read UserComment field
-        cmd = [
-            exiftool_path,
-            "-s3",  # Short output format (value only, no field name)
-            f"-{EXIF_USER_COMMENT_FIELD}",
-            file_path
-        ]
-        
-        # Execute ExifTool
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
-            timeout=10
-        )
-        
-        if result.returncode == 0:
-            user_comment = result.stdout.strip()
-            
-            # Check if field exists and contains our marker
-            if user_comment and ORIGINAL_NAME_PREFIX in user_comment:
-                # Parse the original filename from the UserComment
-                # Format: "OriginalName: <filename> | RenameDate: <timestamp>"
-                original_filename = user_comment.split(ORIGINAL_NAME_PREFIX)[1]
-                
-                # Remove the rename date part if present
-                if RENAME_DATE_PREFIX.strip() in original_filename:
-                    original_filename = original_filename.split(RENAME_DATE_PREFIX.strip())[0]
-                
-                original_filename = original_filename.strip()
-                
-                if original_filename:
-                    log.debug(f"Found original filename in EXIF: {original_filename}")
-                    return original_filename
-            else:
-                log.debug(f"No original filename found in EXIF: {file_path}")
-                return None
-        else:
-            log.warning(f"ExifTool failed to read metadata: {result.stderr}")
-            return None
-            
-    except subprocess.TimeoutExpired:
-        log.error(f"ExifTool read operation timed out: {file_path}")
+    if not os.path.exists(file_path):
+        log.warning(f"File not found: {file_path}")
         return None
-    except Exception as e:
-        log.error(f"Error reading original filename from EXIF: {e}")
-        return None
+    return _read_rename_info([file_path], exiftool_path)[file_path]["original_filename"]
 
 
 def batch_write_original_filenames(
@@ -219,103 +208,85 @@ def batch_write_original_filenames(
     progress_callback=None
 ) -> Tuple[List[str], List[Tuple[str, str]]]:
     """
-    Write original filenames to multiple files using ExifTool batch mode.
-    
-    Uses a single ExifTool invocation for all files instead of one per file,
-    dramatically improving performance for large batches.
-    
+    Store original filenames for many files.
+
+    ExifTool applies every ``-TAG=VALUE`` of one command to *all* files of
+    that command, so per-file values need one ``-execute`` block per file.
+    The blocks go into an argument file and run in a single ExifTool
+    process per chunk. Afterwards the tag is read back to confirm each file.
+
     Args:
         files: List of (file_path, original_filename) tuples
         exiftool_path: Path to ExifTool executable
-        progress_callback: Optional callback function(current, total, filename)
-        
+        progress_callback: Optional callback function(current, total, message)
+
     Returns:
         Tuple of (successes: List[str], errors: List[Tuple[str, str]])
     """
     if not files:
         return [], []
-    
+
     if not exiftool_path or not os.path.exists(exiftool_path):
         return [], [(f, "ExifTool executable not found") for f, _ in files]
-    
-    successes = []
-    errors = []
-    
-    # Build a single batch command with all files
-    # ExifTool supports: exiftool -overwrite_original -UserComment="val1" file1 -UserComment="val2" file2 ...
-    # But the simplest batch approach is: one -UserComment=value per file using -execute
-    # We'll use the simpler approach: build args for all files in one invocation
-    CHUNK_SIZE = 50  # Process in chunks to avoid command-line length limits
-    
-    from datetime import datetime
-    
-    for chunk_start in range(0, len(files), CHUNK_SIZE):
-        chunk = files[chunk_start:chunk_start + CHUNK_SIZE]
-        cmd = [exiftool_path, "-overwrite_original"]
-        
-        for file_path, original_filename in chunk:
-            if not os.path.exists(file_path):
-                errors.append((file_path, f"File not found: {file_path}"))
-                continue
-            
-            timestamp = datetime.now().strftime("%Y:%m:%d %H:%M:%S")
-            user_comment = f"{ORIGINAL_NAME_PREFIX}{original_filename}{RENAME_DATE_PREFIX}{timestamp}"
-            cmd.extend([f"-{EXIF_USER_COMMENT_FIELD}={user_comment}", file_path])
-        
-        # Only run if we have files to process (cmd has more than just exiftool + flag)
-        if len(cmd) <= 2:
-            continue
-        
+
+    successes: List[str] = []
+    errors: List[Tuple[str, str]] = []
+
+    existing = []
+    for file_path, original_filename in files:
+        if os.path.exists(file_path):
+            existing.append((file_path, original_filename))
+        else:
+            errors.append((file_path, f"File not found: {file_path}"))
+
+    for chunk_start in range(0, len(existing), CHUNK_SIZE):
+        chunk = existing[chunk_start:chunk_start + CHUNK_SIZE]
+        lines: List[str] = []
+        for i, (file_path, original_filename) in enumerate(chunk):
+            if i:
+                lines.append("-execute")
+            # "-TAG-=" + "-TAG=VALUE": create the tag only if it doesn't exist.
+            lines.append(f"-{PRESERVED_FILENAME_TAG}-=")
+            lines.append(f"-{PRESERVED_FILENAME_TAG}={original_filename}")
+            lines.append(file_path)
+
         if progress_callback:
             progress_callback(
-                min(chunk_start + CHUNK_SIZE, len(files)),
-                len(files),
+                min(chunk_start + CHUNK_SIZE, len(existing)),
+                len(existing),
                 f"Batch {chunk_start // CHUNK_SIZE + 1}"
             )
-        
+
+        argfile = _write_argfile(lines)
+        stderr = ""
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
-                timeout=60
-            )
-            
-            if result.returncode == 0:
-                # All files in this chunk succeeded
-                for file_path, _ in chunk:
-                    if os.path.exists(file_path):
-                        successes.append(file_path)
-            else:
-                # Batch failed — fall back to individual writes for this chunk
-                log.warning(f"Batch EXIF write failed, falling back to individual: {result.stderr}")
-                for file_path, original_filename in chunk:
-                    if not os.path.exists(file_path):
-                        errors.append((file_path, f"File not found: {file_path}"))
-                        continue
-                    success, message = write_original_filename_to_exif(
-                        file_path, original_filename, exiftool_path
-                    )
-                    if success:
-                        successes.append(file_path)
-                    else:
-                        errors.append((file_path, message))
+            cmd = [exiftool_path, "-@", argfile,
+                   "-common_args", "-overwrite_original", *_CHARSET_ARGS]
+            proc = _run_exiftool(cmd, timeout=max(60, 2 * len(chunk)))
+            stderr = proc.stderr.strip()
+            if proc.returncode != 0:
+                log.warning(f"ExifTool reported errors while writing original filenames: {stderr}")
         except subprocess.TimeoutExpired:
-            log.error("Batch EXIF write timed out, falling back to individual")
-            for file_path, original_filename in chunk:
-                success, message = write_original_filename_to_exif(
-                    file_path, original_filename, exiftool_path
-                )
-                if success:
-                    successes.append(file_path)
-                else:
-                    errors.append((file_path, message))
+            stderr = "ExifTool operation timed out"
+            log.error(stderr)
         except Exception as e:
-            log.error(f"Batch EXIF write error: {e}")
-            for file_path, _ in chunk:
-                errors.append((file_path, str(e)))
-    
+            stderr = str(e)
+            log.error(f"Batch metadata write error: {e}")
+        finally:
+            try:
+                os.remove(argfile)
+            except OSError:
+                pass
+
+        # Confirm per file: the tag must now be present (either our value or
+        # an older original name that was deliberately kept).
+        written = _read_rename_info([p for p, _ in chunk], exiftool_path)
+        for file_path, _ in chunk:
+            if written[file_path]["original_filename"]:
+                successes.append(file_path)
+            else:
+                errors.append((file_path, f"Original filename not stored: {stderr or 'unsupported file type'}"))
+
     return successes, errors
 
 
@@ -324,95 +295,17 @@ def batch_get_original_filenames(
     exiftool_path: str
 ) -> dict[str, Optional[str]]:
     """
-    Read original filenames from multiple files efficiently using JSON output.
-    
-    Uses a single ExifTool invocation with -json for reliable structured parsing,
-    avoiding the fragile line-based stride-2 parser.
-    
+    Read original filenames from multiple files in one ExifTool call per chunk.
+
     Args:
         file_paths: List of file paths to read
         exiftool_path: Path to ExifTool executable
-        
+
     Returns:
         Dictionary mapping file_path -> original_filename (or None if not found)
     """
-    result_map: dict[str, Optional[str]] = {}
-    
-    try:
-        if not exiftool_path or not os.path.exists(exiftool_path):
-            log.warning("ExifTool executable not found")
-            return {path: None for path in file_paths}
-        
-        # Filter out non-existent files
-        valid_files = [f for f in file_paths if os.path.exists(f)]
-        if not valid_files:
-            return {path: None for path in file_paths}
-        
-        # Build ExifTool command with JSON output for reliable parsing
-        cmd = [
-            exiftool_path,
-            "-json",           # Structured JSON output
-            "-n",              # No print conversion
-            f"-{EXIF_USER_COMMENT_FIELD}",
-            "-FileName",       # Current filename for verification
-            "-SourceFile",     # Full path for reliable matching
-        ] + valid_files
-        
-        # Execute ExifTool
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
-            timeout=60
-        )
-        
-        if result.returncode == 0 and result.stdout.strip():
-            try:
-                entries = json.loads(result.stdout)
-                
-                for entry in entries:
-                    source_file = entry.get("SourceFile", "")
-                    user_comment = str(entry.get("UserComment", "")) if entry.get("UserComment") else ""
-                    
-                    # Parse original filename from UserComment
-                    original = None
-                    if user_comment and ORIGINAL_NAME_PREFIX in user_comment:
-                        original = user_comment.split(ORIGINAL_NAME_PREFIX, 1)[1]
-                        if RENAME_DATE_PREFIX.strip() in original:
-                            original = original.split(RENAME_DATE_PREFIX.strip(), 1)[0]
-                        original = original.strip() if original else None
-                    
-                    # Match back to our file paths by normalized SourceFile
-                    matched_path = None
-                    normalized_source = os.path.normpath(source_file)
-                    for path in valid_files:
-                        if os.path.normpath(path) == normalized_source:
-                            matched_path = path
-                            break
-                    
-                    if matched_path:
-                        result_map[matched_path] = original if original else None
-            
-            except json.JSONDecodeError as e:
-                log.error(f"Failed to parse ExifTool JSON output: {e}")
-                # Fall back to individual reads
-                for path in valid_files:
-                    result_map[path] = get_original_filename_from_exif(path, exiftool_path)
-        
-        # Fill in None for any files we couldn't process
-        for path in file_paths:
-            if path not in result_map:
-                result_map[path] = None
-                
-    except subprocess.TimeoutExpired:
-        log.error("Batch EXIF read timed out")
-        result_map = {path: None for path in file_paths}
-    except Exception as e:
-        log.error(f"Error in batch_get_original_filenames: {e}")
-        result_map = {path: None for path in file_paths}
-    
-    return result_map
+    info = _read_rename_info(list(file_paths), exiftool_path)
+    return {path: info[path]["original_filename"] for path in file_paths}
 
 
 def clear_original_filename_from_exif(
@@ -420,65 +313,54 @@ def clear_original_filename_from_exif(
     exiftool_path: str
 ) -> Tuple[bool, str]:
     """
-    Clear/remove the original filename from EXIF metadata.
-    
-    Useful for cleaning up metadata or when exporting files.
-    
+    Remove the stored original filename from the file's metadata.
+
+    Deletes the XMP tag; a legacy ``EXIF:UserComment`` is only cleared if it
+    holds this application's marker, never a user's own comment.
+
     Args:
         file_path: Path to the file to update
         exiftool_path: Path to ExifTool executable
-        
+
     Returns:
         Tuple of (success: bool, message: str)
     """
     try:
         if not os.path.exists(file_path):
             return False, f"File not found: {file_path}"
-        
+
         if not exiftool_path or not os.path.exists(exiftool_path):
             return False, "ExifTool executable not found"
-        
-        # Build ExifTool command to delete field
-        cmd = [
-            exiftool_path,
-            "-overwrite_original",
-            f"-{EXIF_USER_COMMENT_FIELD}=",  # Empty value deletes the field
-            file_path
-        ]
-        
-        # Execute ExifTool
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
-            timeout=30
-        )
-        
+
+        cmd = [exiftool_path, "-overwrite_original", *_CHARSET_ARGS,
+               f"-{PRESERVED_FILENAME_TAG}="]
+        if _read_rename_info([file_path], exiftool_path)[file_path]["legacy_marker"]:
+            cmd.append(f"-{EXIF_USER_COMMENT_FIELD}=")
+        cmd.append(file_path)
+
+        result = _run_exiftool(cmd, timeout=30)
+
         if result.returncode == 0:
-            log.debug(f"Cleared original filename from EXIF: {file_path}")
+            log.debug(f"Cleared original filename from metadata: {file_path}")
             return True, "Original filename cleared from metadata"
         else:
             error_msg = result.stderr.strip() or result.stdout.strip()
             return False, f"ExifTool error: {error_msg}"
-            
+
     except Exception as e:
-        error_msg = f"Error clearing original filename from EXIF: {e}"
+        error_msg = f"Error clearing original filename from metadata: {e}"
         log.error(error_msg)
         return False, error_msg
 
 
-# Removed _supports_xmp_metadata function - no longer needed with EXIF:UserComment
-
-
 def has_original_filename(file_path: str, exiftool_path: str) -> bool:
     """
-    Quick check if file has original filename in EXIF metadata.
-    
+    Quick check if file has original filename in its metadata.
+
     Args:
         file_path: Path to the file
         exiftool_path: Path to ExifTool executable
-        
+
     Returns:
         True if original filename exists in metadata, False otherwise
     """
@@ -488,57 +370,17 @@ def has_original_filename(file_path: str, exiftool_path: str) -> bool:
 
 def get_rename_info(file_path: str, exiftool_path: str) -> dict:
     """
-    Get all rename-related information from EXIF metadata.
-    
+    Get all rename-related information from the file's metadata.
+
     Args:
         file_path: Path to the file
         exiftool_path: Path to ExifTool executable
-        
+
     Returns:
         Dictionary with 'original_filename' and 'rename_date' keys
+        (the rename date is only known for the legacy UserComment format)
     """
-    info = {
-        'original_filename': None,
-        'rename_date': None
-    }
-    
-    try:
-        if not os.path.exists(file_path) or not exiftool_path:
-            return info
-        
-        # Build ExifTool command to read UserComment field
-        cmd = [
-            exiftool_path,
-            "-s3",
-            f"-{EXIF_USER_COMMENT_FIELD}",
-            file_path
-        ]
-        
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
-            timeout=10
-        )
-        
-        if result.returncode == 0:
-            user_comment = result.stdout.strip()
-            
-            # Parse UserComment format: "OriginalName: <filename> | RenameDate: <timestamp>"
-            if user_comment and ORIGINAL_NAME_PREFIX in user_comment:
-                # Extract original filename
-                parts = user_comment.split(ORIGINAL_NAME_PREFIX)[1]
-                
-                # Check for rename date
-                if RENAME_DATE_PREFIX.strip() in parts:
-                    filename_part, date_part = parts.split(RENAME_DATE_PREFIX.strip(), 1)
-                    info['original_filename'] = filename_part.strip()
-                    info['rename_date'] = date_part.strip()
-                else:
-                    info['original_filename'] = parts.strip()
-                
-    except Exception as e:
-        log.error(f"Error getting rename info: {e}")
-    
-    return info
+    if not os.path.exists(file_path) or not exiftool_path:
+        return {'original_filename': None, 'rename_date': None}
+    info = _read_rename_info([file_path], exiftool_path)[file_path]
+    return {'original_filename': info['original_filename'], 'rename_date': info['rename_date']}

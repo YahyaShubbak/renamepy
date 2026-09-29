@@ -6,10 +6,12 @@ Replaces global variables with instance variables for better thread safety and t
 from __future__ import annotations
 
 import os
+import re
 import time
 import threading
 import subprocess
 from collections import OrderedDict
+from datetime import datetime, timedelta, timezone
 
 from .logger_util import get_logger
 log = get_logger()
@@ -20,6 +22,134 @@ try:
     EXIFTOOL_AVAILABLE = True
 except ImportError:
     EXIFTOOL_AVAILABLE = False
+
+# "-charset filename=utf8" makes ExifTool treat file names as UTF-8 (on
+# Windows it otherwise uses the ANSI code page, so names with characters
+# outside it silently fail). The pipe to the persistent ExifTool process must
+# then be UTF-8 too - PyExifTool defaults to the locale encoding (cp1252 on
+# most Windows systems).
+EXIFTOOL_CHARSET_ARGS = ["-charset", "filename=utf8"]
+EXIFTOOL_COMMON_ARGS = ["-G", "-n", *EXIFTOOL_CHARSET_ARGS]
+EXIFTOOL_ENCODING = "utf-8"
+
+
+def run_exiftool_on_file(exiftool_path: str, options: list[str], file_path: str,
+                         timeout: int = 60) -> subprocess.CompletedProcess:
+    """Run a one-shot ExifTool command on a single file.
+
+    The file name goes through a UTF-8 argument file (``-@``) rather than the
+    command line: on Windows, Perl receives command-line arguments in the
+    ANSI code page, which cannot represent every file name (e.g. emoji or
+    non-Latin scripts), no matter which ``-charset`` is given.
+    """
+    import tempfile
+
+    fd, argfile = tempfile.mkstemp(prefix="renamepy_", suffix=".args")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            f.write(file_path + "\n")
+        return subprocess.run(
+            [exiftool_path, *options, *EXIFTOOL_CHARSET_ARGS, "-@", argfile],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+    finally:
+        try:
+            os.remove(argfile)
+        except OSError:
+            pass
+
+
+def new_exiftool_helper(executable: str | None = None):
+    """Create an ExifToolHelper with the application's common arguments."""
+    kwargs = {"common_args": list(EXIFTOOL_COMMON_ARGS), "encoding": EXIFTOOL_ENCODING}
+    if executable and os.path.exists(executable):
+        kwargs["executable"] = executable
+    return exiftool.ExifToolHelper(**kwargs)
+
+
+# Capture date/time tags in priority order (ExifTool "-G" group-0 names).
+# Videos carry no EXIF block: QuickTime:CreationDate (Apple "Keys") holds
+# local time with a zone offset, QuickTime:CreateDate is the generic creation
+# date. The unprefixed names cover callers that read without "-G".
+CAPTURE_DATE_FIELDS = (
+    "EXIF:DateTimeOriginal",
+    "EXIF:CreateDate",
+    "XMP:DateTimeOriginal",
+    "XMP:CreateDate",
+    "QuickTime:CreationDate",
+    "QuickTime:CreateDate",
+    "QuickTime:MediaCreateDate",
+    "DateTimeOriginal",
+    "CreateDate",
+)
+
+_DATETIME_RE = re.compile(
+    r"^(\d{4})[:\-](\d{2})[:\-](\d{2})"
+    r"(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?)?"
+    r"\s*(Z|[+-]\d{2}:?\d{2})?"
+)
+
+
+def parse_exif_datetime(value) -> datetime | None:
+    """Parse an EXIF/QuickTime date string.
+
+    Accepts "YYYY:MM:DD HH:MM:SS" plus optional sub-seconds and time zone
+    ("2024:05:01 12:00:00.123+02:00"), or a date alone. Returns None for
+    unparseable or placeholder values such as "0000:00:00 00:00:00". A zone
+    offset, if present, is kept (aware datetime) so the wall-clock date stays
+    the one where the picture was taken.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    match = _DATETIME_RE.match(str(value).strip())
+    if not match:
+        return None
+    year, month, day = int(match.group(1)), int(match.group(2)), int(match.group(3))
+    if year == 0 or month == 0 or day == 0:
+        return None
+    hour = int(match.group(4) or 0)
+    minute = int(match.group(5) or 0)
+    second = int(match.group(6) or 0)
+    try:
+        dt = datetime(year, month, day, hour, minute, second)
+    except ValueError:
+        return None
+    zone = match.group(7)
+    if zone:
+        if zone == "Z":
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            sign = -1 if zone[0] == "-" else 1
+            digits = zone[1:].replace(":", "")
+            offset = timedelta(hours=int(digits[:2]), minutes=int(digits[2:4]))
+            dt = dt.replace(tzinfo=timezone(sign * offset))
+    return dt
+
+
+def format_exposure_time(value) -> str | None:
+    """Format an exposure time the way ExifTool prints it ("1/60s", "0.3s", "2s").
+
+    ``int(1/x)`` truncates 1/0.0166666666666667 (ExifTool's numeric value for
+    1/60 s) to 59, so round like ExifTool's own PrintConv instead.
+    """
+    try:
+        if isinstance(value, str) and "/" in value:
+            num, den = value.split("/", 1)
+            seconds = float(num) / float(den)
+        else:
+            seconds = float(value)
+    except (ValueError, TypeError, ZeroDivisionError):
+        return None
+    if seconds <= 0:
+        return None
+    if seconds < 0.25001:
+        return f"1/{int(0.5 + 1 / seconds)}s"
+    return f"{seconds:.1f}".rstrip("0").rstrip(".") + "s"
 
 
 class ExifService:
@@ -130,16 +260,21 @@ class ExifService:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def parse_datetime_from_raw(meta: dict) -> datetime | None:
+        """Return the capture date/time from raw metadata (images and videos)."""
+        if not meta:
+            return None
+        for field in CAPTURE_DATE_FIELDS:
+            dt = parse_exif_datetime(meta.get(field))
+            if dt is not None:
+                return dt
+        return None
+
+    @staticmethod
     def parse_date_from_raw(meta: dict) -> str | None:
         """Extract date string (YYYYMMDD) from raw EXIF metadata."""
-        date = (
-            meta.get("EXIF:DateTimeOriginal")
-            or meta.get("CreateDate")
-            or meta.get("DateTimeOriginal")
-        )
-        if date:
-            return date.split(" ")[0].replace(":", "")
-        return None
+        dt = ExifService.parse_datetime_from_raw(meta)
+        return dt.strftime("%Y%m%d") if dt else None
 
     @staticmethod
     def parse_camera_from_raw(meta: dict) -> str | None:
@@ -206,18 +341,9 @@ class ExifService:
         # Shutter speed
         shutter = meta.get("EXIF:ExposureTime") or meta.get("ExposureTime")
         if shutter:
-            try:
-                if isinstance(shutter, str) and "/" in shutter:
-                    num, den = shutter.split("/")
-                    shutter_val = float(num) / float(den)
-                else:
-                    shutter_val = float(shutter)
-                if shutter_val >= 1:
-                    metadata["shutter_speed"] = f"{shutter_val:.0f}s"
-                else:
-                    metadata["shutter_speed"] = f"1/{int(1/shutter_val)}s"
-            except (ValueError, TypeError, ZeroDivisionError):
-                pass
+            formatted = format_exposure_time(shutter)
+            if formatted:
+                metadata["shutter_speed"] = formatted
 
         # Camera
         camera = meta.get("EXIF:Model") or meta.get("Model")
@@ -391,12 +517,8 @@ class ExifService:
             with self._exiftool_lock:
                 self._kill_exiftool_instance()
             try:
-                if exiftool_path and os.path.exists(exiftool_path):
-                    with exiftool.ExifToolHelper(executable=exiftool_path) as et:
-                        return et.get_metadata([normalized_path])[0]
-                else:
-                    with exiftool.ExifToolHelper() as et:
-                        return et.get_metadata([normalized_path])[0]
+                with new_exiftool_helper(exiftool_path) as et:
+                    return et.get_metadata([normalized_path])[0]
             except Exception as e2:
                 log.error(f"Temporary ExifTool instance also failed: {e2}")
                 return {}
@@ -423,11 +545,10 @@ class ExifService:
             self._exiftool_instance = None
 
         # Create & start new instance
+        self._exiftool_instance = new_exiftool_helper(exiftool_path)
         if exiftool_path and os.path.exists(exiftool_path):
-            self._exiftool_instance = exiftool.ExifToolHelper(executable=exiftool_path)
             log.info(f"Created ExifTool instance with: {exiftool_path}")
         else:
-            self._exiftool_instance = exiftool.ExifToolHelper()
             log.info("Created default ExifTool instance")
 
         self._exiftool_path = exiftool_path
@@ -468,12 +589,10 @@ class ExifService:
                 if method == "exiftool":
                     # PERFORMANCE OPTIMIZATION: Use shared ExifTool instance instead of creating new process
                     meta = self._get_exiftool_metadata_shared(normalized_path, exiftool_path)
-                    
+
                     # Extract date
-                    date = meta.get('EXIF:DateTimeOriginal')
-                    if date:
-                        date = date.split(' ')[0].replace(':', '')
-                    
+                    date = self.parse_date_from_raw(meta)
+
                     # Extract camera model
                     camera = meta.get('EXIF:Model')
                     if camera:
@@ -539,9 +658,7 @@ class ExifService:
                     lens = None
                     
                     if need_date:
-                        date = meta.get('EXIF:DateTimeOriginal') or meta.get('CreateDate') or meta.get('DateTimeOriginal')
-                        if date:
-                            date = date.split(' ')[0].replace(':', '')
+                        date = self.parse_date_from_raw(meta)
                     
                     if need_camera:
                         # Use the same simple approach as the working old application

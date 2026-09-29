@@ -28,7 +28,7 @@ from .file_utilities import (
     rename_files, FileConstants, MEDIA_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS,
     is_image_file, is_video_file
 )
-from .exif_service_new import ExifService, EXIFTOOL_AVAILABLE
+from .exif_service_new import ExifService, EXIFTOOL_AVAILABLE, format_exposure_time
 from .exif_processor import (
     find_exiftool_path, batch_restore_timestamps, set_default_exif_service
 )
@@ -191,9 +191,9 @@ class FileRenamerApp(QMainWindow):
         if not hasattr(self, 'rename_button'):
             return  # UI not built yet
         has_files = bool(self.files)
-        
-        # Check for undo availability (in-memory OR EXIF metadata)
-        can_undo = bool(getattr(self, 'original_filenames', {})) or bool(getattr(self, 'timestamp_backup', {}))
+
+        # Check for undo availability (in-memory/journal OR EXIF metadata)
+        can_undo = self.has_restore_data()
         
         # Also check if any loaded file has original filename in EXIF (cached check)
         if not can_undo and has_files and self.exiftool_path:
@@ -321,11 +321,14 @@ class FileRenamerApp(QMainWindow):
             return
 
         recovered = []
+        if journal.get("original_filenames"):
+            self.original_filenames = dict(journal["original_filenames"])
+            recovered.append(f"{len(self.original_filenames)} file name(s)")
         if journal.get("timestamp_backup"):
-            self.timestamp_backup = journal["timestamp_backup"]
+            self.timestamp_backup = dict(journal["timestamp_backup"])
             recovered.append(f"{len(self.timestamp_backup)} file timestamp(s)")
         if journal.get("exif_backup"):
-            self.exif_backup = journal["exif_backup"]
+            self.exif_backup = dict(journal["exif_backup"])
             recovered.append(f"{len(self.exif_backup)} EXIF timestamp(s)")
 
         if recovered:
@@ -339,7 +342,36 @@ class FileRenamerApp(QMainWindow):
                 "click Restore to review it.",
                 8000,
             )
-    
+
+    def forget_undo_data(self):
+        """Discard all pending undo data (in memory and in the on-disk journal).
+
+        Backups are kept until they are restored, so without this a user who
+        is happy with a sync or rename would carry them - and an always
+        enabled Restore button - forever.
+        """
+        if not self.has_restore_data():
+            QMessageBox.information(self, "Forget Undo Data", "There is no undo data to forget.")
+            return
+        reply = QMessageBox.question(
+            self,
+            "Forget Undo Data",
+            "Discard all undo information (original file names, timestamps and EXIF dates)?\n\n"
+            "The current state of your files becomes final; this cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        from .backup_journal import clear_all as _clear_undo_journal
+        self.original_filenames = {}
+        self.timestamp_backup = {}
+        self.exif_backup = {}
+        _clear_undo_journal()
+        self.update_restore_button_state()
+        self._update_buttons()
+        self.status.showMessage("Undo data discarded", 4000)
+
     def setup_ui(self):
         """Setup the complete original UI design"""
         # Delegate UI setup to MainWindowUI
@@ -610,13 +642,7 @@ class FileRenamerApp(QMainWindow):
         if key == 'aperture':
             return f"f/{value}"
         if key == 'shutter':
-            try:
-                exp_val = float(value)
-                if exp_val < 1:
-                    return f"1/{int(1 / exp_val)}s"
-                return f"{exp_val}s"
-            except (ValueError, TypeError, ZeroDivisionError):
-                return f"{value}"
+            return format_exposure_time(value) or f"{value}"
         if key == 'focal_length':
             return f"{value}mm" if 'mm' not in str(value).lower() else str(value)
         return str(value)
@@ -884,7 +910,21 @@ class FileRenamerApp(QMainWindow):
         
         # Disable UI during processing
         self._ui_set_busy(True)
-        
+        try:
+            self._confirm_and_start_rename(
+                media_files, camera_prefix, additional, use_camera, use_lens,
+                use_date, continuous_counter, date_format, separator,
+            )
+        except Exception:
+            # Never leave the UI stuck in "Processing..." if anything before
+            # the worker start fails; the global excepthook reports the error.
+            if not (getattr(self, 'worker', None) and self.worker.isRunning()):
+                self._ui_set_busy(False)
+            raise
+
+    def _confirm_and_start_rename(self, media_files, camera_prefix, additional, use_camera,
+                                  use_lens, use_date, continuous_counter, date_format, separator):
+        """Show the estimate/sync confirmations and start the rename worker."""
         # Get EXIF date sync setting
         sync_exif_date = getattr(self, 'checkbox_sync_exif_date', None) and self.checkbox_sync_exif_date.isChecked()
         leave_file_names = getattr(self, 'checkbox_leave_names', None) and self.checkbox_leave_names.isChecked()
@@ -1019,6 +1059,11 @@ class FileRenamerApp(QMainWindow):
             'start_time': time.time()
         }
 
+        # The background benchmark only feeds the time estimate; stop it so
+        # it doesn't compete for disk I/O (or read files being renamed).
+        if self.benchmark_thread is not None and self.benchmark_thread.isRunning():
+            self.benchmark_thread.requestInterruption()
+
         # Start worker thread for background processing
         self.worker = RenameWorkerThread(
             media_files,
@@ -1040,6 +1085,8 @@ class FileRenamerApp(QMainWindow):
             save_original_to_exif=save_original_to_exif,
             log_callable=self.log,
             exif_service=self.exif_service,  # NEW: Pass ExifService instance
+            prior_originals=dict(self.original_filenames),
+            parent=self,
         )
         self.worker.progress_update.connect(self.update_status)
         self.worker.finished.connect(self.on_rename_finished)
@@ -1091,13 +1138,13 @@ class FileRenamerApp(QMainWindow):
             # Get EXIF backup for undo functionality
             exif_backup = dialog.get_exif_backup()
             if exif_backup:
-                # Merge with existing backup (in case of multiple shifts)
-                self.exif_backup.update(exif_backup)
+                # Merge with existing backup (in case of multiple shifts).
+                # The first backup of a file holds its original dates, so
+                # it must never be replaced by a later, already-shifted one.
+                for path, fields in exif_backup.items():
+                    self.exif_backup.setdefault(path, fields)
                 self.log(f"📦 Backed up EXIF data for {len(exif_backup)} files")
-                
-                # Enable undo button
-                self.undo_button.setEnabled(True)
-                self.undo_button.setText("↶ Restore Original EXIF & Names")
+                self.update_restore_button_state()
             
             # Clear EXIF cache to reload updated data
             self.exif_service.clear_cache()
@@ -1112,110 +1159,59 @@ class FileRenamerApp(QMainWindow):
     # Phase 2 Refactoring: Helper functions for on_rename_finished
     # ------------------------------------------------------------------
     
-    def _create_filename_mapping_from_worker(self, rename_mapping: dict) -> dict:
+    def _merge_rename_mapping(self, rename_mapping: dict) -> dict:
         """
-        Build the undo mapping from the authoritative rename_mapping dict
-        produced by the worker thread during the actual rename loop.
-        
+        Merge the worker's rename_mapping into the undo mapping.
+
+        Keeps entries for files that were not part of this rename (or whose
+        rename failed) and preserves the chain back to the *original* name
+        across repeated renames.
+
         Args:
             rename_mapping: Dict of {new_path: old_path} from the worker.
-            
+
         Returns:
             dict: Mapping of {current_path: original_basename} for undo.
         """
-        if not hasattr(self, 'original_filenames') or not self.original_filenames:
-            # First rename — build fresh mapping
-            new_mapping = {}
-            for new_path, old_path in rename_mapping.items():
-                original_basename = os.path.basename(old_path)
-                new_mapping[new_path] = original_basename
-                self.log(f"Mapping: {os.path.basename(new_path)} -> {original_basename}")
-            return new_mapping
-        else:
-            # Subsequent rename — preserve the chain back to the *original* name
-            updated = {}
-            for new_path, old_path in rename_mapping.items():
-                # Look up the original name from the previous round
-                if old_path in self.original_filenames:
-                    updated[new_path] = self.original_filenames[old_path]
-                else:
-                    updated[new_path] = os.path.basename(old_path)
-            return updated
-    
-    def _create_filename_mapping_fallback(self, old_media_files, renamed_files, timestamp_backup):
+        merged = dict(self.original_filenames)
+        for new_path, old_path in rename_mapping.items():
+            if new_path == old_path:
+                continue
+            original = merged.pop(old_path, None) or os.path.basename(old_path)
+            merged[new_path] = original
+            self.log(f"Mapping: {os.path.basename(new_path)} -> {original}")
+        return merged
+
+    def _rebuild_file_list(self, moved: dict):
         """
-        Fallback mapping for timestamp-only operations where no rename_mapping
-        is available (e.g. leave_names mode, EXIF-only sync).
-        
+        Rebuild the file list after a rename operation.
+
+        Every file stays in the list in its original order - renamed files
+        under their new path, files whose rename failed (or that were not
+        renamed, e.g. non-media files) under their current path.
+
         Args:
-            old_media_files: List of original file paths.
-            renamed_files: List of new file paths (may be empty for sync-only).
-            timestamp_backup: Dict of timestamp backups.
-            
-        Returns:
-            dict: Mapping of {current_path: original_basename}.
+            moved: Dict of {old_path: new_path} for files that were renamed.
         """
-        new_original_filenames = {}
-        
-        if timestamp_backup and old_media_files and not renamed_files:
-            # EXIF-only sync — filename didn't change, but we track for timestamp restore
-            self.log("EXIF-only sync detected - creating filename mapping for restore functionality")
-            for media_file in old_media_files:
-                if media_file in timestamp_backup:
-                    new_original_filenames[media_file] = os.path.basename(media_file)
-        
-        return new_original_filenames
-    
-    def _rebuild_file_list(self, renamed_files, original_non_media, old_media_files):
-        """
-        Rebuild the file list widget after rename operation.
-        
-        Args:
-            renamed_files: List of renamed file paths
-            original_non_media: List of non-media files (unchanged)
-            old_media_files: List of original media files (for EXIF-only case)
-        """
+        current_files = [moved.get(path, path) for path in self.files]
         self.files.clear()
-        self.file_list.clear()
-        
-        # CASE 1: Normal rename operation - use renamed files
-        if renamed_files:
-            for renamed_file in renamed_files:
-                self.files.append(renamed_file)
-                item = QListWidgetItem(os.path.basename(renamed_file))
-                item.setData(Qt.ItemDataRole.UserRole, renamed_file)
-                self.file_list.addItem(item)
-        else:
-            # CASE 2: EXIF-only sync - keep original files
-            for media_file in old_media_files:
-                self.files.append(media_file)
-                item = QListWidgetItem(os.path.basename(media_file))
-                item.setData(Qt.ItemDataRole.UserRole, media_file)
-                self.file_list.addItem(item)
-        
-        # Add back non-media files
-        for non_media in original_non_media:
-            self.files.append(non_media)
-            item = QListWidgetItem(os.path.basename(non_media))
-            item.setData(Qt.ItemDataRole.UserRole, non_media)
-            self.file_list.addItem(item)
-            # Preserve original tracking for non-media files
-            if non_media not in self.original_filenames:
-                self.original_filenames[non_media] = os.path.basename(non_media)
+        self.files.extend(current_files)
+        self.file_list_manager.update_file_list()
     
     def _show_rename_results(self, renamed_files, errors):
         """
-        Show results dialog with success/error/conflict information.
+        Show results dialog with success/error information.
         
         Args:
             renamed_files: List of successfully renamed files
-            errors: List of error messages
+            errors: List of (file_path, message) tuples
         """
         if errors:
-            # Separate name conflicts from real errors
-            name_conflicts = [e for e in errors if e.startswith("Name conflict:")]
-            real_errors = [e for e in errors if not e.startswith("Name conflict:")]
-            
+            error_lines = [
+                f"{os.path.basename(path)}: {message}" if path else str(message)
+                for path, message in errors
+            ]
+
             # Show detailed error report
             error_dialog = QDialog(self)
             error_dialog.setWindowTitle("Rename Results")
@@ -1224,37 +1220,15 @@ class FileRenamerApp(QMainWindow):
             success_label = QLabel(f"Successfully renamed: {len(renamed_files)} files")
             success_label.setStyleSheet("color: green; font-weight: bold;")
             error_layout.addWidget(success_label)
-            
-            # Show name conflicts as warnings
-            if name_conflicts:
-                conflict_label = QLabel(f"⚠️ Name conflicts: {len(name_conflicts)}")
-                conflict_label.setStyleSheet("color: #ff6b35; font-weight: bold;")
-                error_layout.addWidget(conflict_label)
-                
-                conflict_info = QLabel(
-                    "Some files were renamed with (1), (2) suffixes because files with the same name already exist.\n"
-                    "This usually happens when renaming files that are already in the target format."
-                )
-                conflict_info.setWordWrap(True)
-                conflict_info.setStyleSheet("color: #666; font-style: italic; margin-bottom: 10px;")
-                error_layout.addWidget(conflict_info)
-                
-                conflict_text = QPlainTextEdit()
-                conflict_text.setReadOnly(True)
-                conflict_text.setPlainText("\n".join(name_conflicts))
-                conflict_text.setMaximumHeight(150)
-                error_layout.addWidget(conflict_text)
-            
-            # Show real errors
-            if real_errors:
-                error_label = QLabel(f"❌ Errors encountered: {len(real_errors)}")
-                error_label.setStyleSheet("color: red; font-weight: bold;")
-                error_layout.addWidget(error_label)
-                
-                error_text = QPlainTextEdit()
-                error_text.setReadOnly(True)
-                error_text.setPlainText("\n".join(real_errors))
-                error_layout.addWidget(error_text)
+
+            error_label = QLabel(f"❌ Problems encountered: {len(error_lines)}")
+            error_label.setStyleSheet("color: red; font-weight: bold;")
+            error_layout.addWidget(error_label)
+
+            error_text = QPlainTextEdit()
+            error_text.setReadOnly(True)
+            error_text.setPlainText("\n".join(error_lines))
+            error_layout.addWidget(error_text)
             
             close_button = QPushButton("Close")
             close_button.clicked.connect(error_dialog.accept)
@@ -1273,8 +1247,6 @@ class FileRenamerApp(QMainWindow):
         """
         Handle completion of rename operation.
         
-        Simplified version after Phase 2 refactoring - delegates to helper functions.
-        
         Args:
             renamed_files: List of new file paths after rename.
             errors: List of (path, error) tuples.
@@ -1282,37 +1254,10 @@ class FileRenamerApp(QMainWindow):
             rename_mapping: Dict of {new_path: old_path} built by the worker
                             during the rename loop - authoritative source for undo.
         """
-        # Store timestamp backup for potential undo operations
-        if timestamp_backup:
-            self.timestamp_backup = timestamp_backup
-        
-        # Get file lists
-        original_non_media = [f for f in self.files if not is_media_file(f)]
-        old_media_files = [f for f in self.files if is_media_file(f)]
-        
-        # Build undo mapping from the authoritative rename_mapping
-        if rename_mapping:
-            self.original_filenames = self._create_filename_mapping_from_worker(rename_mapping)
-        else:
-            # Fallback for timestamp-only operations or legacy callers
-            self.original_filenames = self._create_filename_mapping_fallback(
-                old_media_files, renamed_files, timestamp_backup
-            )
-        
-        # Rebuild file list widget
-        self._rebuild_file_list(renamed_files, original_non_media, old_media_files)
-        
-        # Update restore button state
-        self.update_restore_button_state()
-        
-        # Show results dialog
-        self._show_rename_results(renamed_files, errors)
-        
-        # Update preview and status
-        self.update_preview()
-        self.status.showMessage(f"Completed: {len(renamed_files)} files renamed", 5000)
-        
+        from .backup_journal import rekey_entries
+
         # Calibrate benchmark safety factor based on actual operation time
+        # (measured now, before any modal dialog adds waiting time)
         if hasattr(self, '_last_estimate_data') and self._last_estimate_data:
             actual_time = time.time() - self._last_estimate_data['start_time']
             self.benchmark_manager.calibrate_from_actual(
@@ -1324,10 +1269,40 @@ class FileRenamerApp(QMainWindow):
                 with_exif_save=self._last_estimate_data['with_exif_save']
             )
             self._last_estimate_data = None  # Clear after calibration
+
+        rename_mapping = rename_mapping or {}
+        moved = {old: new for new, old in rename_mapping.items() if new != old}
+
+        # Store timestamp backup for potential undo operations. The worker's
+        # backup already contains the pending journal entries; earlier
+        # in-memory entries (the file's original times) always win.
+        if timestamp_backup:
+            for path, times in timestamp_backup.items():
+                self.timestamp_backup.setdefault(path, times)
+
+        # Backups are keyed by path, so they must follow renamed files
+        # (the worker already did the same for the on-disk journal).
+        if moved:
+            self.timestamp_backup = rekey_entries(self.timestamp_backup, moved)
+            self.exif_backup = rekey_entries(self.exif_backup, moved)
+            self.original_filenames = self._merge_rename_mapping(rename_mapping)
+
+        # Rebuild file list widget
+        self._rebuild_file_list(moved)
         
-        # Re-enable UI
+        # Update restore button state
+        self.update_restore_button_state()
+
+        # Re-enable UI before the (modal) results dialog
         self._ui_set_busy(False)
-    
+        
+        # Show results dialog
+        self._show_rename_results(renamed_files, errors)
+        
+        # Update preview and status
+        self.update_preview()
+        self.status.showMessage(f"Completed: {len(renamed_files)} files renamed", 5000)
+
     def on_rename_error(self, error_message):
         self._ui_set_busy(False)
         QMessageBox.critical(self, "Critical Error", f"Unexpected error during renaming:\n{error_message}")
@@ -1404,8 +1379,27 @@ class FileRenamerApp(QMainWindow):
     def closeEvent(self, event):
         """Handle application close event.
         
-        Cleans up the ExifService to prevent subprocess leaks.
+        Refuses to close while a rename is running (destroying a running
+        QThread aborts the process mid-operation), stops background threads,
+        and cleans up the ExifService to prevent subprocess leaks.
         """
+        worker = getattr(self, 'worker', None)
+        if worker is not None and worker.isRunning():
+            QMessageBox.warning(
+                self,
+                "Rename in Progress",
+                "Files are still being renamed.\n\n"
+                "Please wait until the operation has finished before closing the application.",
+            )
+            event.ignore()
+            return
+
+        for thread in (getattr(self, 'benchmark_thread', None),
+                       getattr(self, '_exif_undo_checker_ref', None)):
+            if thread is not None and thread.isRunning():
+                thread.requestInterruption()
+                thread.wait()
+
         if hasattr(self, 'exif_service') and self.exif_service:
             self.exif_service.cleanup()
         
@@ -1526,9 +1520,31 @@ def format_file_statistics(stats):
         return summary
 
 
+def _install_excepthook():
+    """Report unhandled exceptions instead of letting PyQt6 abort the process.
+
+    With the default hook, PyQt6 calls qFatal() for any exception raised in
+    a slot, killing the application - including in-memory undo state.
+    """
+    import traceback
+
+    def _hook(exc_type, exc_value, exc_tb):
+        details = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        log.error(f"Unhandled exception:\n{details}")
+        if QApplication.instance() is not None:
+            box = QMessageBox(QMessageBox.Icon.Critical, "Unexpected Error",
+                              f"An unexpected error occurred:\n{exc_value}\n\n"
+                              "The application keeps running; please report this problem.")
+            box.setDetailedText(details)
+            box.exec()
+
+    sys.excepthook = _hook
+
+
 def main():
     """Main entry point"""
     app = QApplication(sys.argv)
+    _install_excepthook()
     
     # Set application properties
     app.setApplicationName("File Renamer")

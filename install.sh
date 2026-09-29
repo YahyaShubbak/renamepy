@@ -38,7 +38,7 @@ confirm_step() {
         echo -e "   ${desc}"
     fi
     echo ""
-    read -p " Do you want to continue? [[Y]/n]: " _resp
+    read -r -p " Do you want to continue? [[Y]/n]: " _resp
     if [[ "$_resp" =~ ^[Nn]$ ]]; then
         print_warning "Aborted by user."
         return 1
@@ -82,7 +82,7 @@ echo -e "   - PyExifTool (EXIF metadata extraction)"
 echo ""
 print_header
 echo ""
-read -p " Press Enter to continue..."
+read -r -p " Press Enter to continue..."
 
 # ============================================================================
 #  Step 1: System Dependencies
@@ -91,67 +91,104 @@ echo ""
 echo -e "${BOLD}[1/6] Checking system dependencies...${NC}"
 echo ""
 
-install_system_deps() {
-    if [[ "$OSTYPE" != "linux-gnu"* ]]; then
-        print_info "Not Linux, skipping system dependency check."
+# Install missing packages with the given package manager command.
+# Failure is reported but not fatal: the Python part can still be set up.
+install_missing() {
+    local manager="$1"; shift
+    local install_cmd="$1"; shift
+    local pkgs=("$@")
+    if [ ${#pkgs[@]} -eq 0 ]; then
+        print_ok "All required system packages are installed."
         return 0
     fi
+    print_warning "Missing system packages: ${pkgs[*]}"
+    read -r -p "  Install them now with ${manager}? [[Y]/n]: " DO_INSTALL
+    if [[ ! "$DO_INSTALL" =~ ^[Nn]$ ]]; then
+        # shellcheck disable=SC2086  # install_cmd is a trusted command line
+        if sudo $install_cmd "${pkgs[@]}"; then
+            print_ok "System packages installed."
+        else
+            print_warning "Installing system packages failed - Qt6/ExifTool may not work."
+        fi
+    else
+        print_warning "Skipped. Qt6/ExifTool may not work without these."
+    fi
+}
 
-    if command -v pacman &>/dev/null; then
+install_system_deps() {
+    local MISSING_PKGS=()
+
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS: PyQt6 wheels bundle Qt; only ExifTool is needed (Homebrew)
+        if command -v exiftool &>/dev/null; then
+            :
+        elif command -v brew &>/dev/null; then
+            read -r -p "  ExifTool is missing. Install it with Homebrew (brew install exiftool)? [[Y]/n]: " DO_INSTALL
+            if [[ ! "$DO_INSTALL" =~ ^[Nn]$ ]]; then
+                brew install exiftool || print_warning "brew install exiftool failed."
+            fi
+        else
+            print_warning "ExifTool not found and Homebrew is not installed."
+            print_info "Install ExifTool from https://exiftool.org (macOS package) or via https://brew.sh"
+        fi
+
+    elif [[ "$OSTYPE" != "linux-gnu"* ]]; then
+        print_info "Unknown OS ($OSTYPE), skipping system dependency check."
+        return 0
+
+    elif command -v pacman &>/dev/null; then
         # Arch Linux / EndeavourOS / Manjaro
         print_info "Detected Arch-based system (pacman)"
-        local MISSING_PKGS=()
         local ARCH_DEPS=("mesa" "libxcb" "xcb-util" "xcb-util-wm" "xcb-util-image" \
                          "xcb-util-keysyms" "xcb-util-renderutil" "xcb-util-cursor" \
                          "libxkbcommon" "libxkbcommon-x11" "fontconfig" "freetype2" \
                          "dbus" "libglvnd" "perl-image-exiftool")
         for pkg in "${ARCH_DEPS[@]}"; do
-            if ! pacman -Qi "$pkg" &>/dev/null; then
-                MISSING_PKGS+=("$pkg")
-            fi
+            pacman -Qi "$pkg" &>/dev/null || MISSING_PKGS+=("$pkg")
         done
-        if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
-            print_warning "Missing system packages: ${MISSING_PKGS[*]}"
-            read -p "  Install them now with pacman? [[Y]/n]: " DO_INSTALL
-            if [[ ! "$DO_INSTALL" =~ ^[Nn]$ ]]; then
-                sudo pacman -S --needed --noconfirm "${MISSING_PKGS[@]}"
-                print_ok "System packages installed."
-            else
-                print_warning "Skipped. Qt6/ExifTool may not work without these."
-            fi
-        else
-            print_ok "All required system packages are installed."
-        fi
+        install_missing pacman "pacman -S --needed --noconfirm" "${MISSING_PKGS[@]}"
 
     elif command -v apt-get &>/dev/null; then
         # Debian / Ubuntu / Mint
         print_info "Detected Debian/Ubuntu-based system (apt)"
-        local MISSING_PKGS=()
-        local DEB_DEPS=("libgl1" "libegl1" "libxcb-xinerama0" "libxcb-cursor0" \
+        # python3-venv: Debian/Ubuntu ship Python without the venv module
+        local DEB_DEPS=("python3-venv" "libgl1" "libegl1" "libxcb-xinerama0" "libxcb-cursor0" \
                         "libxcb-shape0" "libxcb-icccm4" "libxcb-image0" \
                         "libxcb-keysyms1" "libxcb-render-util0" "libxkbcommon0" \
                         "libxkbcommon-x11-0" "libfontconfig1" "libfreetype6" \
                         "libdbus-1-3" "libimage-exiftool-perl")
         for pkg in "${DEB_DEPS[@]}"; do
-            if ! dpkg -s "$pkg" &>/dev/null 2>&1; then
-                MISSING_PKGS+=("$pkg")
-            fi
+            dpkg -s "$pkg" &>/dev/null || MISSING_PKGS+=("$pkg")
         done
         if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
-            print_warning "Missing system packages: ${MISSING_PKGS[*]}"
-            read -p "  Install them now with apt? [[Y]/n]: " DO_INSTALL
-            if [[ ! "$DO_INSTALL" =~ ^[Nn]$ ]]; then
-                sudo apt-get update && sudo apt-get install -y "${MISSING_PKGS[@]}"
-                print_ok "System packages installed."
-            else
-                print_warning "Skipped. Qt6/ExifTool may not work without these."
-            fi
-        else
-            print_ok "All required system packages are installed."
+            sudo apt-get update || true
         fi
+        install_missing apt "apt-get install -y" "${MISSING_PKGS[@]}"
+
+    elif command -v dnf &>/dev/null; then
+        # Fedora / RHEL-based
+        print_info "Detected Fedora/RHEL-based system (dnf)"
+        local RPM_DEPS=("perl-Image-ExifTool" "mesa-libGL" "mesa-libEGL" "libxkbcommon-x11" \
+                        "xcb-util-cursor" "xcb-util-wm" "xcb-util-image" \
+                        "xcb-util-keysyms" "xcb-util-renderutil")
+        for pkg in "${RPM_DEPS[@]}"; do
+            rpm -q "$pkg" &>/dev/null || MISSING_PKGS+=("$pkg")
+        done
+        install_missing dnf "dnf install -y" "${MISSING_PKGS[@]}"
+
+    elif command -v zypper &>/dev/null; then
+        # openSUSE
+        print_info "Detected openSUSE (zypper)"
+        local SUSE_DEPS=("exiftool" "Mesa-libGL1" "Mesa-libEGL1" "libxkbcommon-x11-0" \
+                         "libxcb-cursor0" "libxcb-icccm4" "libxcb-image0" \
+                         "libxcb-keysyms1" "libxcb-render-util0")
+        for pkg in "${SUSE_DEPS[@]}"; do
+            rpm -q "$pkg" &>/dev/null || MISSING_PKGS+=("$pkg")
+        done
+        install_missing zypper "zypper --non-interactive install" "${MISSING_PKGS[@]}"
 
     else
-        print_warning "Could not detect package manager (pacman/apt)."
+        print_warning "Could not detect package manager (pacman/apt/dnf/zypper)."
         print_info "Please ensure Qt6 libraries and exiftool are installed."
     fi
 
@@ -212,24 +249,39 @@ if [ -n "$CONDA_EXE" ] && [ -x "$CONDA_EXE" ]; then
     echo -e "    ${ORANGE}[1]${NC} Conda environment (recommended if you use conda)"
     echo -e "    ${ORANGE}[2]${NC} Python venv (lightweight, no conda needed)"
     echo ""
-    read -p "  Your choice [[1]/2]: " ENV_CHOICE
+    read -r -p "  Your choice [[1]/2]: " ENV_CHOICE
     if [[ "$ENV_CHOICE" == "2" ]]; then
         print_info "Using Python venv."
     else
         USE_CONDA=true
         CONDA_BASE=$(dirname "$(dirname "$CONDA_EXE")")
+        # shellcheck disable=SC1091
         source "$CONDA_BASE/etc/profile.d/conda.sh"
         print_info "Using Conda."
     fi
 else
     print_info "Conda not found. Using Python venv."
-    # Verify python3 is available
-    if ! command -v python3 &>/dev/null; then
-        print_error "python3 not found! Please install Python 3.10+."
+fi
+
+if [ "$USE_CONDA" != true ]; then
+    # Find a Python >= 3.10 (e.g. macOS' /usr/bin/python3 is 3.9)
+    PYTHON_BIN=""
+    for candidate in python3.13 python3.12 python3.11 python3.10 python3; do
+        if command -v "$candidate" &>/dev/null && \
+           "$candidate" -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
+            PYTHON_BIN="$(command -v "$candidate")"
+            break
+        fi
+    done
+    if [ -z "$PYTHON_BIN" ]; then
+        print_error "No Python 3.10 or newer found!"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            print_info "Install one with: brew install python@3.12"
+        fi
         exit 1
     fi
-    PYTHON_VER=$(python3 --version 2>&1)
-    print_ok "Python found: $PYTHON_VER"
+    PYTHON_VER=$("$PYTHON_BIN" --version 2>&1)
+    print_ok "Python found: $PYTHON_VER ($PYTHON_BIN)"
 fi
 echo ""
 
@@ -244,8 +296,9 @@ if [ "$USE_CONDA" = true ]; then
     if conda env list | grep -q "^${ENV_NAME} "; then
         print_warning "Conda environment '$ENV_NAME' already exists."
         echo ""
-        read -p "  Recreate it? All changes will be lost! [y/[N]]: " RECREATE
-        if [[ ! "$RECREATE" =~ ^[Nn]$ ]]; then
+        read -r -p "  Recreate it? All changes will be lost! [y/[N]]: " RECREATE
+        # Default (Enter) is No: only an explicit "y" deletes the environment
+        if [[ "$RECREATE" =~ ^[Yy]$ ]]; then
             echo "  Removing existing environment..."
             conda remove -n "$ENV_NAME" --all -y
             print_ok "Old environment removed."
@@ -270,18 +323,19 @@ else
     if [ -d "$VENV_DIR" ]; then
         print_warning "venv directory already exists: $VENV_DIR"
         echo ""
-        read -p "  Recreate it? [y/[N]]: " RECREATE
-        if [[ ! "$RECREATE" =~ ^[Nn]$ ]]; then
+        read -r -p "  Recreate it? [y/[N]]: " RECREATE
+        # Default (Enter) is No: only an explicit "y" deletes the venv
+        if [[ "$RECREATE" =~ ^[Yy]$ ]]; then
             rm -rf "$VENV_DIR"
             print_ok "Old venv removed."
-            python3 -m venv "$VENV_DIR"
+            "$PYTHON_BIN" -m venv "$VENV_DIR"
             print_ok "New venv created."
         else
             print_info "Keeping existing venv. Will update packages."
         fi
     else
         echo "  Creating venv at $VENV_DIR..."
-        python3 -m venv "$VENV_DIR"
+        "$PYTHON_BIN" -m venv "$VENV_DIR"
         print_ok "venv created."
     fi
     # shellcheck disable=SC1091
@@ -304,7 +358,7 @@ while IFS= read -r line || [ -n "$line" ]; do
     echo -e "   ${ORANGE}${line}${NC}"
 done < requirements.txt
 echo ""
-read -p " Do you want to continue? [[Y]/n]: " _pkg_resp
+read -r -p " Do you want to continue? [[Y]/n]: " _pkg_resp
 if [[ "$_pkg_resp" =~ ^[Nn]$ ]]; then
     print_warning "Aborted by user."
     exit 1
@@ -312,10 +366,10 @@ fi
 echo ""
 
 echo "  Upgrading pip..."
-pip install --upgrade pip
+python -m pip install --upgrade pip
 
 echo "  Installing requirements..."
-pip install -r requirements.txt || {
+python -m pip install -r requirements.txt || {
     print_error "Package installation failed."
     exit 1
 }
@@ -354,64 +408,77 @@ echo ""
 # ============================================================================
 #  Step 6: Desktop Shortcut (Linux)
 # ============================================================================
-read -p " Create a desktop shortcut for RenamePy? [[Y]/n]: " CREATE_SHORTCUT
+read -r -p " Create a desktop shortcut for RenamePy? [[Y]/n]: " CREATE_SHORTCUT
+
+# Python interpreter of the environment (works without activating it)
+ENV_PYTHON="$(python -c 'import sys; print(sys.executable)')"
+
+# Quote one argument for the Exec= key of a .desktop file (Desktop Entry
+# spec: wrap in double quotes, backslash-escape " ` $ \ and double %).
+desktop_quote() {
+    local arg="$1"
+    arg="${arg//\\/\\\\}"
+    arg="${arg//\"/\\\"}"
+    arg="${arg//\`/\\\`}"
+    arg="${arg//\$/\\\$}"
+    arg="${arg//%/%%}"
+    printf '"%s"' "$arg"
+}
 
 if [[ ! "$CREATE_SHORTCUT" =~ ^[Nn]$ ]]; then
     echo ""
-    echo "  Creating desktop shortcut..."
-
-    # Detect desktop location
-    if [ -n "$XDG_DESKTOP_DIR" ]; then
-        DESKTOP_DIR="$XDG_DESKTOP_DIR"
-    elif [ -d "$HOME/Desktop" ]; then
-        DESKTOP_DIR="$HOME/Desktop"
-    elif [ -d "$HOME/Schreibtisch" ]; then
-        DESKTOP_DIR="$HOME/Schreibtisch"
-    else
-        DESKTOP_DIR="$HOME"
-    fi
-
-    SHORTCUT_PATH="$DESKTOP_DIR/RenamePy.desktop"
+    echo "  Creating shortcut..."
 
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        if [ "$USE_CONDA" = true ]; then
-            EXEC_CMD="bash -c \"cd '$SCRIPT_DIR' && source '$CONDA_BASE/etc/profile.d/conda.sh' && conda activate $ENV_NAME && python RenameFiles.py\""
-        else
-            EXEC_CMD="bash -c \"cd '$SCRIPT_DIR' && source '$VENV_DIR/bin/activate' && python RenameFiles.py\""
+        # Application menu entry (works in every desktop environment)
+        APPS_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+        ICON_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/icons"
+        mkdir -p "$APPS_DIR" "$ICON_DIR"
+
+        # Most desktops don't render .ico files - convert with Qt
+        ICON_PATH="$SCRIPT_DIR/icon.ico"
+        if python -c "import sys; from PyQt6.QtGui import QImage; sys.exit(not QImage(sys.argv[1]).save(sys.argv[2], 'PNG'))" \
+                "$SCRIPT_DIR/icon.ico" "$ICON_DIR/renamepy.png" 2>/dev/null; then
+            ICON_PATH="$ICON_DIR/renamepy.png"
         fi
 
+        SHORTCUT_PATH="$APPS_DIR/renamepy.desktop"
         cat > "$SHORTCUT_PATH" << EOF
 [Desktop Entry]
 Version=1.0
 Type=Application
 Name=RenamePy
 Comment=Advanced Photo Renaming Tool
-Exec=$EXEC_CMD
-Icon=$SCRIPT_DIR/icon.ico
+Exec=$(desktop_quote "$ENV_PYTHON") $(desktop_quote "$SCRIPT_DIR/RenameFiles.py")
+Path=$SCRIPT_DIR
+Icon=$ICON_PATH
 Terminal=false
-Categories=Graphics;Photography;Utility;
+Categories=Graphics;Photography;
 EOF
         chmod +x "$SHORTCUT_PATH"
-        print_ok "Desktop shortcut created: $SHORTCUT_PATH"
+        command -v update-desktop-database &>/dev/null && update-desktop-database "$APPS_DIR" &>/dev/null || true
+        print_ok "Application menu entry created: $SHORTCUT_PATH"
+
+        # Optional copy on the desktop
+        DESKTOP_DIR="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
+        if [ -z "$DESKTOP_DIR" ] || [ "$DESKTOP_DIR" = "$HOME" ]; then
+            DESKTOP_DIR="$HOME/Desktop"
+        fi
+        if [ -d "$DESKTOP_DIR" ]; then
+            cp "$SHORTCUT_PATH" "$DESKTOP_DIR/RenamePy.desktop"
+            chmod +x "$DESKTOP_DIR/RenamePy.desktop"
+            # GNOME only starts desktop launchers marked as trusted
+            command -v gio &>/dev/null && gio set "$DESKTOP_DIR/RenamePy.desktop" metadata::trusted true &>/dev/null || true
+            print_ok "Desktop shortcut created: $DESKTOP_DIR/RenamePy.desktop"
+        fi
 
     elif [[ "$OSTYPE" == "darwin"* ]]; then
-        SHORTCUT_PATH="$DESKTOP_DIR/RenamePy.command"
-        if [ "$USE_CONDA" = true ]; then
-            cat > "$SHORTCUT_PATH" << EOF
-#!/bin/bash
-cd "$SCRIPT_DIR"
-source "$CONDA_BASE/etc/profile.d/conda.sh"
-conda activate $ENV_NAME
-python RenameFiles.py
-EOF
-        else
-            cat > "$SHORTCUT_PATH" << EOF
-#!/bin/bash
-cd "$SCRIPT_DIR"
-source "$VENV_DIR/bin/activate"
-python RenameFiles.py
-EOF
-        fi
+        SHORTCUT_PATH="$HOME/Desktop/RenamePy.command"
+        {
+            echo '#!/bin/bash'
+            printf 'cd %q || exit 1\n' "$SCRIPT_DIR"
+            printf 'exec %q %q\n' "$ENV_PYTHON" "$SCRIPT_DIR/RenameFiles.py"
+        } > "$SHORTCUT_PATH"
         chmod +x "$SHORTCUT_PATH"
         print_ok "Desktop shortcut created: $SHORTCUT_PATH"
     else
@@ -436,7 +503,7 @@ echo ""
 echo -e "  ${GREEN}[R]${NC}  Start RenamePy now"
 echo -e "  ${NC}[any other key]  Exit${NC}"
 echo ""
-read -p " [Any key] / R: " _launch
+read -r -p " [Any key] / R: " _launch
 if [[ "$_launch" =~ ^[Rr]$ ]]; then
     echo ""
     print_info "Launching RenamePy..."

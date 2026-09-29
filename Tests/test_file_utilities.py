@@ -224,7 +224,8 @@ class TestValidatePathLength:
     def test_filename_component_exactly_255_valid(self):
         """Filename of exactly 255 chars (incl extension) should be valid."""
         name = "a" * 251 + ".jpg"  # 251 + 4 = 255
-        path = "C:\\Photos\\" + name
+        # os.path.join: basename() only splits on this OS's separator
+        path = os.path.join("Photos", name)
         assert validate_path_length(path) is True
 
     def test_normal_length_path_valid(self):

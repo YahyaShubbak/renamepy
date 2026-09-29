@@ -45,8 +45,9 @@ class FileConstants:
     
     # File extension constants
     IMAGE_EXTENSIONS = [
-        '.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.gif', 
-        '.cr2', '.nef', '.arw', '.orf', '.rw2', '.dng', '.raw', '.sr2', '.pef', '.raf', 
+        '.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.gif',
+        '.heic', '.heif', '.avif', '.webp',
+        '.cr2', '.cr3', '.nef', '.arw', '.orf', '.rw2', '.dng', '.raw', '.sr2', '.pef', '.raf',
         '.3fr', '.erf', '.kdc', '.mos', '.nrw', '.srw', '.x3f'
     ]
 
@@ -89,20 +90,52 @@ def is_media_file(filename: str) -> bool:
     """Returns True if the file is a media file (image, RAW, or video) based on its extension."""
     return os.path.splitext(filename)[1].lower() in MEDIA_EXTENSIONS
 
+# Directories created by NAS systems / OSes that contain thumbnails or
+# metadata copies of the user's photos - renaming files inside them corrupts
+# the owning application's index.
+_SYSTEM_DIR_NAMES = {'@eadir', '#recycle', '.@__thumb', '$recycle.bin', 'system volume information'}
+
+
+def is_system_artifact(filename: str) -> bool:
+    """True for macOS AppleDouble files (``._DSC0001.ARW``) that carry a
+    media extension but are really resource-fork metadata of another file."""
+    return os.path.basename(filename).startswith('._')
+
+
+def media_file_dialog_filter() -> str:
+    """Build a QFileDialog name filter covering every supported extension.
+
+    Lists upper-case variants too because native file dialogs on Linux
+    (GTK / xdg portal) match patterns case-sensitively, and cameras write
+    upper-case extensions (``DSC0001.JPG``, ``.ARW``).
+    """
+    patterns = []
+    for ext in MEDIA_EXTENSIONS:
+        patterns.append(f"*{ext}")
+        patterns.append(f"*{ext.upper()}")
+    return f"Media Files ({' '.join(patterns)});;All Files (*)"
+
+
 def scan_directory_recursive(directory):
     """
     Recursively scan directory for media files (images and videos) in all subdirectories.
     Uses followlinks=False to prevent symlink loops and duplicate counting.
     Handles per-directory permission errors gracefully so that inaccessible
-    subdirectories do not abort the entire scan.
+    subdirectories do not abort the entire scan. Hidden directories, NAS
+    thumbnail folders (e.g. Synology ``@eaDir``) and AppleDouble ``._*``
+    files are skipped.
 
     Returns a sorted list of all media file paths found.
     """
     media_files = []
     try:
         for root, dirs, files in os.walk(directory, followlinks=False, onerror=lambda e: log.warning(f"Cannot access directory: {e}")):
+            dirs[:] = [
+                d for d in dirs
+                if not d.startswith('.') and d.lower() not in _SYSTEM_DIR_NAMES
+            ]
             for file in files:
-                if is_media_file(file):
+                if is_media_file(file) and not is_system_artifact(file):
                     full_path = os.path.join(root, file)
                     media_files.append(full_path)
     except Exception as e:
@@ -280,7 +313,13 @@ def get_safe_target_path(original_path, new_name):
     # If target is the same as source (case-insensitive on Windows), it's safe
     if os.path.normcase(original_path) == os.path.normcase(new_path):
         return new_path
-    
+
+    # Case-only rename on a case-insensitive filesystem (macOS APFS/HFS+,
+    # where normcase() is a no-op): the "existing" target is the source
+    # file itself, so this is not a conflict.
+    if is_case_variant(original_path, new_path):
+        return new_path
+
     # Check if target already exists
     if not os.path.exists(new_path):
         return new_path
@@ -296,8 +335,100 @@ def get_safe_target_path(original_path, new_name):
     
     if attempt > 999:
         raise RuntimeError(f"Cannot generate unique filename for {new_name}")
-    
+
     return new_path
+
+
+def is_case_variant(source: str, target: str) -> bool:
+    """True if *target* differs from *source* only in letter case and both
+    names resolve to the same file (i.e. a case-insensitive filesystem)."""
+    if os.path.dirname(source) != os.path.dirname(target):
+        return False
+    if os.path.basename(source).lower() != os.path.basename(target).lower():
+        return False
+    try:
+        return os.path.exists(target) and os.path.samefile(source, target)
+    except OSError:
+        return False
+
+
+def safe_rename(source: str, target: str) -> None:
+    """Rename *source* to *target* without ever overwriting an existing file.
+
+    ``os.rename``/``shutil.move`` silently replace an existing target on
+    POSIX (and ``shutil.move`` falls back to copy-and-overwrite on Windows),
+    so a file that appears between planning and executing a rename would be
+    destroyed. This function refuses instead.
+
+    Raises:
+        FileExistsError: If *target* already exists (and is not merely a
+            case variant of *source*).
+        OSError: For any other rename failure.
+    """
+    if os.path.normcase(os.path.abspath(source)) == os.path.normcase(os.path.abspath(target)):
+        if source != target:
+            os.rename(source, target)  # case-only rename on Windows
+        return
+
+    if is_case_variant(source, target):
+        os.rename(source, target)
+        return
+
+    if os.path.lexists(target):
+        raise FileExistsError(f"Target already exists: {target}")
+
+    if os.name == 'nt' or os.path.islink(source):
+        # os.rename on Windows never replaces an existing file. Symlinks
+        # are renamed as-is (a hard link would resolve them).
+        os.rename(source, target)
+        return
+
+    # POSIX: link() fails atomically with EEXIST if the target appeared in
+    # the meantime, closing the check-then-rename race. Not every
+    # filesystem supports hard links (FAT/exFAT SD cards, some network
+    # shares), so fall back to a plain rename after the existence check.
+    try:
+        os.link(source, target)
+    except FileExistsError:
+        raise
+    except OSError:
+        if os.path.lexists(target):
+            raise FileExistsError(f"Target already exists: {target}")
+        os.rename(source, target)
+        return
+    try:
+        os.unlink(source)
+    except OSError:
+        # Leave things as they were rather than ending up with two names.
+        os.unlink(target)
+        raise
+
+
+_WINDOWS_FORBIDDEN_CHARS = set('<>:"/\\|?*')
+
+
+def is_safe_restore_name(original_name, current_path: str) -> bool:
+    """Validate a filename that an undo operation wants to restore.
+
+    Original names can come from file metadata (XMP/EXIF), which is
+    attacker-controlled for any file downloaded from elsewhere. Only accept
+    a plain basename in the same directory that keeps the file's extension,
+    so a crafted value like ``..\\..\\Startup\\x.bat`` or ``/etc/x`` can never
+    move or re-type a file.
+    """
+    if not isinstance(original_name, str) or not original_name:
+        return False
+    if original_name != original_name.strip() or original_name in ('.', '..'):
+        return False
+    if len(original_name) > 255:
+        return False
+    if any(ord(c) < 32 or c in _WINDOWS_FORBIDDEN_CHARS for c in original_name):
+        return False
+    if os.path.isabs(original_name) or os.path.basename(original_name) != original_name:
+        return False
+    current_ext = os.path.splitext(current_path)[1].lower()
+    return os.path.splitext(original_name)[1].lower() == current_ext
+
 
 def scan_directory(directory, include_subdirs=False):
     """

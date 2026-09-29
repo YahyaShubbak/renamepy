@@ -182,6 +182,60 @@ def clear_backup(key: str) -> None:
             _write_journal_unlocked(journal)
 
 
+def update_entries(changes: Dict[str, Dict[str, Any]]) -> None:
+    """Apply entry-level changes to several journal keys in one write.
+
+    ``changes`` maps a journal key to ``{"set": {...}, "remove": [...]}``.
+    Removals are applied before additions, so a rename can move an entry
+    from its old path to its new path in a single call. Keys that end up
+    empty are dropped from the journal.
+    """
+    with _journal_lock:
+        journal = _read_journal_unlocked()
+        for key, change in changes.items():
+            entries = dict(journal.get(key) or {})
+            for entry_key in change.get("remove", ()):
+                entries.pop(entry_key, None)
+            entries.update(change.get("set", {}))
+            if entries:
+                journal[key] = entries
+            else:
+                journal.pop(key, None)
+        journal["_last_updated"] = time.time()
+        _write_journal_unlocked(journal)
+
+
+def rekey_entries(entries: Dict[str, Any], path_mapping: Dict[str, str]) -> Dict[str, Any]:
+    """Return a copy of ``entries`` with keys moved from old to new paths.
+
+    Backups are keyed by file path, so after a rename (or an undo of one)
+    they must follow the file, otherwise a later restore looks for a path
+    that no longer exists.
+    """
+    result = {}
+    for path, value in entries.items():
+        result[path_mapping.get(path, path)] = value
+    return result
+
+
+def rekey_journal(path_mapping: Dict[str, str], keys=("timestamp_backup", "exif_backup")) -> None:
+    """Move journal entries of ``keys`` from old to new paths."""
+    moved = {old: new for old, new in path_mapping.items() if old != new}
+    if not moved:
+        return
+    with _journal_lock:
+        journal = _read_journal_unlocked()
+        changed = False
+        for key in keys:
+            entries = journal.get(key)
+            if entries and any(old in entries for old in moved):
+                journal[key] = rekey_entries(entries, moved)
+                changed = True
+        if changed:
+            journal["_last_updated"] = time.time()
+            _write_journal_unlocked(journal)
+
+
 def clear_all() -> None:
     """Remove the entire journal file."""
     with _journal_lock:
@@ -210,13 +264,36 @@ class PersistedBackupDict(dict):
             ... perform the destructive write for file_path ...
     """
 
-    def __init__(self, journal_key: str, *args, **kwargs) -> None:
+    def __init__(self, journal_key: str, *args, load_existing: bool = True, **kwargs) -> None:
         if journal_key not in KNOWN_BACKUP_KEYS:
             log.debug(f"PersistedBackupDict using non-standard key: {journal_key!r}")
-        super().__init__(*args, **kwargs)
+        super().__init__()
         self._journal_key = journal_key
-        if self:
+        # Start from what is already pending on disk. Otherwise the first
+        # write of a new batch would replace the journal key wholesale and
+        # lose the backup of an earlier, not yet undone operation - i.e.
+        # the only copy of the file's *original* values.
+        if load_existing:
+            existing = load_journal().get(journal_key)
+            if isinstance(existing, dict):
+                super().update(existing)
+        super().update(*args, **kwargs)
+        if args or kwargs:
             save_backup(self._journal_key, dict(self))
+
+    def record_original(self, key, value) -> bool:
+        """Store ``value`` only if ``key`` has no backup yet (first write wins).
+
+        A second sync or time shift of the same file must not replace the
+        backup of its original values with already-modified ones.
+
+        Returns:
+            True if the value was recorded, False if a backup already existed.
+        """
+        if key in self:
+            return False
+        self[key] = value
+        return True
 
     def __setitem__(self, key, value) -> None:
         super().__setitem__(key, value)

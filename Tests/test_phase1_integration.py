@@ -1,8 +1,11 @@
 """
 Integration tests for Phase 1 critical fixes:
-  1. PowerShell injection prevention (parameterized timestamp sync)
   2. Thread-safe global ExifTool instance
   3. Global ExifTool cleanup on exit
+
+(The PowerShell timestamp helper and its tests were removed: arguments after
+``powershell -Command`` are appended to the script text, so the helper was
+injectable through file names and was never used by the application.)
 
 Uses real images from C:\\Users\\yshub\\Desktop\\Bilbao when available.
 """
@@ -31,81 +34,6 @@ if os.path.isdir(BILBAO_DIR):
 
 HAS_IMAGES = len(SAMPLE_FILES) > 0
 skip_no_images = pytest.mark.skipif(not HAS_IMAGES, reason="No test images in Bilbao dir")
-
-
-# ===========================================================================
-# 1. PowerShell injection prevention
-# ===========================================================================
-class TestPowerShellTimestampSafety:
-    """Verify that the parameterized PowerShell approach is safe."""
-
-    @skip_no_images
-    def test_timestamp_sync_with_normal_path(self, tmp_path):
-        """Normal file path should work with parameterized PowerShell."""
-        from modules.exif_processor import _set_file_timestamp_method3
-        import datetime
-
-        # Copy a real image to temp dir
-        src = SAMPLE_FILES[0]
-        dst = tmp_path / os.path.basename(src)
-        shutil.copy2(src, dst)
-
-        dt = datetime.datetime(2024, 6, 15, 14, 30, 0)
-        result = _set_file_timestamp_method3(str(dst), dt)
-
-        if os.name == 'nt':
-            assert result is True, "PowerShell timestamp sync should succeed"
-            # Verify the timestamp was actually set
-            stat = os.stat(dst)
-            set_ts = datetime.datetime.fromtimestamp(stat.st_mtime)
-            assert set_ts.year == 2024
-            assert set_ts.month == 6
-            assert set_ts.day == 15
-        else:
-            assert result is False, "Should return False on non-Windows"
-
-    @pytest.mark.skipif(os.name != 'nt', reason="Windows-only test")
-    def test_path_with_special_characters(self, tmp_path):
-        """File path with Windows-valid special chars must not cause injection.
-        
-        Note: Windows forbids " < > | ? * in filenames, so we test with
-        characters that ARE valid on Windows but dangerous in PowerShell:
-        parentheses, dollar signs, single quotes, spaces, ampersands.
-        """
-        from modules.exif_processor import _set_file_timestamp_method3
-        import datetime
-
-        # These chars are valid in Windows filenames but dangerous in PowerShell
-        tricky_name = "test file's $var & (cmd).jpg"
-        tricky_path = tmp_path / tricky_name
-        tricky_path.write_bytes(b'\xff\xd8\xff\xe0' + b'\x00' * 100)
-
-        dt = datetime.datetime(2024, 1, 1, 12, 0, 0)
-        # This should NOT execute any injected command.
-        # It may fail (file isn't a real image) but must not raise
-        # an unhandled exception or execute arbitrary code.
-        try:
-            result = _set_file_timestamp_method3(str(tricky_path), dt)
-            assert isinstance(result, bool)
-        except Exception as e:
-            assert "injection" not in str(e).lower()
-
-    @pytest.mark.skipif(os.name != 'nt', reason="Windows-only test")
-    def test_path_with_backtick_and_semicolon(self, tmp_path):
-        """Backticks and semicolons are PowerShell-special and must be safe."""
-        from modules.exif_processor import _set_file_timestamp_method3
-        import datetime
-
-        tricky_name = "test`;echo pwned;`.jpg"
-        tricky_path = tmp_path / tricky_name
-        tricky_path.write_bytes(b'\xff\xd8\xff\xe0' + b'\x00' * 100)
-
-        dt = datetime.datetime(2024, 1, 1, 12, 0, 0)
-        try:
-            result = _set_file_timestamp_method3(str(tricky_path), dt)
-            assert isinstance(result, bool)
-        except Exception:
-            pass  # Graceful failure is acceptable
 
 
 # ===========================================================================

@@ -53,14 +53,52 @@ if os.name == 'nt':
     import ctypes
     from ctypes import wintypes
 
-    # Fix #1: INVALID_HANDLE_VALUE must be compared as unsigned pointer value.
-    # On 64-bit Python, CreateFileW returns an unsigned int, not -1.
-    INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
-
     class FILETIME(ctypes.Structure):
         """Windows FILETIME structure for file timestamp operations."""
         _fields_ = [("dwLowDateTime", wintypes.DWORD),
                      ("dwHighDateTime", wintypes.DWORD)]
+
+    # A private kernel32 handle with explicit prototypes. Without restype,
+    # ctypes returns CreateFileW's HANDLE as a 32-bit int, so a failure (-1)
+    # never compared equal to INVALID_HANDLE_VALUE and was silently used as
+    # a handle. A private WinDLL instance avoids changing the prototypes
+    # other libraries see through ctypes.windll.kernel32.
+    _kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    _kernel32.CreateFileW.restype = wintypes.HANDLE
+    _kernel32.CreateFileW.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+        wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+    ]
+    _PFILETIME = ctypes.POINTER(FILETIME)
+    _kernel32.GetFileTime.restype = wintypes.BOOL
+    _kernel32.GetFileTime.argtypes = [wintypes.HANDLE, _PFILETIME, _PFILETIME, _PFILETIME]
+    _kernel32.SetFileTime.restype = wintypes.BOOL
+    _kernel32.SetFileTime.argtypes = [wintypes.HANDLE, _PFILETIME, _PFILETIME, _PFILETIME]
+    _kernel32.CloseHandle.restype = wintypes.BOOL
+    _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    INVALID_HANDLE_VALUE = wintypes.HANDLE(-1).value
+
+    _GENERIC_READ = 0x80000000
+    _FILE_WRITE_ATTRIBUTES = 0x0100
+    _FILE_SHARE_READ_WRITE = 0x00000001 | 0x00000002
+    _OPEN_EXISTING = 3
+    _FILE_ATTRIBUTE_NORMAL = 0x80
+
+    def _open_file_handle(file_path, access):
+        handle = _kernel32.CreateFileW(
+            file_path, access, _FILE_SHARE_READ_WRITE, None,
+            _OPEN_EXISTING, _FILE_ATTRIBUTE_NORMAL, None,
+        )
+        if handle is None or handle == INVALID_HANDLE_VALUE:
+            return None
+        return handle
+
+    def _timestamp_to_filetime(timestamp):
+        value = int((timestamp * HUNDREDS_OF_NANOSECONDS) + EPOCH_AS_FILETIME)
+        ft = FILETIME()
+        ft.dwLowDateTime = value & 0xFFFFFFFF
+        ft.dwHighDateTime = value >> 32
+        return ft
 
 
 # ---------------------------------------------------------------------------
@@ -86,12 +124,9 @@ def get_exiftool_metadata_shared(image_path: str, exiftool_path: str | None = No
             return {}
         if not exiftool_path:
             exiftool_path = find_exiftool_path()
-        if exiftool_path and os.path.exists(exiftool_path):
-            with exiftool.ExifToolHelper(executable=exiftool_path) as et:
-                return et.get_metadata([normalized])[0]
-        else:
-            with exiftool.ExifToolHelper() as et:
-                return et.get_metadata([normalized])[0]
+        from .exif_service_new import new_exiftool_helper
+        with new_exiftool_helper(exiftool_path) as et:
+            return et.get_metadata([normalized])[0]
     except Exception as e:
         log.warning(f"get_exiftool_metadata_shared fallback failed: {e}")
         return {}
@@ -119,9 +154,11 @@ def find_exiftool_path():
         try:
             if not os.path.exists(executable_path):
                 return None
+            # Generous timeout: the first start of exiftool.exe on Windows
+            # (Perl runtime unpacking, virus scanner) can take several seconds.
             proc = subprocess.run(
                 [executable_path, "-ver"],
-                capture_output=True, text=True, timeout=2,
+                capture_output=True, text=True, timeout=10,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0,
             )
             if proc.returncode == 0 and proc.stdout:
@@ -207,6 +244,73 @@ def find_exiftool_path():
     log.warning("ExifTool not found in expected locations")
     return None
 
+def _parse_target_datetime(value):
+    """Accept a datetime or an EXIF date string; return a datetime or None."""
+    import datetime as _dt
+    if isinstance(value, _dt.datetime):
+        return value
+    from .exif_service_new import parse_exif_datetime
+    return parse_exif_datetime(value)
+
+
+def _read_capture_datetime(file_path, exiftool_path):
+    """Read the capture date/time of one file via the shared ExifTool process."""
+    from .exif_service_new import ExifService
+    meta = get_exiftool_metadata_shared(file_path, exiftool_path)
+    return ExifService.parse_datetime_from_raw(meta)
+
+
+def _capture_original_times(file_path):
+    """Snapshot the filesystem timestamps of *file_path* for undo."""
+    stat_info = os.stat(file_path)
+    original_times = {
+        'atime': stat_info.st_atime,    # Access time
+        'mtime': stat_info.st_mtime,    # Modification time
+        'ctime': getattr(stat_info, 'st_birthtime', stat_info.st_ctime),  # Creation time (macOS/Windows) or status change time (Linux)
+    }
+
+    # On Windows, get the real creation time using Windows API
+    if os.name == 'nt':
+        try:
+            handle = _open_file_handle(file_path, _GENERIC_READ)
+            if handle is not None:
+                try:
+                    creation_time = FILETIME()
+                    access_time = FILETIME()
+                    write_time = FILETIME()
+                    if _kernel32.GetFileTime(handle, ctypes.byref(creation_time),
+                                             ctypes.byref(access_time), ctypes.byref(write_time)):
+                        creation_100ns = (creation_time.dwHighDateTime << 32) + creation_time.dwLowDateTime
+                        original_times['windows_creation_time'] = (
+                            (creation_100ns - EPOCH_AS_FILETIME) / HUNDREDS_OF_NANOSECONDS
+                        )
+                finally:
+                    _kernel32.CloseHandle(handle)
+        except Exception as e:
+            # If Windows API fails, we still have the basic timestamps
+            log.debug(f"Could not get Windows creation time: {e}")
+    return original_times
+
+
+def _set_windows_file_times(file_path, creation=None, access=None, write=None):
+    """Set Windows file times (each argument a POSIX timestamp or None)."""
+    handle = _open_file_handle(file_path, _FILE_WRITE_ATTRIBUTES)
+    if handle is None:
+        return False
+    try:
+        c = _timestamp_to_filetime(creation) if creation is not None else None
+        a = _timestamp_to_filetime(access) if access is not None else None
+        w = _timestamp_to_filetime(write) if write is not None else None
+        return bool(_kernel32.SetFileTime(
+            handle,
+            ctypes.byref(c) if c is not None else None,
+            ctypes.byref(a) if a is not None else None,
+            ctypes.byref(w) if w is not None else None,
+        ))
+    finally:
+        _kernel32.CloseHandle(handle)
+
+
 def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps=None, options=None, preexif_dt=None):
     """
     Synchronize EXIF DateTimeOriginal to file creation/modification date.
@@ -214,12 +318,17 @@ def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps
     Args:
         file_path: Path to the media file
         exiftool_path: Path to ExifTool executable
-        backup_timestamps: Dictionary to store original timestamps for undo
+        backup_timestamps: Dictionary to store original timestamps for undo.
+            An existing entry for *file_path* is never replaced, so repeated
+            syncs keep the backup of the file's original timestamps.
+        options: Dict from TimestampSyncOptionsDialog (which fields, custom date)
+        preexif_dt: Pre-fetched capture date (datetime or EXIF date string)
         
     Returns:
         tuple: (success: bool, message: str, original_times: dict or None)
     """
-    if not EXIFTOOL_AVAILABLE and not (options and options.get('use_custom')) and preexif_dt is None:
+    use_custom = bool(options and options.get('use_custom') and options.get('custom_dt'))
+    if not EXIFTOOL_AVAILABLE and not use_custom and preexif_dt is None:
         # Allow custom date OR externally provided EXIF datetime without local ExifTool
         return False, "ExifTool not available", None
     
@@ -227,98 +336,33 @@ def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps
         return False, f"File not found: {file_path}", None
     
     # Auto-detect ExifTool path if not provided
-    if not exiftool_path:
+    if not exiftool_path and not use_custom and preexif_dt is None:
         exiftool_path = find_exiftool_path()
         if not exiftool_path:
             return False, "ExifTool executable not found", None
     
-    log.info(f"Using ExifTool executable: {exiftool_path}")
-    
     try:
-        # Get original file timestamps for backup
-        stat_info = os.stat(file_path)
-        original_times = {
-            'atime': stat_info.st_atime,    # Access time
-            'mtime': stat_info.st_mtime,    # Modification time
-            'ctime': getattr(stat_info, 'st_birthtime', stat_info.st_ctime),  # Creation time (macOS/Windows) or status change time (Linux)
-        }
+        original_times = _capture_original_times(file_path)
         
-        # On Windows, get the real creation time using Windows API
-        try:
-            if os.name == 'nt':  # Windows
-                kernel32 = ctypes.windll.kernel32
-                handle = kernel32.CreateFileW(
-                    file_path,
-                    0x80000000,  # GENERIC_READ
-                    0x00000001 | 0x00000002,  # FILE_SHARE_READ | FILE_SHARE_WRITE
-                    None,
-                    3,  # OPEN_EXISTING
-                    0x80,  # FILE_ATTRIBUTE_NORMAL
-                    None
-                )
-                
-                if handle != INVALID_HANDLE_VALUE:
-                    try:
-                        creation_time = FILETIME()
-                        access_time = FILETIME()
-                        write_time = FILETIME()
-                        
-                        if kernel32.GetFileTime(handle, ctypes.byref(creation_time), 
-                                              ctypes.byref(access_time), ctypes.byref(write_time)):
-                            creation_100ns = (creation_time.dwHighDateTime << 32) + creation_time.dwLowDateTime
-                            creation_timestamp = (creation_100ns - EPOCH_AS_FILETIME) / HUNDREDS_OF_NANOSECONDS
-                            original_times['windows_creation_time'] = creation_timestamp
-                    finally:
-                        kernel32.CloseHandle(handle)
-        
-        except Exception as e:
-            # If Windows API fails, we still have the basic timestamps
-            log.debug(f"Could not get Windows creation time: {e}")
-        
-        # Store in backup if provided
-        if backup_timestamps is not None:
+        # Store in backup if provided (before anything is modified)
+        if backup_timestamps is not None and file_path not in backup_timestamps:
             backup_timestamps[file_path] = original_times
         
         # Determine target datetime
-        dt = None
-        if options and options.get('use_custom') and options.get('custom_dt'):
+        if use_custom:
             dt = options['custom_dt']
         elif preexif_dt is not None:
-            # Pre-fetched raw EXIF datetime string (already from allowed fields)
-            try:
-                import datetime as _dt
-                value = str(preexif_dt)
-                if ' ' in value:
-                    dt = _dt.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
-                else:
-                    dt = _dt.datetime.strptime(value, '%Y:%m:%d')
-            except Exception:
+            dt = _parse_target_datetime(preexif_dt)
+            if dt is None:
                 return False, "Invalid pre-extracted EXIF date", original_times
         else:
-            # Extract EXIF DateTimeOriginal using ExifTool (fallback path)
             try:
-                if not EXIFTOOL_AVAILABLE:
-                    return False, "EXIF extraction not available", original_times
-                helper_exec = exiftool_path if exiftool_path else None
-                with exiftool.ExifToolHelper(executable=helper_exec) as et:
-                    meta = et.get_metadata(file_path)[0]
-                exif_date = None
-                for field in ['EXIF:DateTimeOriginal','EXIF:DateTime','EXIF:CreateDate','DateTimeOriginal','DateTime','CreateDate']:
-                    if field in meta and meta[field]:
-                        exif_date = meta[field]
-                        break
-                if not exif_date:
-                    return False, "No EXIF date found in file", original_times
-                import datetime as _dt
-                value = str(exif_date)
-                if ' ' in value:
-                    dt = _dt.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
-                else:
-                    dt = _dt.datetime.strptime(value, '%Y:%m:%d')
+                dt = _read_capture_datetime(file_path, exiftool_path)
             except Exception as e:
                 return False, f"Error accessing EXIF data: {e}", original_times
-        if not dt:
-            return False, "No target date/time determined", original_times
+            if dt is None:
+                return False, "No EXIF date found in file", original_times
+
         new_timestamp = dt.timestamp()
         # Selective update logic
         set_creation = True
@@ -334,113 +378,32 @@ def sync_exif_date_to_file_date(file_path, exiftool_path=None, backup_timestamps
             atime = original_times['atime'] if not set_access else new_timestamp
             mtime = original_times['mtime'] if not set_mod else new_timestamp
             os.utime(file_path, (atime, mtime))
-            # Creation time (Windows) via API only if requested
-            creation_ok = True
+            # Creation time can only be set on Windows
+            creation_set = False
             if set_creation and os.name == 'nt':
                 try:
-                    ts_100ns = int((new_timestamp * HUNDREDS_OF_NANOSECONDS) + EPOCH_AS_FILETIME)
-                    ft = FILETIME()
-                    ft.dwLowDateTime = ts_100ns & 0xFFFFFFFF
-                    ft.dwHighDateTime = ts_100ns >> 32
-                    k32 = ctypes.windll.kernel32
-                    handle = k32.CreateFileW(
-                        file_path, 0x40000000, 0x00000001 | 0x00000002, None, 3, 0x80, None
+                    creation_set = _set_windows_file_times(
+                        file_path,
+                        creation=new_timestamp,
+                        access=new_timestamp if set_access else None,
+                        write=new_timestamp if set_mod else None,
                     )
-                    if handle != INVALID_HANDLE_VALUE:
-                        try:
-                            if not k32.SetFileTime(handle, ctypes.byref(ft), None if not set_access else ctypes.byref(ft), None if not set_mod else ctypes.byref(ft)):
-                                creation_ok = False
-                        finally:
-                            k32.CloseHandle(handle)
-                    else:
-                        creation_ok = False
                 except Exception as e:
                     log.debug(f"Creation time set failed: {e}")
-                    creation_ok = False
-            return True, f"Timestamps updated ({'C' if set_creation else ''}{'M' if set_mod else ''}{'A' if set_access else ''}) -> {dt.strftime('%Y-%m-%d %H:%M:%S')}", original_times
+                if not creation_set:
+                    log.debug(f"Could not set creation time for {file_path}")
+            fields = f"{'C' if creation_set else ''}{'M' if set_mod else ''}{'A' if set_access else ''}"
+            return True, f"Timestamps updated ({fields}) -> {dt.strftime('%Y-%m-%d %H:%M:%S')}", original_times
         except Exception as e:
             return False, f"Failed to set timestamps: {e}", original_times
                 
     except Exception as e:
         return False, f"Error syncing date: {e}", None
 
-def _set_file_timestamp_method3(file_path, dt):
-    """Method 3: PowerShell for extra robustness.
-    
-    Uses parameterized script block to avoid command injection
-    via file paths containing special characters.
-    """
-    try:
-        if os.name != 'nt':  # Not Windows
-            return False
-            
-        import subprocess
-        
-        # Format date for PowerShell (ISO 8601)
-        ps_date = dt.strftime('%Y-%m-%dT%H:%M:%S')
-        
-        # SECURITY FIX: Use parameterized ScriptBlock via -File or
-        # pass the path as an encoded argument to avoid injection.
-        # The path and date are passed as separate arguments to
-        # a script block, never interpolated into the script string.
-        ps_script = (
-            'param($FilePath, $DateStr); '
-            '$file = Get-Item -LiteralPath $FilePath; '
-            '$date = [DateTime]::Parse($DateStr); '
-            '$file.CreationTime = $date; '
-            '$file.LastWriteTime = $date; '
-            '$file.LastAccessTime = $date; '
-            'Write-Host "PowerShell timestamp sync completed"'
-        )
-        
-        # Execute PowerShell command with path as a safe argument
-        result = subprocess.run([
-            'powershell', '-NoProfile', '-Command',
-            '&{' + ps_script + '}',
-            '-FilePath', str(file_path),
-            '-DateStr', ps_date
-        ], capture_output=True, text=True, timeout=15,
-           encoding='utf-8', errors='replace')
-        
-        if result.returncode == 0:
-            log.debug("Method 3 (PowerShell) successful")
-            return True
-        else:
-            log.debug(f"Method 3 (PowerShell) failed: {result.stderr.strip()}")
-            return False
-    
-    except Exception as e:
-        log.debug(f"Method 3 (PowerShell) exception: {e}")
-        return False
-
 def _restore_windows_creation_time(file_path, creation_timestamp):
     """Restore Windows creation time using Windows API."""
     try:
-        timestamp_100ns = int((creation_timestamp * HUNDREDS_OF_NANOSECONDS) + EPOCH_AS_FILETIME)
-        
-        ft = FILETIME()
-        ft.dwLowDateTime = timestamp_100ns & 0xFFFFFFFF
-        ft.dwHighDateTime = timestamp_100ns >> 32
-        
-        kernel32 = ctypes.windll.kernel32
-        handle = kernel32.CreateFileW(
-            file_path,
-            0x40000000,  # GENERIC_WRITE
-            0x00000001 | 0x00000002,  # FILE_SHARE_READ | FILE_SHARE_WRITE
-            None,
-            3,  # OPEN_EXISTING
-            0x80,  # FILE_ATTRIBUTE_NORMAL
-            None
-        )
-        
-        if handle != INVALID_HANDLE_VALUE:
-            try:
-                kernel32.SetFileTime(handle, ctypes.byref(ft), None, None)
-            finally:
-                kernel32.CloseHandle(handle)
-            return True
-        
-        return False
+        return _set_windows_file_times(file_path, creation=creation_timestamp)
     except Exception:
         return False
 
@@ -502,8 +465,10 @@ def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None
     # means a crash mid-batch never loses the backup for files already done.
     backup_data = PersistedBackupDict("timestamp_backup")
 
-    # Fast path: prefetch all EXIF datetimes via the registered ExifService
+    # Fast path: prefetch all capture datetimes via the registered ExifService
     # (reuses the shared ExifTool process) or fall back to a one-shot helper.
+    from .exif_service_new import ExifService, new_exiftool_helper
+
     prefetch_map = {}
     use_custom = options and options.get('use_custom')
     can_prefetch = EXIFTOOL_AVAILABLE and not use_custom and file_paths
@@ -512,36 +477,21 @@ def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None
             if _default_exif_service:
                 # Reuse the shared ExifService — no extra process needed
                 raw_batch = _default_exif_service.batch_get_raw_metadata(file_paths, chunk_size=100)
-                for fpath, meta in raw_batch.items():
-                    if meta:
-                        dt_value = None
-                        for field in ['EXIF:DateTimeOriginal', 'EXIF:DateTime', 'EXIF:CreateDate',
-                                      'DateTimeOriginal', 'DateTime', 'CreateDate']:
-                            if field in meta and meta[field]:
-                                dt_value = meta[field]
-                                break
-                        if dt_value:
-                            prefetch_map[fpath] = dt_value
             else:
                 # Fallback: one-shot ExifTool helper (slower)
-                helper_exec = exiftool_path if exiftool_path else None
-                with exiftool.ExifToolHelper(executable=helper_exec) as et:
+                raw_batch = {}
+                by_norm = {os.path.normpath(p): p for p in file_paths}
+                with new_exiftool_helper(exiftool_path) as et:
                     CHUNK = 100
                     for start in range(0, len(file_paths), CHUNK):
-                        subset = file_paths[start:start + CHUNK]
-                        metas = et.get_metadata(subset)
-                        for meta in metas:
-                            fpath = meta.get('SourceFile')
-                            if not fpath:
-                                continue
-                            dt_value = None
-                            for field in ['EXIF:DateTimeOriginal', 'EXIF:DateTime', 'EXIF:CreateDate',
-                                          'DateTimeOriginal', 'DateTime', 'CreateDate']:
-                                if field in meta and meta[field]:
-                                    dt_value = meta[field]
-                                    break
-                            if dt_value:
-                                prefetch_map[fpath] = dt_value
+                        for meta in et.get_metadata(file_paths[start:start + CHUNK]):
+                            source = meta.get('SourceFile')
+                            if source:
+                                raw_batch[by_norm.get(os.path.normpath(source), source)] = meta
+            for fpath, meta in raw_batch.items():
+                dt_value = ExifService.parse_datetime_from_raw(meta)
+                if dt_value is not None:
+                    prefetch_map[fpath] = dt_value
             if progress_callback:
                 progress_callback(f"Prefetched EXIF datetimes for {len(prefetch_map)} files")
         except Exception as e:
@@ -596,6 +546,23 @@ def batch_restore_timestamps(backup_data, progress_callback=None):
     return successes, errors
 
 
+# Date tags that the EXIF time shift backs up (see TimeShiftWorker) and that
+# restore_exif_timestamps() is therefore allowed to write back.
+RESTORABLE_DATE_TAGS = frozenset({
+    'EXIF:DateTimeOriginal',
+    'EXIF:CreateDate',
+    'EXIF:ModifyDate',
+    'QuickTime:CreateDate',
+    'QuickTime:ModifyDate',
+    'QuickTime:TrackCreateDate',
+    'QuickTime:TrackModifyDate',
+    'QuickTime:MediaCreateDate',
+    'QuickTime:MediaModifyDate',
+})
+
+_EXIF_VALUE_RE = re.compile(r'^[\w\s:./+\-]+$')
+
+
 def restore_exif_timestamps(file_path, original_exif, exiftool_path):
     """
     Restore original EXIF timestamps from backup.
@@ -608,8 +575,6 @@ def restore_exif_timestamps(file_path, original_exif, exiftool_path):
     Returns:
         tuple: (success: bool, message: str)
     """
-    import subprocess
-    
     try:
         if not os.path.exists(file_path):
             return False, f"File not found: {file_path}"
@@ -622,32 +587,31 @@ def restore_exif_timestamps(file_path, original_exif, exiftool_path):
             if not exiftool_path:
                 return False, "ExifTool executable not found"
         
-        # Build ExifTool command to restore all backed-up fields
-        cmd = [exiftool_path, "-overwrite_original"]
-        
-        # Add each backed-up field, validating values to prevent injection
-        _EXIF_VALUE_RE = re.compile(r'^[\w\s:./+\-]+$')
+        from .exif_service_new import run_exiftool_on_file
+
+        # Add each backed-up field. The backup comes from a JSON file on
+        # disk, so both the tag name (it becomes "-TAG=...", i.e. an ExifTool
+        # option) and the value are validated before use.
+        options = ["-overwrite_original"]
         for field, value in original_exif.items():
+            if field not in RESTORABLE_DATE_TAGS:
+                log.warning(f"Skipping unexpected EXIF restore field: {field!r}")
+                continue
             str_value = str(value)
             if not _EXIF_VALUE_RE.match(str_value):
                 log.warning(f"Skipping suspicious EXIF restore value for {field}: {str_value!r}")
                 continue
-            cmd.append(f'-{field}={str_value}')
-        
-        cmd.append(file_path)
-        
-        # Execute ExifTool
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-        )
+            options.append(f'-{field}={str_value}')
+
+        if len(options) == 1:
+            return False, "No restorable EXIF fields in backup"
+
+        result = run_exiftool_on_file(exiftool_path, options, file_path, timeout=60)
         
         if result.returncode == 0:
             return True, "EXIF timestamps restored successfully"
         else:
-            return False, f"ExifTool error: {result.stderr}"
+            return False, f"ExifTool error: {result.stderr.strip()}"
         
     except Exception as e:
         return False, f"Error restoring EXIF timestamps: {e}"

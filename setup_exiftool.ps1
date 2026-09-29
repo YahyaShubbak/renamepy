@@ -21,6 +21,8 @@ $EXIFTOOL_ARCH = "64"
 
 $DOWNLOAD_DIR = Join-Path $PROJECT_ROOT "temp_download"
 
+$DOWNLOAD_USER_AGENT = "Wget/1.21 (RenamePy setup)"
+
 # ============================================================================
 # Helper functions for coloured output
 # ============================================================================
@@ -60,8 +62,21 @@ function Write-Error-Custom { param([string]$msg) Write-ColorMessage -Message $m
 # ============================================================================
 function Get-ExifToolLatestVersion {
     Write-Info "Detecting latest ExifTool version from exiftool.org..."
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     try {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        # exiftool.org publishes the current version number as plain text
+        $text = (Invoke-WebRequest -Uri 'https://exiftool.org/ver.txt' -UseBasicParsing -TimeoutSec 20).Content
+        if ($text -is [byte[]]) { $text = [System.Text.Encoding]::ASCII.GetString($text) }
+        $version = ([string]$text).Trim()
+        if ($version -match '^\d+\.\d+$') {
+            Write-Info "Latest version detected: $version"
+            return $version
+        }
+    }
+    catch {
+        Write-Warning-Custom "Could not read ver.txt: $($_.Exception.Message)"
+    }
+    try {
         $html = (Invoke-WebRequest -Uri 'https://exiftool.org/' -UseBasicParsing -TimeoutSec 20).Content
         $match = [regex]::Match($html, 'exiftool-([\.\d]+)_64\.zip')
         if ($match.Success) {
@@ -75,7 +90,7 @@ function Get-ExifToolLatestVersion {
     }
 
     # Fallback to a known-good version
-    $fallback = "13.54"
+    $fallback = "13.59"
     Write-Warning-Custom "Falling back to version $fallback"
     return $fallback
 }
@@ -94,7 +109,11 @@ function Initialize-ExifToolGlobals {
     $script:EXIFTOOL_FOLDER  = "exiftool-$($script:EXIFTOOL_VERSION)_${EXIFTOOL_ARCH}"
     $script:EXIFTOOL_ZIP     = "$($script:EXIFTOOL_FOLDER).zip"
     $script:EXIFTOOL_DIR     = Join-Path $PROJECT_ROOT $script:EXIFTOOL_FOLDER
+    # exiftool.org links its downloads to SourceForge; the ZIP is no longer
+    # served from exiftool.org itself (404). The integrity of whatever is
+    # downloaded is verified against exiftool.org's checksum list below.
     $script:DOWNLOAD_URLS    = @(
+        "https://sourceforge.net/projects/exiftool/files/$($script:EXIFTOOL_ZIP)/download",
         "https://exiftool.org/$($script:EXIFTOOL_ZIP)"
     )
 }
@@ -154,7 +173,10 @@ function Invoke-ExifToolDownload {
             Write-Info "Trying: $url"
             
             $ProgressPreference = 'SilentlyContinue'
-            Invoke-WebRequest -Uri $url -OutFile $zipFile -MaximumRedirection 10 -UseBasicParsing -TimeoutSec 60
+            # SourceForge serves an HTML "download starting" page to
+            # browser-like user agents (which includes PowerShell's default);
+            # a Wget user agent gets redirected straight to the file.
+            Invoke-WebRequest -Uri $url -OutFile $zipFile -MaximumRedirection 10 -UseBasicParsing -TimeoutSec 120 -UserAgent $DOWNLOAD_USER_AGENT
             
             if (Test-Path $zipFile) {
                 $fileSize = [math]::Round((Get-Item $zipFile).Length / 1MB, 2)
@@ -175,9 +197,9 @@ function Invoke-ExifToolDownload {
     }
     
         Write-Warning-Custom "All download URLs failed."
-        Write-Info "Please download ExifTool manually from: https://exiftool.org/"
-        Write-Info "Extract the ZIP into the project folder: $PROJECT_ROOT"
-        return $null
+    Write-Info "Please download ExifTool manually from: https://exiftool.org/"
+    Write-Info "Extract the ZIP into the project folder: $PROJECT_ROOT"
+    return $null
 }
 
 # ============================================================================

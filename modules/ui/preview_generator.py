@@ -5,6 +5,7 @@ Extracted from main_application.py to improve code organization
 This module manages the interactive preview widget and generates 
 filename previews based on current settings.
 """
+from __future__ import annotations
 
 import os
 import re

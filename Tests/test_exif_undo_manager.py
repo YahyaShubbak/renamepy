@@ -2,8 +2,10 @@
 """
 Unit tests for modules/exif_undo_manager.py
 
-Tests the EXIF-based undo persistence layer: writing, reading, batch
-operations, clearing, and edge cases.  All ExifTool calls are mocked.
+Tests the metadata-based undo persistence layer: writing, reading, batch
+operations, clearing, and edge cases. All ExifTool calls are mocked here;
+Tests/test_exiftool_integration.py runs the same paths against a real
+ExifTool when one is installed.
 """
 
 import os
@@ -15,6 +17,7 @@ from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from modules import exif_undo_manager
 from modules.exif_undo_manager import (
     write_original_filename_to_exif,
     get_original_filename_from_exif,
@@ -23,14 +26,11 @@ from modules.exif_undo_manager import (
     clear_original_filename_from_exif,
     has_original_filename,
     get_rename_info,
-    _read_existing_user_comment,
     ORIGINAL_NAME_PREFIX,
     RENAME_DATE_PREFIX,
     EXIF_USER_COMMENT_FIELD,
+    PRESERVED_FILENAME_TAG,
 )
-
-
-FAKE_EXIFTOOL = r"C:\fake\exiftool.exe"
 
 
 # ---------------------------------------------------------------------------
@@ -45,140 +45,47 @@ def _completed(returncode: int = 0, stdout: str = "", stderr: str = ""):
     return cp
 
 
-# ---------------------------------------------------------------------------
-# write_original_filename_to_exif
-# ---------------------------------------------------------------------------
-class TestWriteOriginalFilename:
-    """Test individual write operations."""
-
-    def test_missing_file_returns_error(self, tmp_path):
-        ok, msg = write_original_filename_to_exif(
-            str(tmp_path / "nope.jpg"), "orig.jpg", FAKE_EXIFTOOL
-        )
-        assert ok is False
-        assert "not found" in msg.lower()
-
-    def test_missing_exiftool_returns_error(self, tmp_path):
-        f = tmp_path / "img.jpg"
-        f.touch()
-        ok, msg = write_original_filename_to_exif(str(f), "orig.jpg", "")
-        assert ok is False
-        assert "not found" in msg.lower()
-
-    @patch("modules.exif_undo_manager.subprocess.run")
-    @patch("modules.exif_undo_manager._read_existing_user_comment", return_value=None)
-    def test_successful_write(self, _mock_read, mock_run, tmp_path):
-        f = tmp_path / "DSC00001.jpg"
-        f.touch()
-        mock_run.return_value = _completed(0)
-
-        with patch("os.path.exists", return_value=True):
-            ok, msg = write_original_filename_to_exif(
-                str(f), "DSC00001.jpg", FAKE_EXIFTOOL
-            )
-
-        assert ok is True
-        assert "written" in msg.lower()
-        # Verify the constructed command
-        args = mock_run.call_args[0][0]
-        assert "-overwrite_original" in args
-        written_tag = [a for a in args if EXIF_USER_COMMENT_FIELD in a]
-        assert len(written_tag) == 1
-        assert ORIGINAL_NAME_PREFIX in written_tag[0]
-        assert RENAME_DATE_PREFIX.strip() in written_tag[0]
-
-    @patch("modules.exif_undo_manager.subprocess.run")
-    @patch("modules.exif_undo_manager._read_existing_user_comment", return_value=None)
-    def test_write_without_timestamp(self, _mock_read, mock_run, tmp_path):
-        f = tmp_path / "DSC00002.jpg"
-        f.touch()
-        mock_run.return_value = _completed(0)
-
-        with patch("os.path.exists", return_value=True):
-            ok, _ = write_original_filename_to_exif(
-                str(f), "DSC00002.jpg", FAKE_EXIFTOOL, add_timestamp=False
-            )
-
-        assert ok is True
-        tag_arg = [a for a in mock_run.call_args[0][0] if EXIF_USER_COMMENT_FIELD in a][0]
-        assert RENAME_DATE_PREFIX.strip() not in tag_arg
-
-    @patch("modules.exif_undo_manager.subprocess.run")
-    @patch("modules.exif_undo_manager._read_existing_user_comment", return_value=None)
-    def test_exiftool_failure(self, _mock_read, mock_run, tmp_path):
-        f = tmp_path / "DSC00003.jpg"
-        f.touch()
-        mock_run.return_value = _completed(1, stderr="write error")
-
-        with patch("os.path.exists", return_value=True):
-            ok, msg = write_original_filename_to_exif(
-                str(f), "DSC00003.jpg", FAKE_EXIFTOOL
-            )
-
-        assert ok is False
-        assert "error" in msg.lower()
-
-    @patch("modules.exif_undo_manager.subprocess.run", side_effect=subprocess.TimeoutExpired("cmd", 30))
-    @patch("modules.exif_undo_manager._read_existing_user_comment", return_value=None)
-    def test_timeout(self, _mock_read, _mock_run, tmp_path):
-        f = tmp_path / "DSC00004.jpg"
-        f.touch()
-
-        with patch("os.path.exists", return_value=True):
-            ok, msg = write_original_filename_to_exif(
-                str(f), "DSC00004.jpg", FAKE_EXIFTOOL
-            )
-
-        assert ok is False
-        assert "timed out" in msg.lower()
+@pytest.fixture
+def fake_exiftool(tmp_path):
+    """An existing file standing in for the ExifTool executable."""
+    exe = tmp_path / "exiftool"
+    exe.write_text("")
+    return str(exe)
 
 
-# ---------------------------------------------------------------------------
-# get_original_filename_from_exif
-# ---------------------------------------------------------------------------
-class TestGetOriginalFilename:
-    """Test individual read operations."""
+def _argfile_of(cmd):
+    return cmd[cmd.index("-@") + 1]
 
-    def test_missing_file(self, tmp_path):
-        result = get_original_filename_from_exif(
-            str(tmp_path / "nope.jpg"), FAKE_EXIFTOOL
-        )
-        assert result is None
 
-    @patch("modules.exif_undo_manager.subprocess.run")
-    def test_reads_original_name(self, mock_run, tmp_path):
-        f = tmp_path / "renamed.jpg"
-        f.touch()
-        mock_run.return_value = _completed(
-            0, stdout="OriginalName: DSC00100.jpg | RenameDate: 2026:01:01 12:00:00"
-        )
+class _FakeExifTool:
+    """Minimal in-memory stand-in for ExifTool's -@/-execute/-json behaviour."""
 
-        with patch("os.path.exists", return_value=True):
-            result = get_original_filename_from_exif(str(f), FAKE_EXIFTOOL)
+    def __init__(self):
+        self.tags = {}  # path -> {"PreservedFileName": ..., "UserComment": ...}
+        self.write_argfiles = []
 
-        assert result == "DSC00100.jpg"
-
-    @patch("modules.exif_undo_manager.subprocess.run")
-    def test_no_original_name_returns_none(self, mock_run, tmp_path):
-        f = tmp_path / "img.jpg"
-        f.touch()
-        mock_run.return_value = _completed(0, stdout="Just a regular comment")
-
-        with patch("os.path.exists", return_value=True):
-            result = get_original_filename_from_exif(str(f), FAKE_EXIFTOOL)
-
-        assert result is None
-
-    @patch("modules.exif_undo_manager.subprocess.run")
-    def test_empty_output(self, mock_run, tmp_path):
-        f = tmp_path / "img.jpg"
-        f.touch()
-        mock_run.return_value = _completed(0, stdout="")
-
-        with patch("os.path.exists", return_value=True):
-            result = get_original_filename_from_exif(str(f), FAKE_EXIFTOOL)
-
-        assert result is None
+    def __call__(self, cmd, timeout):
+        with open(_argfile_of(cmd), encoding="utf-8") as f:
+            lines = f.read().splitlines()
+        if "-json" in cmd:
+            entries = []
+            for path in lines:
+                entry = {"SourceFile": path}
+                entry.update(self.tags.get(path, {}))
+                entries.append(entry)
+            return _completed(0, stdout=json.dumps(entries))
+        # Write: blocks separated by -execute
+        self.write_argfiles.append(lines)
+        block = []
+        for line in lines + ["-execute"]:
+            if line != "-execute":
+                block.append(line)
+                continue
+            path = block[-1]
+            value = block[1].split("=", 1)[1]
+            self.tags.setdefault(path, {}).setdefault("PreservedFileName", value)
+            block = []
+        return _completed(0)
 
 
 # ---------------------------------------------------------------------------
@@ -187,8 +94,8 @@ class TestGetOriginalFilename:
 class TestBatchWrite:
     """Test batch write operations."""
 
-    def test_empty_list(self):
-        successes, errors = batch_write_original_filenames([], FAKE_EXIFTOOL)
+    def test_empty_list(self, fake_exiftool):
+        successes, errors = batch_write_original_filenames([], fake_exiftool)
         assert successes == []
         assert errors == []
 
@@ -201,45 +108,86 @@ class TestBatchWrite:
         assert len(successes) == 0
         assert len(errors) == 1
 
-    @patch("modules.exif_undo_manager.subprocess.run")
-    def test_batch_success(self, mock_run, tmp_path):
+    def test_missing_file_reported(self, tmp_path, fake_exiftool):
+        successes, errors = batch_write_original_filenames(
+            [(str(tmp_path / "nope.jpg"), "orig.jpg")], fake_exiftool
+        )
+        assert successes == []
+        assert "not found" in errors[0][1].lower()
+
+    def test_each_file_gets_its_own_value(self, tmp_path, fake_exiftool):
+        """Regression: one command with several -TAG=VALUE applied the last
+        value to every file. Each file needs its own -execute block."""
         files = []
         for i in range(5):
-            f = tmp_path / f"DSC{i:05d}.jpg"
+            f = tmp_path / f"renamed_{i}.jpg"
             f.touch()
             files.append((str(f), f"DSC{i:05d}.jpg"))
 
-        mock_run.return_value = _completed(0)
+        fake = _FakeExifTool()
+        with patch.object(exif_undo_manager, "_run_exiftool", side_effect=fake):
+            successes, errors = batch_write_original_filenames(files, fake_exiftool)
 
-        with patch("os.path.exists", return_value=True):
-            successes, errors = batch_write_original_filenames(files, FAKE_EXIFTOOL)
-
-        assert len(errors) == 0
+        assert errors == []
         assert len(successes) == 5
+        for path, original in files:
+            assert fake.tags[path]["PreservedFileName"] == original
+        lines = fake.write_argfiles[0]
+        assert lines.count("-execute") == 4
+        assert f"-{PRESERVED_FILENAME_TAG}-=" in lines  # create-only
 
-    @patch("modules.exif_undo_manager.subprocess.run")
-    @patch("modules.exif_undo_manager.write_original_filename_to_exif")
-    def test_batch_fallback_on_error(self, mock_individual, mock_run, tmp_path):
-        """When batch fails, falls back to individual writes."""
-        f = tmp_path / "img.jpg"
+    def test_file_not_confirmed_is_an_error(self, tmp_path, fake_exiftool):
+        f = tmp_path / "clip.mp4"
         f.touch()
-        mock_run.return_value = _completed(1, stderr="batch error")
-        mock_individual.return_value = (True, "ok")
 
-        with patch("os.path.exists", return_value=True):
-            successes, errors = batch_write_original_filenames(
-                [(str(f), "img.jpg")], FAKE_EXIFTOOL
-            )
+        def run(cmd, timeout):
+            if "-json" in cmd:
+                return _completed(0, stdout=json.dumps([{"SourceFile": str(f)}]))
+            return _completed(1, stderr="Error: can't write this")
 
-        assert mock_individual.called
-        assert len(successes) == 1
+        with patch.object(exif_undo_manager, "_run_exiftool", side_effect=run):
+            successes, errors = batch_write_original_filenames([(str(f), "C0001.MP4")], fake_exiftool)
+
+        assert successes == []
+        assert "can't write" in errors[0][1]
+
+    def test_timeout_is_an_error(self, tmp_path, fake_exiftool):
+        f = tmp_path / "a.jpg"
+        f.touch()
+
+        def run(cmd, timeout):
+            if "-json" in cmd:
+                return _completed(0, stdout="[]")
+            raise subprocess.TimeoutExpired(cmd, timeout)
+
+        with patch.object(exif_undo_manager, "_run_exiftool", side_effect=run):
+            successes, errors = batch_write_original_filenames([(str(f), "a0.jpg")], fake_exiftool)
+
+        assert successes == []
+        assert "timed out" in errors[0][1].lower()
+
+    def test_single_write_wrapper(self, tmp_path, fake_exiftool):
+        f = tmp_path / "DSC00001.jpg"
+        f.touch()
+        fake = _FakeExifTool()
+        with patch.object(exif_undo_manager, "_run_exiftool", side_effect=fake):
+            ok, msg = write_original_filename_to_exif(str(f), "ORIG.jpg", fake_exiftool)
+        assert ok is True
+        assert "written" in msg.lower()
+
+    def test_single_write_missing_file(self, tmp_path, fake_exiftool):
+        ok, msg = write_original_filename_to_exif(
+            str(tmp_path / "nope.jpg"), "orig.jpg", fake_exiftool
+        )
+        assert ok is False
+        assert "not found" in msg.lower()
 
 
 # ---------------------------------------------------------------------------
-# batch_get_original_filenames
+# Reading (batch_get_original_filenames, get_original_filename_from_exif,
+# get_rename_info)
 # ---------------------------------------------------------------------------
-class TestBatchGet:
-    """Test batch read operations."""
+class TestRead:
 
     def test_no_exiftool(self, tmp_path):
         f = tmp_path / "a.jpg"
@@ -247,51 +195,55 @@ class TestBatchGet:
         result = batch_get_original_filenames([str(f)], "")
         assert result[str(f)] is None
 
-    @patch("modules.exif_undo_manager.subprocess.run")
-    def test_batch_json_parse(self, mock_run, tmp_path):
+    def test_preserved_filename_preferred(self, tmp_path, fake_exiftool):
         f1 = tmp_path / "renamed1.jpg"
         f2 = tmp_path / "renamed2.jpg"
         f1.touch()
         f2.touch()
-
         json_out = json.dumps([
-            {
-                "SourceFile": str(f1),
-                "FileName": "renamed1.jpg",
-                "UserComment": "OriginalName: DSC01.jpg | RenameDate: 2026:01:01 12:00:00",
-            },
-            {
-                "SourceFile": str(f2),
-                "FileName": "renamed2.jpg",
-                "UserComment": "OriginalName: DSC02.jpg | RenameDate: 2026:01:01 12:01:00",
-            },
+            {"SourceFile": str(f1), "PreservedFileName": "DSC01.jpg",
+             "UserComment": "OriginalName: OLD.jpg | RenameDate: 2026:01:01 12:00:00"},
+            {"SourceFile": str(f2),
+             "UserComment": "OriginalName: DSC02.jpg | RenameDate: 2026:01:01 12:01:00"},
         ])
-        mock_run.return_value = _completed(0, stdout=json_out)
-
-        with patch("os.path.exists", return_value=True):
-            result = batch_get_original_filenames([str(f1), str(f2)], FAKE_EXIFTOOL)
+        with patch.object(exif_undo_manager, "_run_exiftool", return_value=_completed(0, stdout=json_out)):
+            result = batch_get_original_filenames([str(f1), str(f2)], fake_exiftool)
 
         assert result[str(f1)] == "DSC01.jpg"
-        assert result[str(f2)] == "DSC02.jpg"
+        assert result[str(f2)] == "DSC02.jpg"  # legacy format still read
 
-    @patch("modules.exif_undo_manager.subprocess.run")
-    def test_no_original_returns_none(self, mock_run, tmp_path):
+    def test_nonzero_exit_still_parsed(self, tmp_path, fake_exiftool):
+        """ExifTool exits 1 if one file is unreadable but prints JSON for the rest."""
+        f = tmp_path / "ok.jpg"
+        f.touch()
+        json_out = json.dumps([{"SourceFile": str(f), "PreservedFileName": "A.jpg"}])
+        with patch.object(exif_undo_manager, "_run_exiftool",
+                          return_value=_completed(1, stdout=json_out, stderr="Error: File not found")):
+            result = batch_get_original_filenames([str(f)], fake_exiftool)
+        assert result[str(f)] == "A.jpg"
+
+    def test_plain_user_comment_ignored(self, tmp_path, fake_exiftool):
         f = tmp_path / "photo.jpg"
         f.touch()
+        json_out = json.dumps([{"SourceFile": str(f), "UserComment": "Holiday at the lake"}])
+        with patch.object(exif_undo_manager, "_run_exiftool", return_value=_completed(0, stdout=json_out)):
+            assert get_original_filename_from_exif(str(f), fake_exiftool) is None
 
-        json_out = json.dumps([
-            {
-                "SourceFile": str(f),
-                "FileName": "photo.jpg",
-                "UserComment": "",
-            },
-        ])
-        mock_run.return_value = _completed(0, stdout=json_out)
+    def test_missing_file(self, tmp_path, fake_exiftool):
+        assert get_original_filename_from_exif(str(tmp_path / "nope.jpg"), fake_exiftool) is None
 
-        with patch("os.path.exists", return_value=True):
-            result = batch_get_original_filenames([str(f)], FAKE_EXIFTOOL)
+    def test_rename_info_legacy_date(self, tmp_path, fake_exiftool):
+        f = tmp_path / "img.jpg"
+        f.touch()
+        json_out = json.dumps([{"SourceFile": str(f),
+                                "UserComment": "OriginalName: DSC.jpg | RenameDate: 2026:02:07 10:00:00"}])
+        with patch.object(exif_undo_manager, "_run_exiftool", return_value=_completed(0, stdout=json_out)):
+            info = get_rename_info(str(f), fake_exiftool)
+        assert info == {"original_filename": "DSC.jpg", "rename_date": "2026:02:07 10:00:00"}
 
-        assert result[str(f)] is None
+    def test_rename_info_nonexistent_file(self, tmp_path, fake_exiftool):
+        info = get_rename_info(str(tmp_path / "nope.jpg"), fake_exiftool)
+        assert info == {"original_filename": None, "rename_date": None}
 
 
 # ---------------------------------------------------------------------------
@@ -299,23 +251,33 @@ class TestBatchGet:
 # ---------------------------------------------------------------------------
 class TestClearOriginalFilename:
 
-    def test_missing_file(self, tmp_path):
-        ok, _ = clear_original_filename_from_exif(
-            str(tmp_path / "nope.jpg"), FAKE_EXIFTOOL
-        )
+    def test_missing_file(self, tmp_path, fake_exiftool):
+        ok, _ = clear_original_filename_from_exif(str(tmp_path / "nope.jpg"), fake_exiftool)
         assert ok is False
 
-    @patch("modules.exif_undo_manager.subprocess.run")
-    def test_clear_success(self, mock_run, tmp_path):
+    @pytest.mark.parametrize("comment, clears_comment", [
+        ("OriginalName: DSC.jpg | RenameDate: 2026:01:01 10:00:00", True),
+        ("My own comment", False),
+    ])
+    def test_user_comment_only_cleared_if_ours(self, tmp_path, fake_exiftool, comment, clears_comment):
         f = tmp_path / "img.jpg"
         f.touch()
-        mock_run.return_value = _completed(0)
+        calls = []
 
-        with patch("os.path.exists", return_value=True):
-            ok, msg = clear_original_filename_from_exif(str(f), FAKE_EXIFTOOL)
+        def run(cmd, timeout):
+            calls.append(cmd)
+            if "-json" in cmd:
+                return _completed(0, stdout=json.dumps([{"SourceFile": str(f), "UserComment": comment}]))
+            return _completed(0)
+
+        with patch.object(exif_undo_manager, "_run_exiftool", side_effect=run):
+            ok, msg = clear_original_filename_from_exif(str(f), fake_exiftool)
 
         assert ok is True
         assert "cleared" in msg.lower()
+        write_cmd = calls[-1]
+        assert f"-{PRESERVED_FILENAME_TAG}=" in write_cmd
+        assert (f"-{EXIF_USER_COMMENT_FIELD}=" in write_cmd) is clears_comment
 
 
 # ---------------------------------------------------------------------------
@@ -325,76 +287,15 @@ class TestHasOriginalFilename:
 
     @patch("modules.exif_undo_manager.get_original_filename_from_exif", return_value="DSC.jpg")
     def test_returns_true(self, _mock):
-        assert has_original_filename("file.jpg", FAKE_EXIFTOOL) is True
+        assert has_original_filename("file.jpg", "exiftool") is True
 
     @patch("modules.exif_undo_manager.get_original_filename_from_exif", return_value=None)
     def test_returns_false(self, _mock):
-        assert has_original_filename("file.jpg", FAKE_EXIFTOOL) is False
+        assert has_original_filename("file.jpg", "exiftool") is False
 
     @patch("modules.exif_undo_manager.get_original_filename_from_exif", return_value="")
     def test_empty_string_returns_false(self, _mock):
-        assert has_original_filename("file.jpg", FAKE_EXIFTOOL) is False
-
-
-# ---------------------------------------------------------------------------
-# get_rename_info
-# ---------------------------------------------------------------------------
-class TestGetRenameInfo:
-
-    @patch("modules.exif_undo_manager.subprocess.run")
-    def test_parses_full_info(self, mock_run, tmp_path):
-        f = tmp_path / "img.jpg"
-        f.touch()
-        mock_run.return_value = _completed(
-            0, stdout="OriginalName: DSC.jpg | RenameDate: 2026:02:07 10:00:00"
-        )
-
-        with patch("os.path.exists", return_value=True):
-            info = get_rename_info(str(f), FAKE_EXIFTOOL)
-
-        assert info["original_filename"] == "DSC.jpg"
-        assert info["rename_date"] == "2026:02:07 10:00:00"
-
-    @patch("modules.exif_undo_manager.subprocess.run")
-    def test_no_metadata(self, mock_run, tmp_path):
-        f = tmp_path / "img.jpg"
-        f.touch()
-        mock_run.return_value = _completed(0, stdout="")
-
-        with patch("os.path.exists", return_value=True):
-            info = get_rename_info(str(f), FAKE_EXIFTOOL)
-
-        assert info["original_filename"] is None
-        assert info["rename_date"] is None
-
-    def test_nonexistent_file(self, tmp_path):
-        info = get_rename_info(str(tmp_path / "nope.jpg"), FAKE_EXIFTOOL)
-        assert info["original_filename"] is None
-        assert info["rename_date"] is None
-
-
-# ---------------------------------------------------------------------------
-# _read_existing_user_comment
-# ---------------------------------------------------------------------------
-class TestReadExistingUserComment:
-
-    @patch("modules.exif_undo_manager.subprocess.run")
-    def test_reads_value(self, mock_run):
-        mock_run.return_value = _completed(0, stdout="Some user comment")
-        with patch("os.path.exists", return_value=True):
-            result = _read_existing_user_comment("img.jpg", FAKE_EXIFTOOL)
-        assert result == "Some user comment"
-
-    @patch("modules.exif_undo_manager.subprocess.run")
-    def test_empty_returns_none(self, mock_run):
-        mock_run.return_value = _completed(0, stdout="")
-        result = _read_existing_user_comment("img.jpg", FAKE_EXIFTOOL)
-        assert result is None
-
-    @patch("modules.exif_undo_manager.subprocess.run", side_effect=Exception("fail"))
-    def test_exception_returns_none(self, _mock):
-        result = _read_existing_user_comment("img.jpg", FAKE_EXIFTOOL)
-        assert result is None
+        assert has_original_filename("file.jpg", "exiftool") is False
 
 
 # ---------------------------------------------------------------------------
@@ -406,3 +307,4 @@ class TestConstants:
         assert ORIGINAL_NAME_PREFIX == "OriginalName: "
         assert RENAME_DATE_PREFIX == " | RenameDate: "
         assert EXIF_USER_COMMENT_FIELD == "EXIF:UserComment"
+        assert PRESERVED_FILENAME_TAG == "XMP-xmpMM:PreservedFileName"

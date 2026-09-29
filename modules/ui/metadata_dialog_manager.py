@@ -28,7 +28,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from ..file_utilities import is_media_file, is_video_file
-from ..exif_service_new import EXIFTOOL_AVAILABLE
+from ..exif_service_new import EXIFTOOL_AVAILABLE, format_exposure_time
 from ..handlers import extract_image_number
 from ..exif_undo_manager import get_rename_info
 
@@ -252,26 +252,23 @@ class MetadataDialogManager:
                 except (ValueError, IndexError):
                     continue
         
-        # Helper function to add metadata row with checkbox
+        # Helper function to add metadata row, with a checkbox only for
+        # fields that can be resolved per file at rename time
+        # (FILENAME_METADATA_KEYS) - other values are shown for information.
         def add_metadata_row(parent_layout, label_text, value, metadata_key=None, checked=False):
             if value and value != 'Unknown':
                 row_layout = QHBoxLayout()
                 row_layout.setContentsMargins(0, 2, 0, 2)
-                
-                # Check if this metadata is already selected (for persistence)
-                is_selected = False
-                if metadata_key:
-                    is_selected = metadata_key in self.parent.selected_metadata
-                    
-                # Checkbox for filename inclusion
-                checkbox = QCheckBox()
-                checkbox.setChecked(is_selected or checked)
-                if metadata_key:
-                    # Add flag to distinguish user actions from programmatic changes
-                    checkbox.toggled.connect(lambda checked, key=metadata_key, val=value: 
-                                           self.on_metadata_checkbox_changed(key, val, checked, user_action=True))
-                checkbox.setToolTip(f"Include {label_text.lower()} in filename")
-                row_layout.addWidget(checkbox)
+
+                if metadata_key in self.FILENAME_METADATA_KEYS:
+                    checkbox = QCheckBox()
+                    checkbox.setChecked(self._is_included(metadata_key) or checked)
+                    checkbox.toggled.connect(lambda checked, key=metadata_key, val=value:
+                                             self.on_metadata_checkbox_changed(key, val, checked, user_action=True))
+                    checkbox.setToolTip(f"Include {label_text.lower()} in filename (read from each file)")
+                    row_layout.addWidget(checkbox)
+                else:
+                    row_layout.addSpacing(QCheckBox().sizeHint().width())
                 
                 # Label
                 label = QLabel(f"{label_text}: {value}")
@@ -325,12 +322,8 @@ class MetadataDialogManager:
         camera = f"{make} {model}".strip()
         lens = metadata_dict.get('EXIF:LensModel', metadata_dict.get('MakerNotes:LensSpec', ''))
         
-        # Synchronize with main window checkboxes - combine both states
-        camera_checked = self.parent.checkbox_camera.isChecked() or ('camera' in self.parent.selected_metadata)
-        lens_checked = self.parent.checkbox_lens.isChecked() or ('lens' in self.parent.selected_metadata)
-        
-        add_metadata_row(layout, "Camera", camera if camera else 'Unknown', 'camera', camera_checked)
-        add_metadata_row(layout, "Lens", lens, 'lens', lens_checked)
+        add_metadata_row(layout, "Camera", camera if camera else 'Unknown', 'camera')
+        add_metadata_row(layout, "Lens", lens, 'lens')
         
         # SHOOTING SETTINGS section
         shooting_section = QLabel("⚙️ SHOOTING SETTINGS")
@@ -351,15 +344,7 @@ class MetadataDialogManager:
         
         exposure_time = metadata_dict.get('EXIF:ExposureTime', '')
         if exposure_time:
-            try:
-                exp_val = float(exposure_time)
-                if exp_val < 1:
-                    shutter_display = f"1/{int(1/exp_val)}s"
-                else:
-                    shutter_display = f"{exp_val}s"
-                add_metadata_row(layout, "Shutter", shutter_display, 'shutter')
-            except (ValueError, TypeError, ZeroDivisionError):
-                add_metadata_row(layout, "Shutter", exposure_time, 'shutter')
+            add_metadata_row(layout, "Shutter", format_exposure_time(exposure_time) or exposure_time, 'shutter')
         
         focal_length = metadata_dict.get('EXIF:FocalLength', '')
         if focal_length:
@@ -432,74 +417,66 @@ class MetadataDialogManager:
         
         return scroll_area
     
+    # Metadata-dialog fields that can go into the filename. Each is resolved
+    # per file at rename time: camera/lens/date map to the main window's
+    # checkboxes, the shooting settings to boolean flags in selected_metadata
+    # (see BOOLEAN_META_KEYS in filename_components.py). Storing the value
+    # shown in the dialog instead would name every file after this one file.
+    FILENAME_METADATA_KEYS = ('camera', 'lens', 'date', 'iso', 'aperture', 'shutter', 'focal_length')
+    _SHOOTING_SETTING_KEYS = ('iso', 'aperture', 'shutter', 'focal_length')
+
+    def _main_checkbox_for(self, metadata_key):
+        return {
+            'camera': self.parent.checkbox_camera,
+            'lens': self.parent.checkbox_lens,
+            'date': self.parent.checkbox_date,
+        }.get(metadata_key)
+
+    def _is_included(self, metadata_key):
+        checkbox = self._main_checkbox_for(metadata_key)
+        if checkbox is not None:
+            return checkbox.isChecked()
+        return self.parent.selected_metadata.get(metadata_key) is True
+
     def on_metadata_checkbox_changed(self, metadata_key, value, checked, user_action=False):
         """Handle metadata checkbox changes for filename inclusion"""
-        # Initialize metadata inclusion dict if not exists
-        if checked:
-            # SIMPLIFIED FIX: Store boolean flags instead of placeholders
-            # This tells the rename engine which metadata types to extract
-            if metadata_key in ['aperture', 'iso', 'focal_length', 'shutter', 'shutter_speed', 'exposure_bias']:
-                # For EXIF metadata, store True to indicate extraction needed
-                self.parent.selected_metadata[metadata_key] = True
-            else:
-                # For camera/lens, store the actual value (these are typically the same for all files)
-                self.parent.selected_metadata[metadata_key] = value
-        else:
-            self.parent.selected_metadata.pop(metadata_key, None)
-        
-        # Only synchronize with main window checkboxes if this is a user action
-        # This prevents automatic sync when dialog is reopened with existing selected_metadata
-        if user_action:
-            if metadata_key == 'camera':
-                self.parent.checkbox_camera.setChecked(checked)
-            elif metadata_key == 'lens':
-                self.parent.checkbox_lens.setChecked(checked)
-        
+        main_checkbox = self._main_checkbox_for(metadata_key)
+        if main_checkbox is not None:
+            # Triggers the main window's own handler and preview update
+            main_checkbox.setChecked(checked)
+            return
+
+        if metadata_key in self._SHOOTING_SETTING_KEYS:
+            self._set_shooting_flag(metadata_key, checked)
+            shooting_checkbox = self.parent.shooting_setting_checkboxes.get(metadata_key)
+            if shooting_checkbox is not None:
+                shooting_checkbox.blockSignals(True)
+                shooting_checkbox.setChecked(checked)
+                shooting_checkbox.blockSignals(False)
+
         # Update preview to show new filename format immediately
         self.parent.update_preview()
+
+    def _set_shooting_flag(self, metadata_key, checked):
+        if checked:
+            # True = "resolve this value from each file at rename time"
+            self.parent.selected_metadata[metadata_key] = True
+        else:
+            self.parent.selected_metadata.pop(metadata_key, None)
     
     def on_camera_checkbox_changed(self):
-        """Handle camera checkbox changes and sync with metadata"""
-        checked = self.parent.checkbox_camera.isChecked()
-        
-        # Update selected_metadata first - BEFORE updating preview
-        if checked:
-            # Only add if we have valid camera info and it's not already there
-            camera_info = self.parent.camera_model_label.text()
-            # Remove parentheses if present (e.g., "(ILCE-7CM2)" -> "ILCE-7CM2")
-            if camera_info.startswith('(') and camera_info.endswith(')'):
-                camera_info = camera_info[1:-1]
-            
-            if camera_info and camera_info not in ["detecting...", "not detected", "no files selected"] and 'camera' not in self.parent.selected_metadata:
-                self.parent.selected_metadata['camera'] = camera_info
-        else:
-            # Remove camera from selected metadata when checkbox is unchecked
-            if 'camera' in self.parent.selected_metadata:
-                self.parent.selected_metadata.pop('camera', None)
-        
-        # Now update preview with the corrected metadata
+        """Handle camera checkbox changes.
+
+        The camera model is read from every file at rename time; nothing is
+        stored in selected_metadata (a fixed value there would override the
+        per-file model for the whole batch).
+        """
+        self.parent.selected_metadata.pop('camera', None)
         self.parent.update_preview()
     
     def on_lens_checkbox_changed(self):
-        """Handle lens checkbox changes and sync with metadata"""
-        checked = self.parent.checkbox_lens.isChecked()
-        
-        # Update selected_metadata first - BEFORE updating preview
-        if checked:
-            # Only add if we have valid lens info and it's not already there
-            lens_info = self.parent.lens_model_label.text()
-            # Remove parentheses if present (e.g., "(FE-20-70mm-F4-G)" -> "FE-20-70mm-F4-G")
-            if lens_info.startswith('(') and lens_info.endswith(')'):
-                lens_info = lens_info[1:-1]
-            
-            if lens_info and lens_info not in ["detecting...", "not detected", "no files selected"] and 'lens' not in self.parent.selected_metadata:
-                self.parent.selected_metadata['lens'] = lens_info
-        else:
-            # Remove lens from selected metadata when checkbox is unchecked
-            if 'lens' in self.parent.selected_metadata:
-                self.parent.selected_metadata.pop('lens', None)
-        
-        # Now update preview with the corrected metadata
+        """Handle lens checkbox changes (resolved per file, see camera)."""
+        self.parent.selected_metadata.pop('lens', None)
         self.parent.update_preview()
     
     def on_shooting_setting_checkbox_changed(self, key):
@@ -512,8 +489,8 @@ class MetadataDialogManager:
         'iso', 'aperture', 'shutter', 'focal_length' this way).
         """
         checkbox = self.parent.shooting_setting_checkboxes[key]
-        checked = checkbox.isChecked()
-        self.on_metadata_checkbox_changed(key, True, checked, user_action=True)
+        self._set_shooting_flag(key, checkbox.isChecked())
+        self.parent.update_preview()
     
     def extract_essential_metadata(self, full_metadata, file_path):
         """Extract the most relevant metadata for human users"""
@@ -572,15 +549,7 @@ class MetadataDialogManager:
         
         exposure_time = metadata_dict.get('EXIF:ExposureTime', '')
         if exposure_time:
-            # Convert decimal to fraction for readability
-            try:
-                exp_val = float(exposure_time)
-                if exp_val < 1:
-                    essential_text += f"Shutter: 1/{int(1/exp_val)}s\n"
-                else:
-                    essential_text += f"Shutter: {exp_val}s\n"
-            except (ValueError, TypeError, ZeroDivisionError):
-                essential_text += f"Shutter: {exposure_time}\n"
+            essential_text += f"Shutter: {format_exposure_time(exposure_time) or exposure_time}\n"
         
         focal_length = metadata_dict.get('EXIF:FocalLength', '')
         focal_length_35 = metadata_dict.get('EXIF:FocalLengthIn35mmFormat', '')

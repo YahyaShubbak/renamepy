@@ -16,7 +16,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\install.ps1"
 
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo Installation finished with errors (exit code: %ERRORLEVEL%).
+    REM Parentheses inside an if-block must be escaped (caret before them)
+    echo Installation finished with errors ^(exit code: %ERRORLEVEL%^).
     echo.
 )
 

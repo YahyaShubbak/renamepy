@@ -29,7 +29,22 @@ DEFAULT_SAFETY_FACTOR = 2.0
 # app is installed somewhere like Program Files.
 _legacy_project_root = os.path.realpath(os.path.join(os.path.dirname(__file__), '..'))
 _LEGACY_SAFETY_FACTOR_FILE = os.path.join(_legacy_project_root, '.benchmark_calibration.json')
-SAFETY_FACTOR_FILE = os.path.join(get_app_data_dir(), 'benchmark_calibration.json')
+
+
+def _safety_factor_file() -> str:
+    """Calibration file in the app-data directory.
+
+    Resolved on use rather than at import time: before QApplication has its
+    name set, QStandardPaths returns the generic data directory (e.g. plain
+    ~/.local/share), which would scatter the file outside the app's folder.
+    """
+    return os.path.join(get_app_data_dir(), 'benchmark_calibration.json')
+
+
+def _interrupted() -> bool:
+    """True if the benchmark runs in a QThread whose interruption was requested."""
+    thread = QThread.currentThread()
+    return thread is not None and thread.isInterruptionRequested()
 
 # EXIF field patterns that may appear in filename patterns
 EXIF_FIELD_PATTERNS = [
@@ -165,6 +180,9 @@ class PerformanceBenchmark:
             logger.info(f"Starting {len(scenarios)} benchmark scenarios...")
             
             for i, (exif_count, text_count, with_exif_save) in enumerate(scenarios, 1):
+                if _interrupted():
+                    logger.info("Benchmark interrupted")
+                    return
                 logger.info(f"Running scenario {i}/{len(scenarios)}: {exif_count} EXIF, {text_count} text, EXIF save={with_exif_save}")
                 
                 result = self._benchmark_scenario(
@@ -246,6 +264,8 @@ class PerformanceBenchmark:
             
             renamed_files = []
             for test_file in test_files:
+                if _interrupted():
+                    break
                 # REAL EXIF extraction (not cached!) - this is what takes time
                 if bench_svc is not None:
                     # This is the expensive operation - actual ExifTool call
@@ -280,11 +300,14 @@ class PerformanceBenchmark:
                 renamed_files.append(new_name)
             
             elapsed_time = time.perf_counter() - start_time
-            per_file_time = elapsed_time / len(renamed_files)
             
             # Clean up the benchmark ExifService instance
             if bench_svc is not None:
                 bench_svc.cleanup()
+
+            if not renamed_files:
+                return None
+            per_file_time = elapsed_time / len(renamed_files)
             
             return BenchmarkResult(
                 exif_field_count=exif_field_count,
@@ -376,8 +399,8 @@ class PerformanceBenchmark:
         """Load calibrated safety factor from file, or return default."""
         self._migrate_legacy_safety_factor_file()
         try:
-            if os.path.exists(SAFETY_FACTOR_FILE):
-                with open(SAFETY_FACTOR_FILE, 'r') as f:
+            if os.path.exists(_safety_factor_file()):
+                with open(_safety_factor_file(), 'r') as f:
                     data = json.load(f)
                     factor = data.get('safety_factor', DEFAULT_SAFETY_FACTOR)
                     # Clamp to sane range even on load
@@ -398,11 +421,11 @@ class PerformanceBenchmark:
         repeatedly - it's a no-op once the legacy file is gone.
         """
         try:
-            if os.path.exists(_LEGACY_SAFETY_FACTOR_FILE) and not os.path.exists(SAFETY_FACTOR_FILE):
-                shutil.copyfile(_LEGACY_SAFETY_FACTOR_FILE, SAFETY_FACTOR_FILE)
+            if os.path.exists(_LEGACY_SAFETY_FACTOR_FILE) and not os.path.exists(_safety_factor_file()):
+                shutil.copyfile(_LEGACY_SAFETY_FACTOR_FILE, _safety_factor_file())
                 logger.info(
                     f"Migrated benchmark calibration from {_LEGACY_SAFETY_FACTOR_FILE} "
-                    f"to {SAFETY_FACTOR_FILE}"
+                    f"to {_safety_factor_file()}"
                 )
                 try:
                     os.remove(_LEGACY_SAFETY_FACTOR_FILE)
@@ -419,10 +442,10 @@ class PerformanceBenchmark:
                 'last_updated': time.time()
             }
             # Write atomically via temp file to avoid corruption on crash
-            tmp_path = SAFETY_FACTOR_FILE + '.tmp'
+            tmp_path = _safety_factor_file() + '.tmp'
             with open(tmp_path, 'w') as f:
                 json.dump(data, f, indent=2)
-            os.replace(tmp_path, SAFETY_FACTOR_FILE)
+            os.replace(tmp_path, _safety_factor_file())
             logger.info(f"Saved calibrated safety factor: {self.safety_factor:.2f}")
         except Exception as e:
             logger.debug(f"Could not save safety factor: {e}")

@@ -120,11 +120,7 @@ function Start-RenamePy {
             & $CondaTool run -n $EnvName python (Join-Path $PROJECT_ROOT "RenameFiles.py")
         }
         else {
-            $pythonExe = Join-Path $PROJECT_ROOT "$EnvName\Scripts\python.exe"
-            if (-not (Test-Path $pythonExe)) {
-                $pythonExe = $script:PythonExe
-            }
-            & $pythonExe (Join-Path $PROJECT_ROOT "RenameFiles.py")
+            & (Get-VenvPython -EnvName $EnvName) (Join-Path $PROJECT_ROOT "RenameFiles.py")
         }
     }
     catch {
@@ -302,6 +298,8 @@ function New-CondaEnvironment {
         $response = Read-Host "Delete and recreate the environment? [y/[N]]"
         
         if ($response -match "^[yY]") {
+            Write-Log -Message "Deleting existing environment..." -Level "Info"
+            & $CondaTool env remove -n $EnvName -y
             if ($LASTEXITCODE -ne 0) {
                 Write-Error-Custom "Could not delete environment"
                 return $false
@@ -360,7 +358,19 @@ function New-VenvEnvironment {
 }
 
 # ============================================================================
-# Function: Activate environment and install packages
+# Function: Path of the venv's python.exe / pythonw.exe
+# ============================================================================
+function Get-VenvPython {
+    param(
+        [string]$EnvName,
+        [switch]$Windowed
+    )
+    $exe = if ($Windowed) { "pythonw.exe" } else { "python.exe" }
+    return Join-Path (Join-Path $PROJECT_ROOT $EnvName) "Scripts\$exe"
+}
+
+# ============================================================================
+# Function: Install packages into the environment
 # ============================================================================
 function Install-Packages {
     param(
@@ -377,29 +387,25 @@ function Install-Packages {
     Write-Log -Message "Installing packages with pip..." -Level "Info"
     Write-Host ""
     
-    # Activate venv or conda environment
     if ($UsesConda) {
         # Use conda run instead of activating
         Write-Log -Message "Using conda for installation..." -Level "Debug"
-        & $CondaTool run -n $EnvName pip install --upgrade pip --progress-bar on
-        & $CondaTool run -n $EnvName pip install -r $REQUIREMENTS_FILE --progress-bar on
+        & $CondaTool run -n $EnvName python -m pip install --upgrade pip --progress-bar on
+        & $CondaTool run -n $EnvName python -m pip install -r $REQUIREMENTS_FILE --progress-bar on
     }
     else {
-        # Activate venv
-        $venvPath = Join-Path $PROJECT_ROOT $EnvName
-        $activateScript = Join-Path $venvPath "Scripts\Activate.ps1"
-        
-        if (-not (Test-Path $activateScript)) {
-            Write-Error-Custom "Activate.ps1 not found: $activateScript"
+        # Call the venv's own python.exe. $script:PythonExe is the *system*
+        # Python (an absolute path found via the py launcher), so running pip
+        # through it would install the packages outside the venv - even with
+        # the venv activated - and the app would then fail to start.
+        $venvPython = Get-VenvPython -EnvName $EnvName
+        if (-not (Test-Path $venvPython)) {
+            Write-Error-Custom "venv Python not found: $venvPython"
             return $false
         }
-        
-        & $activateScript
-        & $script:PythonExe -m pip install --upgrade pip --progress-bar on
-        & $script:PythonExe -m pip install -r $REQUIREMENTS_FILE --progress-bar on
-        $result = $LASTEXITCODE -eq 0
-        deactivate 2>$null
-        return $result
+
+        & $venvPython -m pip install --upgrade pip --progress-bar on
+        & $venvPython -m pip install -r $REQUIREMENTS_FILE --progress-bar on
     }
     
     if ($LASTEXITCODE -ne 0) {
@@ -496,27 +502,33 @@ function Test-ExifToolInstallation {
 function Test-InstallationSuccess {
     param(
         [string]$EnvName,
+        [string]$CondaTool = $null,
         [bool]$UsesConda = $false
     )
     
     Write-Log -Message "Validating installation..." -Level "Info"
-    
+
+    # Import the packages with the environment's own interpreter - checking
+    # only that the environment folder exists would not notice packages
+    # that were installed somewhere else.
+    $check = "import PyQt6.QtWidgets, exiftool; print('PyQt6 and PyExifTool OK')"
     if ($UsesConda) {
-        Write-Log -Message "Checking Conda environment..." -Level "Debug"
-        $envsList = & conda env list
-        if ($envsList -match $EnvName) {
-            Write-Success "Conda environment confirmed"
-            return $true
-        }
+        & $CondaTool run -n $EnvName python -c $check
     }
     else {
-        $venvPath = Join-Path $PROJECT_ROOT $EnvName
-        if (Test-Path $venvPath) {
-            Write-Success "Venv environment confirmed"
-            return $true
+        $venvPython = Get-VenvPython -EnvName $EnvName
+        if (-not (Test-Path $venvPython)) {
+            Write-Error-Custom "venv Python not found: $venvPython"
+            return $false
         }
+        & $venvPython -c $check
     }
-    
+
+    if ($LASTEXITCODE -eq 0) {
+        Write-Success "Environment '$EnvName' can import all required packages"
+        return $true
+    }
+    Write-Error-Custom "The environment '$EnvName' cannot import PyQt6/PyExifTool"
     return $false
 }
 
@@ -594,8 +606,11 @@ function Create-DesktopShortcut {
             $shortcut.Arguments = "/c `"call `"$activateBat`" $EnvName && python RenameFiles.py`""
         }
         else {
-            $venvPath = Join-Path $PROJECT_ROOT $EnvName
-            $pythonExe = Join-Path $venvPath "Scripts\python.exe"
+            # pythonw.exe: no console window next to the GUI
+            $pythonExe = Get-VenvPython -EnvName $EnvName -Windowed
+            if (-not (Test-Path $pythonExe)) {
+                $pythonExe = Get-VenvPython -EnvName $EnvName
+            }
             $shortcut.TargetPath = $pythonExe
             $shortcut.Arguments = "RenameFiles.py"
         }
@@ -713,7 +728,7 @@ function Main {
     Write-Host ""
     Write-Log -Message "========== Validation ==========" -Level "Info"
     
-    if (Test-InstallationSuccess -EnvName $VENV_NAME -UsesConda $usesConda) {
+    if (Test-InstallationSuccess -EnvName $VENV_NAME -CondaTool $condaInfo.Tool -UsesConda $usesConda) {
         Write-Success "Installation successfully validated!"
     }
     else {

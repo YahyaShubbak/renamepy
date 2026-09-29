@@ -23,7 +23,7 @@ A powerful and user-friendly PyQt6 application for batch renaming image files wi
 ### 🔧 **Advanced Options**
 - **Subdirectory Support**: Recursive folder scanning
 - **File Safety**: Access validation and conflict resolution
-- **Undo Functionality**: Restore original filenames
+- **Undo Functionality**: Restore original filenames, timestamps and EXIF dates — even after a crash or restart (undo journal)
 - **Batch Processing**: Handle hundreds of files efficiently
 - **Dark/Light Themes**: Customizable UI appearance
 
@@ -92,13 +92,15 @@ pip install PyExifTool>=0.5.5   # ExifTool Python wrapper (required)
 
 ### Option 1: Automated Installation (Recommended)
 
-**Linux (Arch / EndeavourOS / Ubuntu / Debian):**
+**Linux (Arch / Manjaro / Debian / Ubuntu / Mint / Fedora / openSUSE) and macOS:**
 ```bash
 git clone https://github.com/YahyaShubbak/renamepy.git
 cd renamepy
 ./install.sh
 ```
-The script handles everything: system dependencies (Qt6 libs, ExifTool), environment creation (Conda or venv), and package installation.
+The script handles everything: system dependencies (Qt6 libs and ExifTool via pacman/apt/dnf/zypper, or ExifTool via Homebrew on macOS), environment creation (Conda or venv with Python ≥ 3.10), package installation and an application-menu entry.
+
+> 💡 **macOS**: the system `python3` (Xcode tools) is 3.9, which is too old. `install.sh` looks for `python3.10`–`python3.13`; install one with `brew install python@3.12` if none is found.
 
 **Windows:**
 ```batch
@@ -106,7 +108,7 @@ git clone https://github.com/YahyaShubbak/renamepy.git
 cd renamepy
 install.bat
 ```
-> 💡 Double-click `install.bat` — it handles PowerShell execution policy automatically. ExifTool is downloaded and installed as part of the process (latest version is detected automatically).
+> 💡 Double-click `install.bat` — it handles PowerShell execution policy automatically. ExifTool is downloaded and installed as part of the process (latest version is detected automatically, the download is verified against the official SHA-256 checksum). Start the app afterwards with `start.bat` or the desktop shortcut.
 
 ### Option 2: Manual Installation
 ```bash
@@ -118,12 +120,15 @@ python RenameFiles.py
 
 > ⚠️ **Linux users**: You also need Qt6 system libraries and ExifTool:
 > - **Arch**: `sudo pacman -S mesa libxcb xcb-util xcb-util-cursor libxkbcommon libxkbcommon-x11 perl-image-exiftool`
-> - **Debian/Ubuntu**: `sudo apt install libgl1 libegl1 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxkbcommon0 libxkbcommon-x11-0 libimage-exiftool-perl`
+> - **Debian/Ubuntu**: `sudo apt install python3-venv libgl1 libegl1 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxkbcommon0 libxkbcommon-x11-0 libimage-exiftool-perl`
+> - **Fedora**: `sudo dnf install perl-Image-ExifTool mesa-libGL mesa-libEGL libxkbcommon-x11 xcb-util-cursor xcb-util-wm`
+>
+> **macOS**: `brew install exiftool`
 
-### Option 3: Download Release
-1. Go to [Releases](https://github.com/YahyaShubbak/renamepy/releases)
-2. Download latest version
-3. Extract and run `RenameFiles.py`
+### Option 3: Download ZIP
+1. On GitHub, click **Code → Download ZIP**
+2. Extract it
+3. Run `install.bat` (Windows) or `./install.sh` (Linux/macOS)
 
 ### ExifTool Setup (Required for EXIF Data)
 
@@ -198,9 +203,20 @@ Drag components in the Interactive Preview to customize order:
 
 ### Supported File Formats
 - **JPEG**: .jpg, .jpeg
-- **RAW Files**: .cr2, .nef, .arw, .dng, .orf, .rw2, .raf
+- **RAW Files**: .cr2, .cr3, .nef, .arw, .dng, .orf, .rw2, .raf, .pef, .srw and more
+- **HEIF / modern formats**: .heic, .heif, .avif, .webp
 - **TIFF**: .tif, .tiff
-- **Others**: .png, .bmp
+- **Others**: .png, .bmp, .gif
+- **Videos**: .mp4, .mov, .m4v, .mts, .avi, .mkv and more (date from QuickTime metadata)
+
+Folder scans skip hidden folders, NAS thumbnail folders (e.g. Synology `@eaDir`) and macOS `._*` resource-fork files.
+
+### Undo and Safety
+- Renames never overwrite an existing file; name conflicts get `(1)`, `(2)` suffixes.
+- Before any file is renamed or its timestamps/EXIF dates are changed, the original values are written to an undo journal in the per-user app-data folder. After a crash or restart, **Restore** can still undo the operation.
+- Repeating a timestamp sync or EXIF time shift keeps the backup of the *original* values.
+- Only successfully restored entries are removed from the journal; **Tools → Forget Undo Data…** discards everything once you are happy with the result.
+- **Save original filename to metadata** stores the name in the standard XMP tag `PreservedFileName` (only if not already set; this modifies the files, including RAW files). Names read back from file metadata are validated before a restore: only plain file names in the same folder with the same extension are accepted, and you see the full list before anything is renamed.
 
 ## 🐛 Troubleshooting
 
@@ -251,9 +267,9 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 ```bash
 git clone https://github.com/YahyaShubbak/renamepy.git
 cd renamepy
-pip install -r requirements.txt
-# Run tests
-python -m pytest tests/
+pip install -r requirements.txt pytest pytest-qt
+# Run tests (headless; tests against a real ExifTool run if one is installed)
+QT_QPA_PLATFORM=offscreen python -m pytest Tests/
 ```
 
 ### Reporting Issues
