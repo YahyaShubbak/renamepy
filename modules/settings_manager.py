@@ -4,7 +4,7 @@ Settings Manager for RenamePy.
 Handles persistence of application settings using QSettings.
 """
 
-from PyQt6.QtCore import QSettings, QPoint, QSize
+from PyQt6.QtCore import QSettings
 from typing import Any, Optional
 
 class SettingsManager:

@@ -88,6 +88,60 @@ class TestReading:
         assert service.parse_date_from_raw(meta) == "20240501"
 
 
+class TestSharedProcessAndThreads:
+    """Regression: on Linux PyExifTool ties ExifTool's life to the *thread*
+    that started it (PR_SET_PDEATHSIG). A shared process started by a worker
+    thread died with it, and a read in progress then hung forever."""
+
+    def _in_thread(self, func):
+        import threading
+        result = {}
+        thread = threading.Thread(target=lambda: result.update(value=func()))
+        thread.start()
+        thread.join(timeout=60)
+        assert not thread.is_alive(), "worker thread hung"
+        return result["value"]
+
+    def test_worker_does_not_start_shared_process(self, tmp_path, service):
+        path = _make_jpeg(tmp_path / "a.jpg", "2024:05:01 10:00:00")
+        meta = self._in_thread(lambda: service.batch_get_raw_metadata([path]))
+        assert service.parse_date_from_raw(meta[path]) == "20240501"
+        assert service._exiftool_instance is None
+
+    def test_shared_process_survives_worker(self, tmp_path, service):
+        import time
+        path = _make_jpeg(tmp_path / "a.jpg", "2024:05:01 10:00:00")
+        service.extract_raw_exif(path)  # main thread starts the shared process
+        process = service._exiftool_instance._process
+        self._in_thread(lambda: service.batch_get_raw_metadata([path]))
+        time.sleep(0.3)
+        assert process.poll() is None
+        assert service.extract_raw_exif(path)
+
+    def test_concurrent_cold_reads(self, tmp_path, service):
+        import threading
+        paths = [_make_jpeg(tmp_path / f"{i}.jpg", "2024:05:01 10:00:00") for i in range(4)]
+        results = {}
+        threads = [threading.Thread(target=lambda p=p: results.update({p: service.extract_raw_exif(p)}))
+                   for p in paths]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=60)
+        assert not any(t.is_alive() for t in threads), "a reader thread hung"
+        assert all(results[p].get("SourceFile") for p in paths)
+
+    def test_unreadable_file_does_not_break_batch(self, tmp_path, service):
+        good = _make_jpeg(tmp_path / "good.jpg", "2024:05:01 10:00:00")
+        bad = tmp_path / "bad.jpg"
+        bad.write_bytes(b"not a jpeg")
+        service.extract_raw_exif(good)
+        process = service._exiftool_instance._process
+        meta = service.batch_get_raw_metadata([good, str(bad)])
+        assert service.parse_date_from_raw(meta[good]) == "20240501"
+        assert service._exiftool_instance._process is process  # not restarted
+
+
 class TestExifTimeShiftRoundTrip:
 
     def test_backup_and_restore(self, tmp_path, service):
@@ -135,6 +189,31 @@ class TestExifTimeShiftRoundTrip:
         assert ok, msg
         service.clear_cache()
         assert service.parse_datetime_from_raw(service.extract_raw_exif(path)) == datetime.datetime(2024, 5, 1, 10, 0, 0)
+
+
+    def test_worker_mixed_chunk(self, tmp_path, service):
+        from modules import exif_processor
+        from modules.dialogs.exif_time_shift_dialog import TimeShiftWorker
+
+        good = [_make_jpeg(tmp_path / f"ok_{i}.jpg", "2024:05:01 10:00:00") for i in range(3)]
+        no_dates = _make_jpeg(tmp_path / "no_dates.jpg")
+        broken = tmp_path / "broken.jpg"
+        broken.write_bytes(b"not a jpeg")
+        exif_processor.set_default_exif_service(service)
+        try:
+            worker = TimeShiftWorker(good + [no_dates, str(broken)], 1, 0, "forward", EXIFTOOL)
+            results = []
+            worker.finished_signal.connect(lambda *args: results.append(args))
+            worker.run()
+        finally:
+            exif_processor.set_default_exif_service(None)
+
+        success_count, errors, backup = results[0]
+        assert success_count == 3
+        assert {os.path.basename(p) for p, _ in errors} == {"no_dates.jpg", "broken.jpg"}
+        assert set(backup) == set(good)
+        for path in good:
+            assert service.parse_datetime_from_raw(service.extract_raw_exif(path)).hour == 11
 
 
 class TestRenameWithMetadata:

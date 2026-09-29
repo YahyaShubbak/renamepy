@@ -15,16 +15,32 @@
 ## 🛠️ Development Environment
 
 ### Virtual Environment
-- **Environment Name**: `renamepy` (conda-based)
-- **Action Required**: Always activate the `renamepy` environment when opening a terminal or running commands
-- **Python Version**: 3.12+ (latest stable)
-- **Modern Features**: Utilize Python 3.10+ features (match/case, type hints with `|`, etc.)
+- **Environment Name**: `renamepy` (Conda) or `.venv` / `renamepy` (venv), created by `install.sh` / `install.ps1`
+- **Action Required**: Always activate the environment when opening a terminal or running commands
+- **Python Version**: 3.10 or newer is supported (CI tests 3.10–3.13); `RenameFiles.py` refuses older versions
+- **Modern Features**: Python 3.10 features are fine; modules use `from __future__ import annotations` so `X | None` annotations never break
 
 ### Initial Setup Check
 When starting work:
-1. Verify the `renamepy` conda environment is active
-2. Confirm Python version is 3.12+
-3. Check that all dependencies are installed
+1. Verify the environment is active
+2. Confirm Python version is 3.10+
+3. Install dependencies with `pip install -r requirements-dev.txt`
+
+---
+
+## 🏗️ Architecture Invariants
+
+These protect users' files - keep them when changing code:
+
+- **Plan, confirm, execute.** `rename_engine.RenamePlanner` computes every new name without touching files; the UI shows the plan (`dialogs/rename_plan_dialog.py`) and only then `RenameWorkerThread(mode="execute")` renames. The interactive preview calls `RenamePlanner.preview()`, i.e. the same code, so preview and result can't diverge.
+- **Journal before destructive writes.** Renames, timestamp syncs and EXIF time shifts write their undo data to `backup_journal` *before* modifying files. Backups are keyed by the file's current path and follow renames (`rekey_journal`).
+- **First backup wins.** Never overwrite an existing backup (`PersistedBackupDict.record_original(s)`) - it holds the original values. Undo removes only successfully restored entries.
+- **Never overwrite files.** Use `file_utilities.safe_rename`, never `shutil.move`/`os.rename` on user files.
+- **File metadata is untrusted.** Names read from metadata (`PreservedFileName`, legacy `UserComment`) must pass `is_safe_restore_name` before use.
+- **ExifTool file names go through argument files** (`-@`, UTF-8, `-charset filename=utf8`) - Windows mangles non-ANSI command-line arguments. Per-file tag values need one `-execute` block per file.
+- **Background threads** must not be destroyed while running (`closeEvent` refuses to close during a rename).
+- **Only the main thread starts the shared ExifTool process** (`ExifService._ensure_exiftool_running`). On Linux PyExifTool uses `PR_SET_PDEATHSIG`: a process started by a worker thread dies with that thread and a read in progress hangs forever.
+- **Real-image tests**: put camera files into `Tests/Testbilder` (git-ignored) or point `RENAMEPY_TEST_IMAGES` at a folder; tests only read them - anything that writes works on copies.
 
 ---
 
@@ -198,12 +214,12 @@ The project has accumulated many markdown files that need consolidation:
 ## 🔗 Critical Dependencies
 
 ### Core Dependencies
-1. **PyQt6** (>= 6.0.0)
+1. **PyQt6** (>= 6.5, < 7)
    - GUI framework
    - Used throughout the application
    - Cross-platform compatibility required
 
-2. **PyExifTool** (>= 0.5.5)
+2. **PyExifTool** (>= 0.5.5, < 0.6)
    - Python wrapper for ExifTool
    - Primary EXIF data extraction
    - Must handle ExifTool binary path correctly
@@ -214,7 +230,7 @@ The project has accumulated many markdown files that need consolidation:
    - Check availability and version
 
 ### Dependency Management
-- **No backward compatibility required** - use latest stable versions
+- **Support the ranges in `requirements.txt`** - CI tests both the lower bounds and the newest releases
 - **Cross-platform support mandatory** - test on Windows, Linux, macOS
 - **Handle missing dependencies gracefully** with user-friendly error messages
 
@@ -275,19 +291,19 @@ When working with the user:
 ```bash
 # Conda
 conda activate renamepy
+# or venv
+source .venv/bin/activate
 ```
 
 ### Testing
 ```bash
-# Run all tests
-pytest
+# Run all tests (headless; tests against a real ExifTool run if one is installed)
+QT_QPA_PLATFORM=offscreen python -m pytest Tests
 
 # Run specific test file
-pytest Tests/test_specific.py
-
-# Run with coverage
-pytest --cov=modules
+QT_QPA_PLATFORM=offscreen python -m pytest Tests/test_rename_plan.py
 ```
+Tests never touch the user's real undo journal (`Tests/conftest.py` redirects it to a temp dir).
 
 ### Code Quality
 ```bash

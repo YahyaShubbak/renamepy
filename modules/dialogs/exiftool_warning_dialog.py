@@ -7,14 +7,12 @@ link.  The user can suppress this dialog for future sessions.
 """
 from __future__ import annotations
 
-import os
 import sys
 import webbrowser
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QPushButton, QCheckBox, QStyle,
+    QPushButton, QCheckBox, QStyle, QWidget,
 )
-from PyQt6.QtCore import Qt
 
 
 class ExifToolWarningDialog(QDialog):

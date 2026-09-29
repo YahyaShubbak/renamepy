@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
 
 from ..exif_processor import batch_restore_timestamps
 from ..backup_journal import update_entries as _update_journal, rekey_entries, rekey_journal
-from ..file_utilities import is_safe_restore_name, safe_rename
+from ..file_utilities import is_safe_restore_name, safe_rename, find_sidecars, sidecar_target
 
 if TYPE_CHECKING:
     from ..main_application import FileRenamerApp
@@ -292,6 +292,8 @@ class UndoHandler:
 
         # current path -> restored path
         path_mapping: dict[str, str] = {}
+        # Sidecars with their own undo entry are restored through it
+        tracked = {os.path.normcase(os.path.abspath(path)) for path, _name in files_to_undo}
 
         for current_file, original_filename in files_to_undo:
             try:
@@ -304,9 +306,14 @@ class UndoHandler:
 
                 # Only restore filename, never move between directories
                 target_path = os.path.join(os.path.dirname(current_file), original_filename)
+                sidecars = [
+                    sidecar for sidecar in find_sidecars(current_file)
+                    if os.path.normcase(os.path.abspath(sidecar[0])) not in tracked
+                ]
                 safe_rename(current_file, target_path)
                 restored_files.append(target_path)
                 path_mapping[current_file] = target_path
+                self._restore_sidecars(sidecars, target_path, path_mapping, errors)
             except FileExistsError:
                 errors.append(
                     f"Cannot restore {os.path.basename(current_file)}: "
@@ -338,6 +345,31 @@ class UndoHandler:
             app.update_file_list()
 
         return restored_files, errors
+
+    @staticmethod
+    def _restore_sidecars(sidecars, photo_target, path_mapping, errors) -> None:
+        """Keep sidecars that follow a photo's current name attached to it.
+
+        Covers sidecars without an undo entry of their own - e.g. when the
+        original name comes from the photo's metadata, or the sidecar was
+        created after the rename.
+        """
+        for sidecar_path, kind, suffix in sidecars:
+            if not os.path.exists(sidecar_path):
+                continue  # e.g. a stem sidecar already moved with the pair's other photo
+            new_path = sidecar_target(photo_target, kind, suffix)
+            if os.path.normcase(new_path) == os.path.normcase(sidecar_path):
+                continue
+            try:
+                safe_rename(sidecar_path, new_path)
+                path_mapping[sidecar_path] = new_path
+            except FileExistsError:
+                errors.append(
+                    f"Sidecar {os.path.basename(sidecar_path)} not restored: "
+                    f"'{os.path.basename(new_path)}' already exists"
+                )
+            except OSError as e:
+                errors.append(f"Sidecar {os.path.basename(sidecar_path)} not restored: {e}")
 
     def _restore_all_timestamps(self) -> list[str]:
         """Restore file and EXIF timestamps from their backups.

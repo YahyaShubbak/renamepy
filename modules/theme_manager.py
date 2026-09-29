@@ -2,9 +2,17 @@
 """
 Theme management for the RenameFiles application.
 Handles Dark/Light/System theme switching via parametrised CSS templates.
+
+Light and Dark set both a style sheet and a matching QPalette: widgets that
+use palette colours (alternating table rows, ``palette(button)`` in style
+sheets, ...) would otherwise stay light inside a dark style sheet. "System"
+keeps the platform's own palette and style and only adapts the few custom-
+styled widgets, detecting dark mode from the platform.
 """
 from __future__ import annotations
 
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QGuiApplication, QPalette
 from PyQt6.QtWidgets import QApplication
 
 
@@ -35,6 +43,11 @@ _DARK: dict[str, str] = {
     "list_item_bg": "#404040",
     "list_sel":     "#0078d4",
     "list_hover":   "#4a4a4a",
+    "alt_bg":       "#333333",
+    "muted":        "#a8a8a8",
+    "success":      "#5fd068",
+    "warning":      "#ffb347",
+    "error":        "#ff6b6b",
 }
 
 _LIGHT: dict[str, str] = {
@@ -61,6 +74,11 @@ _LIGHT: dict[str, str] = {
     "list_item_bg": "#ffffff",
     "list_sel":     "#0078d4",
     "list_hover":   "#f0f8ff",
+    "alt_bg":       "#f5f5f5",
+    "muted":        "#666666",
+    "success":      "#1e7e34",
+    "warning":      "#b35900",
+    "error":        "#c62828",
 }
 
 
@@ -157,6 +175,48 @@ QCheckBox::indicator:checked {{
 QLabel {{
     color: {fg};
     background-color: transparent;
+}}
+QAbstractItemView {{
+    background-color: {input_bg};
+    alternate-background-color: {alt_bg};
+    color: {fg};
+    gridline-color: {input_border};
+    selection-background-color: {accent};
+    selection-color: #ffffff;
+}}
+QHeaderView::section {{
+    background-color: {btn_bg};
+    color: {fg};
+    border: 1px solid {input_border};
+    padding: 4px;
+}}
+QPlainTextEdit, QTextEdit {{
+    background-color: {input_bg};
+    border: 1px solid {input_border};
+    color: {fg};
+}}
+QGroupBox {{
+    border: 1px solid {input_border};
+    border-radius: 4px;
+    margin-top: 10px;
+    padding-top: 6px;
+}}
+QGroupBox::title {{
+    subcontrol-origin: margin;
+    left: 8px;
+    padding: 0 3px;
+}}
+QMenuBar, QMenu {{
+    background-color: {btn_bg};
+    color: {fg};
+}}
+QMenuBar::item:selected, QMenu::item:selected {{
+    background-color: {accent};
+}}
+QToolTip {{
+    background-color: {btn_bg};
+    color: {fg};
+    border: 1px solid {input_border};
 }}
 QStatusBar {{
     background-color: {btn_bg};
@@ -265,11 +325,42 @@ QListWidget::item:hover {{
 """
 
 
+def _palette_from(colors: dict[str, str]) -> QPalette:
+    """QPalette with the colours of one of the theme dictionaries."""
+    palette = QPalette()
+    role = QPalette.ColorRole
+    for r, key in (
+        (role.Window, "bg"), (role.WindowText, "fg"), (role.Base, "input_bg"),
+        (role.AlternateBase, "alt_bg"), (role.Text, "fg"), (role.Button, "btn_bg"),
+        (role.ButtonText, "fg"), (role.Highlight, "accent"), (role.ToolTipBase, "btn_bg"),
+        (role.ToolTipText, "fg"), (role.PlaceholderText, "muted"), (role.Mid, "input_border"),
+        (role.Midlight, "btn_hover"), (role.Light, "btn_hover"), (role.Dark, "input_border"),
+        (role.Link, "accent_light"),
+    ):
+        palette.setColor(r, QColor(colors[key]))
+    palette.setColor(role.HighlightedText, QColor("#ffffff"))
+    for r in (role.WindowText, role.Text, role.ButtonText):
+        palette.setColor(QPalette.ColorGroup.Disabled, r, QColor(colors["muted"]))
+    return palette
+
+
+def _is_dark(palette: QPalette) -> bool:
+    return palette.color(QPalette.ColorRole.Window).lightness() < 128
+
+
 class ThemeManager:
     """Manages application themes — Dark, Light, and System."""
 
     def __init__(self) -> None:
         self.current_theme = "System"
+        self._main_window = None
+        self._palette_changed = False
+        app = QApplication.instance()
+        # The platform's palette, restored when switching back to "System"
+        self._system_palette = QPalette(app.palette()) if app else QPalette()
+        hints = QGuiApplication.styleHints() if app else None
+        if hints is not None and hasattr(hints, "colorSchemeChanged"):  # Qt >= 6.5
+            hints.colorSchemeChanged.connect(self._on_system_scheme_changed)
 
     # ------------------------------------------------------------------
     # Public API
@@ -277,28 +368,64 @@ class ThemeManager:
     def apply_theme(self, theme_name: str, main_window) -> None:
         """Apply the specified theme to the application."""
         self.current_theme = theme_name
+        self._main_window = main_window
         app = QApplication.instance()
 
-        if theme_name == "Dark":
-            palette = _DARK
+        if theme_name in ("Dark", "Light"):
+            palette = _DARK if theme_name == "Dark" else _LIGHT
+            app.setPalette(_palette_from(palette))
+            self._palette_changed = True
             app.setStyleSheet(_GLOBAL_STYLE.format_map(palette))
-        elif theme_name == "Light":
-            palette = _LIGHT
-            app.setStyleSheet(_GLOBAL_STYLE.format_map(palette))
-        else:  # System
-            palette = _LIGHT
+        else:  # System: native style and palette
+            if self._palette_changed:
+                app.setPalette(self._system_palette)
+                self._palette_changed = False
             app.setStyleSheet("")
+            palette = _DARK if self.system_is_dark() else _LIGHT
 
         # Apply widget-specific styles
         self._apply_widget_styles(main_window, palette)
+        refresh = getattr(main_window, "on_theme_colors_changed", None)
+        if callable(refresh):
+            refresh()
 
     def get_current_theme(self) -> str:
         """Get the currently active theme."""
         return self.current_theme
 
+    def is_dark(self) -> bool:
+        """Whether the active theme is dark."""
+        if self.current_theme == "Dark":
+            return True
+        if self.current_theme == "Light":
+            return False
+        return self.system_is_dark()
+
+    def system_is_dark(self) -> bool:
+        """Whether the platform uses a dark colour scheme."""
+        hints = QGuiApplication.styleHints()
+        if hasattr(hints, "colorScheme"):  # Qt >= 6.5
+            scheme = hints.colorScheme()
+            if scheme == Qt.ColorScheme.Dark:
+                return True
+            if scheme == Qt.ColorScheme.Light:
+                return False
+        # Unknown (older Qt, some Linux desktops): judge by the palette
+        app = QApplication.instance()
+        palette = app.palette() if (app and not self._palette_changed) else self._system_palette
+        return _is_dark(palette)
+
+    def color(self, name: str) -> str:
+        """A semantic colour of the active theme: success, warning, error, muted."""
+        return (_DARK if self.is_dark() else _LIGHT)[name]
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+    def _on_system_scheme_changed(self, *_args) -> None:
+        if self.current_theme == "System" and self._main_window is not None:
+            self.apply_theme("System", self._main_window)
+
     def _apply_widget_styles(self, main_window, palette: dict[str, str]) -> None:
         """Apply styles to specific widgets using the given colour palette."""
         if hasattr(main_window, "interactive_preview"):

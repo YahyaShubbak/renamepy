@@ -2,375 +2,200 @@
 Preview Generator - Handles filename preview generation and updates
 Extracted from main_application.py to improve code organization
 
-This module manages the interactive preview widget and generates 
-filename previews based on current settings.
+The example name is computed by the same RenamePlanner that performs the
+real rename, so the preview always matches the result (including sanitizing,
+fallbacks like "Unknown-Camera" and per-file shooting settings).
 """
 from __future__ import annotations
 
 import os
-import re
-import datetime
-import threading
-from ..file_utilities import is_media_file, is_video_file
+
+from ..file_utilities import is_media_file
+from ..rename_engine import RenamePlanner
+
+
+# Shown before any files are loaded, so every component has an example value
+SAMPLE_FILE = "20250725_DSC0001.JPG"
+SAMPLE_METADATA = {
+    "EXIF:DateTimeOriginal": "2025:07:25 10:30:00",
+    "EXIF:Model": "Camera",
+    "EXIF:LensModel": "Lens",
+    "EXIF:ISO": 100,
+    "EXIF:FNumber": 2.8,
+    "EXIF:ExposureTime": 0.004,
+    "EXIF:FocalLength": 50.0,
+}
 
 
 class PreviewGenerator:
     """
     Manages preview generation and display including:
     - Preview updates based on settings
-    - EXIF data caching for preview
-    - Metadata formatting for filenames
+    - Raw metadata caching for the preview file
     - Component order management
     """
-    
+
     def __init__(self, parent):
         """
         Initialize PreviewGenerator
-        
+
         Args:
             parent: The parent FileRenamerApp instance
         """
         self.parent = parent
-        # Initialize preview EXIF cache with a lock for thread safety (EDGE 4)
-        self._preview_exif_lock = threading.Lock()
-        self._preview_exif_cache: dict[str, str | None] = {}
-        self._preview_exif_file = None
+        # path -> (mtime, raw metadata) of files shown in the preview
+        self._raw_cache: dict[str, tuple[float, dict]] = {}
 
-    def get_cached_exif(self, key: str) -> str | None:
-        """Thread-safe accessor for a single preview EXIF cache value.
+    # ------------------------------------------------------------------
+    # Settings
+    # ------------------------------------------------------------------
 
-        Args:
-            key: One of ``'date'``, ``'camera'``, ``'lens'``.
+    def planner_settings(self) -> dict:
+        """The naming settings currently selected in the UI."""
+        p = self.parent
+        return dict(
+            camera_prefix=p.camera_prefix_entry.text().strip(),
+            additional=p.additional_entry.text().strip(),
+            use_camera=p.checkbox_camera.isChecked(),
+            use_lens=p.checkbox_lens.isChecked(),
+            use_date=p.checkbox_date.isChecked(),
+            date_format=p.date_format_combo.currentText(),
+            separator=p.separator_combo.currentText(),
+            custom_order=list(p.custom_order),
+            continuous_counter=p.checkbox_continuous_counter.isChecked(),
+            selected_metadata=dict(p.selected_metadata),
+        )
 
-        Returns:
-            The cached value, or *None* if not available.
+    def _active_components(self, settings: dict) -> list[str]:
+        active = []
+        if settings["use_date"]:
+            active.append("Date")
+        if settings["camera_prefix"]:
+            active.append("Prefix")
+        if settings["additional"]:
+            active.append("Additional")
+        if settings["use_camera"]:
+            active.append("Camera")
+        if settings["use_lens"]:
+            active.append("Lens")
+        active.append("Number")  # Always present
+        active.extend(f"Meta_{key}" for key in settings["selected_metadata"])
+        return active
+
+    def _sync_custom_order(self, settings: dict) -> None:
+        """Keep custom_order in line with the activated components.
+
+        Newly activated components are inserted before "Number",
+        deactivated ones are removed.
         """
-        with self._preview_exif_lock:
-            return self._preview_exif_cache.get(key)
+        active = self._active_components(settings)
+        order = list(self.parent.custom_order)
+        for component in active:
+            if component not in order:
+                if "Number" in order:
+                    order.insert(order.index("Number"), component)
+                else:
+                    order.append(component)
+        self.parent.custom_order = [c for c in order if c in active]
+
+    # ------------------------------------------------------------------
+    # Preview
+    # ------------------------------------------------------------------
+
+    def _preview_file(self) -> str | None:
+        files = self.parent.files
+        return (
+            next((f for f in files if os.path.splitext(f)[1].lower() in (".jpg", ".jpeg")), None)
+            or next((f for f in files if is_media_file(f)), None)
+        )
+
+    def _raw_metadata(self, path: str) -> dict:
+        """Raw ExifTool metadata of *path*, cached by modification time."""
+        if not self.parent.exif_method or not os.path.exists(path):
+            return {}
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            return {}
+        cached = self._raw_cache.get(path)
+        if cached and cached[0] == mtime:
+            return cached[1]
+        try:
+            meta = self.parent.exif_service.batch_get_raw_metadata([path]).get(path) or {}
+        except Exception as e:
+            self.parent.log(f"Preview: could not read metadata of {path}: {e}")
+            meta = {}
+        if len(self._raw_cache) > 50:
+            self._raw_cache.clear()
+        self._raw_cache[path] = (mtime, meta)
+        return meta
+
+    def clear_cache(self) -> None:
+        self._raw_cache.clear()
+
+    def build_preview(self) -> tuple[list[tuple[str, str]], str]:
+        """(component_id, text) pairs and the full example file name."""
+        settings = self.planner_settings()
+        path = self._preview_file()
+        if path is None:
+            path, raw_meta, exif_method = SAMPLE_FILE, SAMPLE_METADATA, "exiftool"
+        else:
+            raw_meta, exif_method = self._raw_metadata(path), self.parent.exif_method
+        planner = RenamePlanner([path], exif_method=exif_method, exif_service=None, **settings)
+        return planner.preview(path, raw_meta)
 
     def update_preview(self):
         """Update the interactive preview widget with current settings"""
-        # Get current settings
-        camera_prefix = self.parent.camera_prefix_entry.text().strip()
-        additional = self.parent.additional_entry.text().strip()
-        use_camera = self.parent.checkbox_camera.isChecked()
-        use_lens = self.parent.checkbox_lens.isChecked()
-        use_date = self.parent.checkbox_date.isChecked()
-        date_format = self.parent.date_format_combo.currentText()
-        separator = self.parent.separator_combo.currentText()
-        
-        # Component management: Ensure custom_order reflects currently active components
-        # This handles components being activated/deactivated
-        active_components = []
-        if use_date:
-            active_components.append("Date")
-        if camera_prefix:
-            active_components.append("Prefix")
-        if additional:
-            active_components.append("Additional")
-        if use_camera:
-            active_components.append("Camera")
-        if use_lens:
-            active_components.append("Lens")
-        active_components.append("Number")  # Always present
-        
-        # Add active metadata components
-        if hasattr(self.parent, 'selected_metadata') and self.parent.selected_metadata:
-            for meta_key in self.parent.selected_metadata.keys():
-                active_components.append(f"Meta_{meta_key}")
-        
-        # Update custom_order: Add missing active components before "Number"
-        for component in active_components:
-            if component not in self.parent.custom_order:
-                # Insert before Number for logical ordering
-                if "Number" in self.parent.custom_order:
-                    idx = self.parent.custom_order.index("Number")
-                    self.parent.custom_order.insert(idx, component)
-                else:
-                    self.parent.custom_order.append(component)
-        
-        # Remove inactive components from custom_order
-        self.parent.custom_order = [
-            c for c in self.parent.custom_order 
-            if c in active_components
-        ]
-        
-        # Choose first JPG file, else first media file, else dummy
-        preview_file = next((f for f in self.parent.files if os.path.splitext(f)[1].lower() in [".jpg", ".jpeg"]), None)
-        if not preview_file:
-            preview_file = next((f for f in self.parent.files if is_media_file(f)), None)
-        if not preview_file and self.parent.files:
-            preview_file = self.parent.files[0]
-        if not preview_file:
-            # Default example with video extension to show video support
-            preview_file = "20250725_DSC0001.MP4"
+        self._sync_custom_order(self.planner_settings())
+        components, new_name = self.build_preview()
+        self.parent.log(f"🖼️ Debug: Preview {new_name} from {components}")
+        self.parent.interactive_preview.set_separator(self.parent.separator_combo.currentText())
+        self.parent.interactive_preview.set_components(components)
+        self.parent.interactive_preview.setToolTip(f"Example: {new_name}")
 
-        date_taken, camera_model, lens_model = self._extract_preview_metadata(
-            preview_file, use_date, use_camera, use_lens
-        )
-        
-        # Format date for display
-        formatted_date = self._format_date(date_taken, date_format) if use_date and date_taken else None
-        
-        # Check if camera/lens are in selected_metadata to avoid duplicates
-        has_camera_in_metadata = hasattr(self.parent, 'selected_metadata') and self.parent.selected_metadata and 'camera' in self.parent.selected_metadata
-        has_lens_in_metadata = hasattr(self.parent, 'selected_metadata') and self.parent.selected_metadata and 'lens' in self.parent.selected_metadata
-        
-        # Build component mapping
-        component_mapping = {
-            "Date": formatted_date if use_date else None,
-            "Prefix": camera_prefix if camera_prefix else None,
-            "Additional": additional if additional else None,
-            "Camera": camera_model if (use_camera and camera_model and not has_camera_in_metadata) else None,
-            "Lens": lens_model if (use_lens and lens_model and not has_lens_in_metadata) else None,
-            "Number": "001"
-        }
-        
-        # Add selected metadata from metadata dialog
-        if hasattr(self.parent, 'selected_metadata') and self.parent.selected_metadata:
-            preview_metadata = self._get_preview_metadata(preview_file)
-            
-            for metadata_key, metadata_value in preview_metadata.items():
-                # Skip if this metadata conflicts with main checkboxes
-                if metadata_key == 'camera' and not use_camera:
-                    continue
-                if metadata_key == 'lens' and not use_lens:
-                    continue
-                
-                display_value = self.format_metadata_for_filename(metadata_key, metadata_value)
-                if display_value:
-                    component_mapping[f"Meta_{metadata_key}"] = display_value
-        
-        # Build display components list
-        display_components = self._build_display_components(component_mapping)
-        
-        # Update the interactive preview
-        self.parent.log(f"🖼️ Debug: Setting preview components: {display_components}")
-        self.parent.interactive_preview.set_separator(separator)
-        self.parent.interactive_preview.set_components(display_components, "001")
-    
-    def _extract_preview_metadata(self, preview_file, use_date, use_camera, use_lens):
-        """Extract metadata for preview file with caching"""
-        date_taken = None
-        camera_model = None
-        lens_model = None
-        
-        if not self.parent.exif_method:
-            # No EXIF support - use fallback values
-            date_taken = "20250725"
-            camera_model = "Camera" if use_camera else None
-            lens_model = "Lens" if use_lens else None
-        else:
-            # EXIF cache: only extract if file changed
-            cache_key = (preview_file, self.parent.exif_method, self.parent.exiftool_path)
-            if os.path.exists(preview_file):
-                if not hasattr(self, '_preview_exif_file') or self._preview_exif_file != cache_key:
-                    try:
-                        date_taken, camera_model, lens_model = self.parent.exif_service.get_selective_cached_exif_data(
-                            preview_file, self.parent.exif_method, self.parent.exiftool_path,
-                            need_date=use_date, need_camera=use_camera, need_lens=use_lens
-                        )
-                        with self._preview_exif_lock:
-                            self._preview_exif_cache = {
-                                'date': date_taken,
-                                'camera': camera_model,
-                                'lens': lens_model,
-                            }
-                            self._preview_exif_file = cache_key
-                    except Exception as e:
-                        with self._preview_exif_lock:
-                            self._preview_exif_cache = {'date': None, 'camera': None, 'lens': None}
-                else:
-                    # Use cached values
-                    with self._preview_exif_lock:
-                        date_taken = self._preview_exif_cache.get('date')
-                        camera_model = self._preview_exif_cache.get('camera')
-                        lens_model = self._preview_exif_cache.get('lens')
-            
-            # Fallback date extraction
-            if not date_taken:
-                date_taken = self._extract_fallback_date(preview_file)
-            
-            # Use fallback values for preview if not detected AND checkbox is enabled
-            if use_camera and not camera_model:
-                camera_model = "Camera"
-            if use_lens and not lens_model:
-                lens_model = "Lens"
-            
-            # Clear values if checkboxes are disabled
-            if not use_camera:
-                camera_model = None
-            if not use_lens:
-                lens_model = None
-        
-        return date_taken, camera_model, lens_model
-    
-    def _extract_fallback_date(self, preview_file):
-        """Extract date from filename or file modification time"""
-        m = re.search(r'(20\d{2})(\d{2})(\d{2})', os.path.basename(preview_file))
-        if m:
-            return f"{m.group(1)}{m.group(2)}{m.group(3)}"
-        
-        if os.path.exists(preview_file):
-            mtime = os.path.getmtime(preview_file)
-            dt = datetime.datetime.fromtimestamp(mtime)
-            return dt.strftime('%Y%m%d')
-        
-        return "20250725"
-    
-    def _format_date(self, date_taken, date_format):
-        """Format date for display using the selected format"""
-        if not date_taken:
-            return None
-        
-        year = date_taken[:4]
-        month = date_taken[4:6]
-        day = date_taken[6:8]
-        
-        format_map = {
-            "YYYY-MM-DD": f"{year}-{month}-{day}",
-            "YYYY_MM_DD": f"{year}_{month}_{day}",
-            "DD-MM-YYYY": f"{day}-{month}-{year}",
-            "DD_MM_YYYY": f"{day}_{month}_{year}",
-            "YYYYMMDD": f"{year}{month}{day}",
-            "MM-DD-YYYY": f"{month}-{day}-{year}",
-            "MM_DD_YYYY": f"{month}_{day}_{year}",
-        }
-        
-        return format_map.get(date_format, f"{year}-{month}-{day}")
-    
-    def _get_preview_metadata(self, preview_file):
-        """Get metadata for preview file, extracting real values if needed"""
-        preview_metadata = self.parent.selected_metadata.copy()
-        
-        if self.parent.exif_method and preview_file and os.path.exists(preview_file):
-            needs_real_metadata = any(
-                value is True for value in self.parent.selected_metadata.values()
-            )
-            
-            if needs_real_metadata:
-                try:
-                    self.parent.log(f"🔍 Preview: Extracting real metadata from {os.path.basename(preview_file)}")
-                    real_metadata = self.parent.exif_service.get_all_metadata(preview_file, self.parent.exif_method, self.parent.exiftool_path)
-                    
-                    # Replace Boolean flags with real values for preview
-                    for key, value in self.parent.selected_metadata.items():
-                        if value is True:
-                            exif_key = key
-                            if key == 'shutter' and 'shutter_speed' in real_metadata:
-                                exif_key = 'shutter_speed'
-                            
-                            if exif_key in real_metadata:
-                                preview_metadata[key] = real_metadata[exif_key]
-                except Exception as e:
-                    self.parent.log(f"❌ Warning: Could not extract real metadata for preview: {e}")
-        
-        return preview_metadata
-    
-    def _build_display_components(self, component_mapping):
-        """Build ordered list of display components - follows custom_order exactly"""
-        display_components = []
-        
-        # Simply iterate through custom_order and add components with values
-        # No manipulation of order here - that's handled in update_preview()
-        for component_name in self.parent.custom_order:
-            value = component_mapping.get(component_name)
-            if value:  # Only add non-empty and active components
-                display_components.append(value)
-        
-        return display_components
-    
-    def format_metadata_for_filename(self, metadata_key, metadata_value):
-        """Format metadata values for use in filenames"""
-        if not metadata_value or metadata_value == 'Unknown':
-            return None
-        
-        # Skip boolean flags
-        if isinstance(metadata_value, bool):
-            return None
-        
-        # Clean and format different metadata types
-        formatters = {
-            'camera': lambda v: v.replace(' ', '-').replace('/', '-'),
-            'lens': lambda v: v.replace(' ', '-').replace('/', '-'),
-            'date': lambda v: v.split(' ')[0].replace(':', '-') if ' ' in v else v.replace(':', '-'),
-            'iso': lambda v: f"ISO{v}" if str(v).isdigit() else str(v).replace(' ', ''),
-            'aperture': self._format_aperture,
-            'shutter': self._format_shutter,
-            'shutter_speed': self._format_shutter,
-            'focal_length': self._format_focal_length,
-            'resolution': self._format_resolution,
-        }
-        
-        formatter = formatters.get(metadata_key)
-        if formatter:
-            return formatter(metadata_value)
-        
-        # General cleanup for other metadata
-        return str(metadata_value).replace(' ', '-').replace('/', '-').replace(':', '-')
-    
-    def _format_aperture(self, value):
-        """Format aperture value"""
-        value = str(value)
-        if value.startswith('f/'):
-            return value.replace('f/', 'f')
-        elif value.startswith('f'):
-            return value
-        else:
-            return f"f{value}"
-    
-    def _format_shutter(self, value):
-        """Format shutter speed value"""
-        value = str(value)
-        result = value.replace('/', '_').replace(' ', '')
-        # Clean up double 's' if present
-        if result.endswith('ss') and not result.endswith('sss'):
-            result = result[:-1]
-        return result
-    
-    def _format_focal_length(self, value):
-        """Format focal length value"""
-        value = str(value)
-        match = re.search(r'(\d+)mm', value)
-        if match:
-            return f"{match.group(1)}mm"
-        return value.replace(' ', '-')
-    
-    def _format_resolution(self, value):
-        """Format resolution value"""
-        value = str(value)
-        if 'MP' in value:
-            mp_part = value.split('(')[1].split(')')[0] if '(' in value else value
-            return mp_part.replace(' ', '').replace('.', '-')
-        return value.replace(' ', '-').replace('x', 'x')
-    
+    def apply_order(self, new_ids: list[str]) -> None:
+        """Take over the order the user dragged in the preview.
+
+        Only the displayed components are reordered; active components that
+        are not shown (e.g. ISO for a file without ISO) keep their place.
+        """
+        displayed = list(new_ids)
+        remaining = iter(displayed)
+        order = [next(remaining) if c in displayed else c for c in self.parent.custom_order]
+        order.extend(c for c in displayed if c not in order)
+        self.parent.custom_order = order
+        self.update_preview()
+
     def validate_and_update_preview(self):
         """Validate input and update preview"""
         self.update_preview()
-    
+
     def show_preview_info(self):
         """Show interactive preview help dialog"""
         from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton
-        
+
         dialog = QDialog(self.parent)
         dialog.setWindowTitle("Interactive Preview Help")
         dialog.setModal(True)
         dialog.resize(400, 300)
         layout = QVBoxLayout(dialog)
-        
+
         info_text = QLabel("""
-Interactive Preview shows how your filenames will look.
+Interactive Preview shows how your filenames will look,
+using the first loaded file as the example.
 
 You can:
 • Drag and drop components to reorder them
 • See real-time preview of your filename format
 • Components are separated by your chosen separator
 
-The number (001) is always at the end and auto-increments.
+The number (001) counts up per file (per day, or across all days
+with the continuous counter). Before renaming, the full list of
+old and new names is shown for confirmation.
         """)
         info_text.setWordWrap(True)
         layout.addWidget(info_text)
-        
+
         close_btn = QPushButton("Close")
         close_btn.clicked.connect(dialog.accept)
         layout.addWidget(close_btn)

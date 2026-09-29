@@ -33,21 +33,22 @@ EXIFTOOL_COMMON_ARGS = ["-G", "-n", *EXIFTOOL_CHARSET_ARGS]
 EXIFTOOL_ENCODING = "utf-8"
 
 
-def run_exiftool_on_file(exiftool_path: str, options: list[str], file_path: str,
-                         timeout: int = 60) -> subprocess.CompletedProcess:
-    """Run a one-shot ExifTool command on a single file.
+def run_exiftool_on_files(exiftool_path: str, options: list[str], file_paths: list[str],
+                          timeout: int = 60) -> subprocess.CompletedProcess:
+    """Run one ExifTool command on several files (same options for all).
 
-    The file name goes through a UTF-8 argument file (``-@``) rather than the
+    File names go through a UTF-8 argument file (``-@``) rather than the
     command line: on Windows, Perl receives command-line arguments in the
     ANSI code page, which cannot represent every file name (e.g. emoji or
-    non-Latin scripts), no matter which ``-charset`` is given.
+    non-Latin scripts), no matter which ``-charset`` is given. This also
+    avoids the Windows command-line length limit.
     """
     import tempfile
 
     fd, argfile = tempfile.mkstemp(prefix="renamepy_", suffix=".args")
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-            f.write(file_path + "\n")
+            f.write("\n".join(file_paths) + "\n")
         return subprocess.run(
             [exiftool_path, *options, *EXIFTOOL_CHARSET_ARGS, "-@", argfile],
             capture_output=True,
@@ -62,6 +63,12 @@ def run_exiftool_on_file(exiftool_path: str, options: list[str], file_path: str,
             os.remove(argfile)
         except OSError:
             pass
+
+
+def run_exiftool_on_file(exiftool_path: str, options: list[str], file_path: str,
+                         timeout: int = 60) -> subprocess.CompletedProcess:
+    """Run a one-shot ExifTool command on a single file (see run_exiftool_on_files)."""
+    return run_exiftool_on_files(exiftool_path, options, [file_path], timeout)
 
 
 def new_exiftool_helper(executable: str | None = None):
@@ -228,32 +235,61 @@ class ExifService:
                 results[fp] = {}
 
         exiftool_path = self._exiftool_path
+        temp_helper = None  # own process for threads that may not use the shared one
 
-        for i in range(0, len(path_pairs), chunk_size):
-            chunk = path_pairs[i : i + chunk_size]
-            chunk_norms = [norm for norm, _orig in chunk]
+        try:
+            for i in range(0, len(path_pairs), chunk_size):
+                chunk = path_pairs[i : i + chunk_size]
+                chunk_norms = [norm for norm, _orig in chunk]
 
-            try:
-                with self._exiftool_lock:
-                    self._ensure_exiftool_running(exiftool_path)
-                    batch_meta = self._exiftool_instance.get_metadata(chunk_norms)
-
-                for (norm, orig), meta in zip(chunk, batch_meta):
-                    results[orig] = meta
-            except Exception as e:
-                log.warning(f"Batch ExifTool failed for chunk, falling back to per-file: {e}")
-                # Rebuild instance for next attempt
-                with self._exiftool_lock:
-                    self._kill_exiftool_instance()
-                for norm, orig in chunk:
-                    if orig not in results:
-                        try:
-                            results[orig] = self._get_exiftool_metadata_shared(norm, exiftool_path)
-                        except Exception as e2:
-                            log.debug(f"Per-file ExifTool fallback failed for {norm}: {e2}")
-                            results[orig] = {}
+                try:
+                    batch_meta = None
+                    with self._exiftool_lock:
+                        if self._ensure_exiftool_running(exiftool_path):
+                            batch_meta = self._exiftool_instance.get_metadata(chunk_norms)
+                    if batch_meta is None:
+                        if temp_helper is None:
+                            temp_helper = new_exiftool_helper(exiftool_path)
+                            temp_helper.__enter__()
+                        batch_meta = temp_helper.get_metadata(chunk_norms)
+                    results.update(self._map_batch_results(chunk, batch_meta))
+                except Exception as e:
+                    # Usually one unreadable file makes ExifTool exit non-zero
+                    # for the whole chunk; the process itself is fine.
+                    log.warning(f"Batch ExifTool failed for chunk, falling back to per-file: {e}")
+                    for norm, orig in chunk:
+                        if orig not in results:
+                            results[orig] = self._read_single(norm, exiftool_path, temp_helper)
+        finally:
+            if temp_helper is not None:
+                try:
+                    temp_helper.__exit__(None, None, None)
+                except Exception:
+                    pass
 
         return results
+
+    @staticmethod
+    def _map_batch_results(chunk: list[tuple[str, str]], batch_meta: list[dict]) -> dict[str, dict]:
+        """Assign ExifTool results to the requested paths.
+
+        Matches by SourceFile (robust if ExifTool skips a file); falls back to
+        the order of the results when SourceFile is missing.
+        """
+        if all(isinstance(meta, dict) and meta.get("SourceFile") for meta in batch_meta):
+            by_norm = {os.path.normpath(str(meta["SourceFile"])): meta for meta in batch_meta}
+            return {orig: by_norm.get(norm, {}) for norm, orig in chunk}
+        return {orig: meta for (_norm, orig), meta in zip(chunk, batch_meta)}
+
+    def _read_single(self, normalized_path: str, exiftool_path, helper=None) -> dict:
+        """Read one file with *helper* (if given) or the shared/temporary process."""
+        try:
+            if helper is not None:
+                return helper.get_metadata([normalized_path])[0]
+            return self._get_exiftool_metadata_shared(normalized_path, exiftool_path)
+        except Exception as e:
+            log.debug(f"Per-file ExifTool fallback failed for {normalized_path}: {e}")
+            return {}
 
     # ------------------------------------------------------------------
     # Static helpers — parse fields from an already-fetched raw dict
@@ -507,42 +543,49 @@ class ExifService:
         
         try:
             with self._exiftool_lock:
-                self._ensure_exiftool_running(exiftool_path)
-                meta = self._exiftool_instance.get_metadata([normalized_path])[0]
-                return meta
-            
+                if self._ensure_exiftool_running(exiftool_path):
+                    return self._exiftool_instance.get_metadata([normalized_path])[0]
         except Exception as e:
-            # If the shared instance fails, rebuild and fall back to a temporary instance
-            log.warning(f"Shared ExifTool instance failed, using temporary instance: {e}")
-            with self._exiftool_lock:
-                self._kill_exiftool_instance()
-            try:
-                with new_exiftool_helper(exiftool_path) as et:
-                    return et.get_metadata([normalized_path])[0]
-            except Exception as e2:
-                log.error(f"Temporary ExifTool instance also failed: {e2}")
-                return {}
+            # get_metadata raises for an unreadable file although the shared
+            # process is fine; only a dead process is replaced (on next use).
+            log.debug(f"Shared ExifTool read failed for {normalized_path}: {e}")
 
-    def _ensure_exiftool_running(self, exiftool_path: str | None = None) -> None:
-        """Start or restart the shared ExifTool process if needed.
+        # Not allowed to use/start the shared process here, or it failed:
+        # use a temporary process for this one read.
+        try:
+            with new_exiftool_helper(exiftool_path) as et:
+                return et.get_metadata([normalized_path])[0]
+        except Exception as e2:
+            log.warning(f"Could not read metadata of {normalized_path}: {e2}")
+            return {}
+
+    def _ensure_exiftool_running(self, exiftool_path: str | None = None) -> bool:
+        """Make sure the shared ExifTool process is running.
 
         MUST be called while holding ``_exiftool_lock``.
+
+        The process is only *started* from the main thread. On Linux,
+        PyExifTool starts ExifTool with PR_SET_PDEATHSIG, which kills the
+        child when the *thread* that started it ends - a process started in
+        a worker thread dies with that thread, and a read in progress then
+        hangs forever. Worker threads use the shared process if it is
+        already running, otherwise a temporary one.
+
+        Returns:
+            True if the shared process can be used by the calling thread.
         """
         exiftool_path = exiftool_path or self._exiftool_path
+        instance = self._exiftool_instance
 
-        if self._exiftool_instance is not None and os.path.normpath(self._exiftool_path or '') == os.path.normpath(exiftool_path or ''):
-            return  # Already running with correct path
+        if instance is not None:
+            same_path = os.path.normpath(self._exiftool_path or '') == os.path.normpath(exiftool_path or '')
+            if same_path and getattr(instance, "running", True):
+                return True  # Already running with correct path
+            # Stale (other path) or died: close it
+            self._kill_exiftool_instance()
 
-        # Close stale instance (use __exit__ to match __enter__)
-        if self._exiftool_instance is not None:
-            try:
-                self._exiftool_instance.__exit__(None, None, None)
-            except Exception:
-                try:
-                    self._exiftool_instance.terminate()
-                except Exception:
-                    pass
-            self._exiftool_instance = None
+        if threading.current_thread() is not threading.main_thread():
+            return False
 
         # Create & start new instance
         self._exiftool_instance = new_exiftool_helper(exiftool_path)
@@ -553,6 +596,7 @@ class ExifService:
 
         self._exiftool_path = exiftool_path
         self._exiftool_instance.__enter__()
+        return True
 
     def _kill_exiftool_instance(self) -> None:
         """Terminate the shared ExifTool process.
@@ -679,6 +723,7 @@ class ExifService:
                     
             except Exception as e:
                 if attempt == max_retries - 1:
+                    log.debug(f"EXIF extraction failed for {normalized_path}: {e}")
                     return None, None, None
                 else:
                     time.sleep(0.05)  # Shorter pause for batch processing

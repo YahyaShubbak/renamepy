@@ -76,9 +76,7 @@ def get_app_data_dir() -> str:
     Falls back to the user's home directory if Qt is unavailable for any
     reason (e.g. running headless utility scripts/tests).
 
-    Shared by this module (the undo journal) and performance_benchmark.py
-    (calibration data), so both keep their persisted state in the same
-    predictable, writable place instead of each computing their own path.
+    Keeps the undo journal in a predictable, writable place.
     """
     try:
         from PyQt6.QtCore import QStandardPaths
@@ -294,6 +292,32 @@ class PersistedBackupDict(dict):
             return False
         self[key] = value
         return True
+
+    def record_originals(self, values: Dict[str, Any]) -> set:
+        """Bulk version of :meth:`record_original` with a single journal write.
+
+        Writing the whole journal once per file makes large batches
+        quadratic; recording a chunk of files at once (before any of them is
+        modified) keeps the "backup before the destructive write" guarantee.
+
+        Returns:
+            The keys that were recorded (keys with an existing backup are kept).
+        """
+        new = {key: value for key, value in values.items() if key not in self}
+        if new:
+            super().update(new)
+            save_backup(self._journal_key, dict(self))
+        return set(new)
+
+    def remove_many(self, keys) -> None:
+        """Remove several entries with a single journal write."""
+        removed = False
+        for key in keys:
+            if key in self:
+                super().pop(key)
+                removed = True
+        if removed:
+            save_backup(self._journal_key, dict(self))
 
     def __setitem__(self, key, value) -> None:
         super().__setitem__(key, value)

@@ -106,7 +106,13 @@ class TestRenameResultErrors:
             shown["text"] = dialog.findChild(QPlainTextEdit).toPlainText()
             return 0
 
-        parent = QWidget()
+        from modules.theme_manager import ThemeManager
+
+        class _Parent(QWidget):
+            _label_style = FileRenamerApp._label_style
+
+        parent = _Parent()
+        parent.theme_manager = ThemeManager()
         with patch.object(QDialog, "exec", fake_exec):
             FileRenamerApp._show_rename_results(
                 parent, ["/x/new.jpg"], [("/x/a.jpg", "boom"), ("/x/b.jpg", "Timestamp sync: no date")]
@@ -188,6 +194,26 @@ class TestPerFileCamera:
         manager.on_metadata_checkbox_changed("camera", "Sony ILCE-7RM3", True, user_action=True)
         parent.checkbox_camera.setChecked.assert_called_once_with(True)
         assert "camera" not in parent.selected_metadata
+
+    def test_metadata_dialog_widget_builds(self, qapp, tmp_path):
+        """Regression: info-only rows (file, size, flash, ...) crashed with
+        UnboundLocalError; only per-file fields get a checkbox."""
+        from PyQt6.QtWidgets import QCheckBox, QLabel
+        manager, parent = self._dialog_manager()
+        parent.exiftool_path = None
+        parent.checkbox_date.isChecked.return_value = True
+        photo = tmp_path / "DSC0001.JPG"
+        photo.write_bytes(b"x")
+        info = "\n".join([
+            "File:FileType: JPEG", "EXIF:Make: Sony", "EXIF:Model: ILCE-7RM3",
+            "EXIF:DateTimeOriginal: 2024:05:01 10:00:00", "EXIF:ISO: 400",
+            "EXIF:ExposureTime: 0.0166666666666667", "EXIF:Flash: 16", "EXIF:MeteringMode: 5",
+        ])
+        widget = manager.create_essential_metadata_widget(info, str(photo))
+        labels = [label.text() for label in widget.findChildren(QLabel)]
+        assert "Shutter: 1/60s" in labels
+        assert "Flash: No" in labels
+        assert len(widget.findChildren(QCheckBox)) == 4  # camera, date, iso, shutter
 
     def test_dialog_shooting_setting_is_a_flag(self):
         manager, parent = self._dialog_manager()
@@ -278,7 +304,8 @@ class TestBackupsKeepOriginals:
         from modules.dialogs.exif_time_shift_dialog import TimeShiftWorker
         run = MagicMock()
         monkeypatch.setattr("subprocess.run", run)
-        monkeypatch.setattr("modules.exif_processor.get_exiftool_metadata_shared", lambda *a, **k: {})
+        monkeypatch.setattr("modules.exif_processor.get_exiftool_metadata_batch",
+                            lambda paths, *a, **k: {p: {} for p in paths})
         worker = TimeShiftWorker(["/p/a.jpg"], 1, 0, "forward", "/fake/exiftool")
         results = []
         worker.finished_signal.connect(lambda *args: results.append(args))
@@ -293,8 +320,10 @@ class TestBackupsKeepOriginals:
         original = {"EXIF:DateTimeOriginal": "2024:01:01 10:00:00"}
         PersistedBackupDict("exif_backup")["/p/a.jpg"] = original
         monkeypatch.setattr("subprocess.run", MagicMock(return_value=MagicMock(returncode=0, stderr="")))
-        monkeypatch.setattr("modules.exif_processor.get_exiftool_metadata_shared",
-                            lambda *a, **k: {"EXIF:DateTimeOriginal": "2024:01:01 11:00:00"})
+        # current dates (after an earlier shift), then the result of this shift
+        reads = iter(["2024:01:01 11:00:00", "2024:01:01 12:00:00"])
+        monkeypatch.setattr("modules.exif_processor.get_exiftool_metadata_batch",
+                            lambda paths, *a, **k: {p: {"EXIF:DateTimeOriginal": next(reads)} for p in paths})
         worker = TimeShiftWorker(["/p/a.jpg"], 1, 0, "forward", "/fake/exiftool")
         results = []
         worker.finished_signal.connect(lambda *args: results.append(args))
@@ -302,6 +331,29 @@ class TestBackupsKeepOriginals:
         assert results[0][0] == 1
         assert results[0][2]["/p/a.jpg"] == original
         assert load_journal()["exif_backup"]["/p/a.jpg"] == original
+
+
+    def test_time_shift_one_exiftool_call_per_chunk(self, monkeypatch):
+        from modules.dialogs.exif_time_shift_dialog import TimeShiftWorker
+        run = MagicMock(return_value=MagicMock(returncode=0, stderr="Error: locked - /p/b.jpg"))
+        monkeypatch.setattr("subprocess.run", run)
+        reads = iter([
+            {"/p/a.jpg": {"EXIF:DateTimeOriginal": "2024:01:01 10:00:00"},
+             "/p/b.jpg": {"EXIF:DateTimeOriginal": "2024:01:01 10:00:00"}},
+            {"/p/a.jpg": {"EXIF:DateTimeOriginal": "2024:01:01 10:30:00"},
+             "/p/b.jpg": {"EXIF:DateTimeOriginal": "2024:01:01 10:00:00"}},  # b unchanged
+        ])
+        monkeypatch.setattr("modules.exif_processor.get_exiftool_metadata_batch", lambda *a, **k: next(reads))
+        worker = TimeShiftWorker(["/p/a.jpg", "/p/b.jpg"], 0, 30, "forward", "/fake/exiftool")
+        results = []
+        worker.finished_signal.connect(lambda *args: results.append(args))
+        worker.run()
+        success_count, errors, backup = results[0]
+        assert run.call_count == 1
+        assert success_count == 1
+        assert errors == [("/p/b.jpg", "Error: locked - /p/b.jpg")]
+        assert list(backup) == ["/p/a.jpg"]
+        assert list(load_journal()["exif_backup"]) == ["/p/a.jpg"]
 
 
 # ---------------------------------------------------------------------------

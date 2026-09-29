@@ -1,10 +1,8 @@
-# Core dependencies
-PyQt6>=6.0.0
+# Runtime dependencies. The ranges are tested in CI: the lower bounds in the
+# "minimum versions" job, the newest releases in the regular test matrix.
 
-# EXIF processing (required)
-PyExifTool>=0.5.5
+# GUI framework (6.5+ for automatic dark-mode detection)
+PyQt6>=6.5,<7
 
-# Optional: For future development
-# pytest>=6.0.0  # For testing
-# black>=22.0.0  # Code formatting
-# flake8>=4.0.0  # Linting
+# ExifTool wrapper (ExifTool itself is installed separately, see README)
+PyExifTool>=0.5.5,<0.6

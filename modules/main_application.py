@@ -5,50 +5,33 @@ Complete original UI implementation with all features from RenameFiles.py
 
 import os
 import sys
-import re
-import datetime
-import time
-import shutil
 import subprocess
 from .logger_util import get_logger, set_level
 log = get_logger()
 
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-    QLabel, QPushButton, QLineEdit, QCheckBox, QComboBox, QListWidget,
-    QFileDialog, QStatusBar, QListWidgetItem, QMessageBox, QDialog,
-    QStyle, QPlainTextEdit, QScrollArea
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QPushButton,
+    QMessageBox, QDialog, QStyle, QPlainTextEdit
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon, QDragEnterEvent, QDropEvent, QDragMoveEvent
 
 # Import the modular components
-from .file_utilities import (
-    is_media_file, scan_directory_recursive,
-    rename_files, FileConstants, MEDIA_EXTENSIONS, IMAGE_EXTENSIONS, VIDEO_EXTENSIONS,
-    is_image_file, is_video_file
-)
+from .file_utilities import is_media_file, is_image_file, is_video_file
 from .exif_service_new import ExifService, EXIFTOOL_AVAILABLE, format_exposure_time
-from .exif_processor import (
-    find_exiftool_path, batch_restore_timestamps, set_default_exif_service
-)
+from .exif_processor import find_exiftool_path, set_default_exif_service
 from .rename_engine import RenameWorkerThread
-from .ui_components import InteractivePreviewWidget
 from .theme_manager import ThemeManager
-from .filename_components import build_ordered_components
 from .timestamp_options_dialog import TimestampSyncOptionsDialog
 from .dialogs import ExifToolWarningDialog
-from .handlers import extract_image_number, UndoHandler
+from .handlers import UndoHandler
 from .handlers.info_dialogs import (
     show_camera_prefix_info as _show_camera_prefix_info,
     show_additional_info as _show_additional_info,
     show_separator_info as _show_separator_info,
     show_exif_sync_info as _show_exif_sync_info,
 )
-from .performance_benchmark import (
-    PerformanceBenchmark, analyze_pattern_complexity
-)
-from .exif_undo_manager import get_original_filename_from_exif, get_rename_info
+from .exif_undo_manager import get_original_filename_from_exif
 from .ui import FileListManager, PreviewGenerator, MainWindowUI, MetadataDialogManager
 from .state_model import RenamerState
 from .settings_manager import SettingsManager
@@ -63,16 +46,6 @@ class FileRenamerApp(QMainWindow):
     def files(self): return self.state.files
     @files.setter
     def files(self, value): self.state.files = value
-
-    @property
-    def camera_models(self): return self.state.camera_models
-    @camera_models.setter
-    def camera_models(self, value): self.state.camera_models = value
-
-    @property
-    def lens_models(self): return self.state.lens_models
-    @lens_models.setter
-    def lens_models(self, value): self.state.lens_models = value
 
     @property
     def original_filenames(self): return self.state.original_filenames
@@ -163,14 +136,8 @@ class FileRenamerApp(QMainWindow):
         # Recover any undo backup left on disk from a previous session
         # (e.g. the app crashed or was closed before Undo was used).
         self._recover_pending_backups()
-        
-        # Initialize EXIF cache (kept for backward compat; prefer preview_generator accessor)
-        self._preview_exif_cache: dict[str, str | None] = {}
-        self._preview_exif_file = None  # Track which file the preview cache belongs to
-        
-        # Initialize performance benchmark manager
-        self.benchmark_manager = PerformanceBenchmark(self.exiftool_path)
-        self.benchmark_thread = None
+        self.worker = None
+        self._progress_dialog = None
 
     # ------------------------------------------------------------------
     # Helper utilities (added for Phase 2 refactor: logging & UI state)
@@ -196,7 +163,8 @@ class FileRenamerApp(QMainWindow):
         can_undo = self.has_restore_data()
         
         # Also check if any loaded file has original filename in EXIF (cached check)
-        if not can_undo and has_files and self.exiftool_path:
+        # (not while a rename runs: the check would read files being renamed)
+        if not can_undo and has_files and self.exiftool_path and not self._busy:
             # Use cached result if available
             if hasattr(self, '_exif_undo_checked'):
                 can_undo = self._exif_undo_available
@@ -303,7 +271,6 @@ class FileRenamerApp(QMainWindow):
         else:
             self.undo_button.setEnabled(False)
             self.undo_button.setText("↶ Restore Original Names")
-        self._preview_exif_file = None
 
     def _recover_pending_backups(self):
         """Load any undo backup left on disk by a previous session.
@@ -506,10 +473,6 @@ class FileRenamerApp(QMainWindow):
         """Handle ISO/Aperture/Shutter/Focal Length checkbox changes"""
         self.metadata_dialog_manager.on_shooting_setting_checkbox_changed(key)
 
-    def extract_essential_metadata(self, full_metadata, file_path):
-        """Extract the most relevant metadata for human users"""
-        return self.metadata_dialog_manager.extract_essential_metadata(full_metadata, file_path)
-
     def toggle_full_metadata(self, dialog, layout, full_info, essential_widget):
         """Toggle between essential and full metadata view"""
         self.metadata_dialog_manager.toggle_full_metadata(dialog, layout, full_info, essential_widget)
@@ -570,6 +533,19 @@ class FileRenamerApp(QMainWindow):
         self.update_camera_lens_labels()
         self.update_shooting_settings_labels()
 
+    def _label_style(self, color_name, bold=False):
+        """Style sheet for a status label in a colour that suits the theme."""
+        weight = "font-weight: bold;" if bold else "font-style: italic;"
+        return f"color: {self.theme_manager.color(color_name)}; {weight}"
+
+    def on_theme_colors_changed(self):
+        """Re-colour the status labels after a theme change (called by ThemeManager)."""
+        if not hasattr(self, 'camera_model_label'):
+            return  # UI not built yet
+        self.update_camera_lens_labels()
+        self.update_shooting_settings_labels()
+        self.update_exif_status()
+
     def update_camera_lens_labels(self):
         """Update the camera and lens model labels (copied from original)"""
         if not self.files or not self.exif_method:
@@ -580,17 +556,17 @@ class FileRenamerApp(QMainWindow):
         # Use stored detection results
         if hasattr(self, 'detected_camera') and self.detected_camera:
             self.camera_model_label.setText(f"({self.detected_camera})")
-            self.camera_model_label.setStyleSheet("color: green; font-style: italic;")
+            self.camera_model_label.setStyleSheet(self._label_style("success"))
         else:
             self.camera_model_label.setText("(not detected)")
-            self.camera_model_label.setStyleSheet("color: orange; font-style: italic;")
+            self.camera_model_label.setStyleSheet(self._label_style("warning"))
         
         if hasattr(self, 'detected_lens') and self.detected_lens:
             self.lens_model_label.setText(f"({self.detected_lens})")
-            self.lens_model_label.setStyleSheet("color: green; font-style: italic;")
+            self.lens_model_label.setStyleSheet(self._label_style("success"))
         else:
             self.lens_model_label.setText("(not detected)")
-            self.lens_model_label.setStyleSheet("color: orange; font-style: italic;")
+            self.lens_model_label.setStyleSheet(self._label_style("warning"))
 
     def update_shooting_settings_labels(self):
         """Update the ISO/Aperture/Shutter/Focal Length labels, and enable
@@ -607,16 +583,16 @@ class FileRenamerApp(QMainWindow):
             
             if not self.files or not self.exif_method:
                 label.setText("(no files selected)")
-                label.setStyleSheet("color: gray; font-style: italic;")
+                label.setStyleSheet(self._label_style("muted"))
                 available = False
             elif value:
                 display = self._format_shooting_setting_display(key, value)
                 label.setText(f"({display})")
-                label.setStyleSheet("color: green; font-style: italic;")
+                label.setStyleSheet(self._label_style("success"))
                 available = True
             else:
                 label.setText("(not available)")
-                label.setStyleSheet("color: orange; font-style: italic;")
+                label.setStyleSheet(self._label_style("warning"))
                 available = False
             
             checkbox.setEnabled(available)
@@ -633,8 +609,8 @@ class FileRenamerApp(QMainWindow):
     @staticmethod
     def _format_shooting_setting_display(key, value):
         """Format a raw EXIF value for the small status label, matching the
-        same conventions already used in the Essential Metadata dialog
-        (MetadataDialogManager.extract_essential_metadata) so the two
+        same conventions as the Essential Metadata dialog
+        (MetadataDialogManager.create_essential_metadata_widget) so the two
         places agree on what "aperture"/"shutter"/etc. look like.
         """
         if key == 'iso':
@@ -651,170 +627,13 @@ class FileRenamerApp(QMainWindow):
         """Update the interactive preview widget with current settings - delegates to PreviewGenerator"""
         self.preview_generator.update_preview()
     
-    def format_metadata_for_filename(self, metadata_key, metadata_value):
-        """Format metadata values for use in filenames - delegates to PreviewGenerator"""
-        return self.preview_generator.format_metadata_for_filename(metadata_key, metadata_value)
-    
     def on_preview_order_changed(self, new_order):
-        """Handle changes from the interactive preview widget"""
-        
-        # Build mapping from display values to component names
-        value_to_component = {}
-        
-        # Get current text values for basic components
-        camera_prefix = self.camera_prefix_entry.text().strip()
-        additional = self.additional_entry.text().strip()
-        use_camera = self.checkbox_camera.isChecked()
-        use_lens = self.checkbox_lens.isChecked()
-        use_date = self.checkbox_date.isChecked()
-        
-        # Map basic components (same as before)
-        if camera_prefix:
-            value_to_component[camera_prefix] = "Prefix"
-        if additional:
-            value_to_component[additional] = "Additional"
-            
-        # Map date component - CRITICAL FIX: Use the same date logic as update_preview()
-        if use_date:
-            # Get the same preview file as used in update_preview
-            preview_file = next((f for f in self.files if os.path.splitext(f)[1].lower() in [".jpg", ".jpeg"]), None)
-            if not preview_file:
-                preview_file = next((f for f in self.files if is_media_file(f)), None)
-            if not preview_file and self.files:
-                preview_file = self.files[0]
-            
-            # Extract date using the same logic as update_preview()
-            date_taken = None
-            if hasattr(self, 'preview_generator'):
-                date_taken = self.preview_generator.get_cached_exif('date')
-            
-            # Fallback date extraction (same as update_preview)
-            if not date_taken:
-                if preview_file:
-                    m = re.search(r'(20\d{2})(\d{2})(\d{2})', os.path.basename(preview_file))
-                    if m:
-                        date_taken = f"{m.group(1)}{m.group(2)}{m.group(3)}"
-            
-            if not date_taken:
-                if preview_file and os.path.exists(preview_file):
-                    mtime = os.path.getmtime(preview_file)
-                    dt = datetime.datetime.fromtimestamp(mtime)
-                    date_taken = dt.strftime('%Y%m%d')
-                else:
-                    date_taken = datetime.datetime.now().strftime('%Y%m%d')  # Use current date as fallback
-            
-            # Format date using the same logic as update_preview()
-            if date_taken:
-                year = date_taken[:4]
-                month = date_taken[4:6]
-                day = date_taken[6:8]
-                
-                date_format = self.date_format_combo.currentText()
-                if date_format == "YYYY-MM-DD":
-                    formatted_date = f"{year}-{month}-{day}"
-                elif date_format == "YYYY_MM_DD":
-                    formatted_date = f"{year}_{month}_{day}"
-                elif date_format == "DD-MM-YYYY":
-                    formatted_date = f"{day}-{month}-{year}"
-                elif date_format == "DD_MM_YYYY":
-                    formatted_date = f"{day}_{month}_{year}"
-                elif date_format == "YYYYMMDD":
-                    formatted_date = f"{year}{month}{day}"
-                elif date_format == "MM-DD-YYYY":
-                    formatted_date = f"{month}-{day}-{year}"
-                elif date_format == "MM_DD_YYYY":
-                    formatted_date = f"{month}_{day}_{year}"
-                else:
-                    formatted_date = f"{year}-{month}-{day}"  # Default fallback
-                
-                value_to_component[formatted_date] = "Date"
-                self.log(f"🔄 Debug: Mapped Date '{formatted_date}' -> 'Date'")
-            
-        # Map camera and lens components
-        if use_camera:
-            camera_value = None
-            if hasattr(self, 'preview_generator'):
-                camera_value = self.preview_generator.get_cached_exif('camera')
-            if not camera_value:
-                camera_value = "Camera"  # Fallback
-            value_to_component[camera_value] = "Camera"
-            
-        if use_lens:
-            lens_value = None
-            if hasattr(self, 'preview_generator'):
-                lens_value = self.preview_generator.get_cached_exif('lens')
-            if not lens_value:
-                lens_value = "Lens"  # Fallback
-            value_to_component[lens_value] = "Lens"
-            
-        # FLEXIBLE: Map Number component
-        value_to_component["001"] = "Number"
-            
-        # Map metadata components - this is the key fix!
-        if hasattr(self, 'selected_metadata') and self.selected_metadata:
-            # We need to get the same preview metadata that update_preview() creates
-            # This ensures we're mapping the same values that are actually displayed
-            
-            # Get the preview file (same logic as in update_preview)
-            preview_file = next((f for f in self.files if os.path.splitext(f)[1].lower() in [".jpg", ".jpeg"]), None)
-            if not preview_file:
-                preview_file = next((f for f in self.files if is_media_file(f)), None)
-            if not preview_file and self.files:
-                preview_file = self.files[0]
-            
-            # Get preview metadata (same logic as in update_preview)
-            preview_metadata = self.selected_metadata.copy()
-            if self.exif_method and preview_file and os.path.exists(preview_file):
-                needs_real_metadata = any(
-                    value is True for value in self.selected_metadata.values()
-                )
-                
-                if needs_real_metadata:
-                    try:
-                        real_metadata = self.exif_service.get_all_metadata(preview_file, self.exif_method, self.exiftool_path)
-                        
-                        # Replace Boolean flags with real values for preview
-                        for key, value in self.selected_metadata.items():
-                            if value is True:
-                                # CRITICAL FIX: Add key mapping for shutter -> shutter_speed
-                                exif_key = key
-                                if key == 'shutter' and 'shutter_speed' in real_metadata:
-                                    exif_key = 'shutter_speed'
-                                
-                                if exif_key in real_metadata:
-                                    preview_metadata[key] = real_metadata[exif_key]
-                                    self.log(f"🔄 Debug: Mapped preview {key} True -> {real_metadata[exif_key]}")
-                    except Exception as e:
-                        self.log(f"❌ Warning: Could not extract real metadata for preview mapping: {e}")
-            
-            # Now map the actual formatted values that are displayed
-            for metadata_key, metadata_value in preview_metadata.items():
-                # Skip if this metadata conflicts with main checkboxes
-                if metadata_key == 'camera' and not use_camera:
-                    continue
-                if metadata_key == 'lens' and not use_lens:
-                    continue
-                    
-                display_value = self.format_metadata_for_filename(metadata_key, metadata_value)
-                if display_value:
-                    meta_component_name = f"Meta_{metadata_key}"
-                    value_to_component[display_value] = meta_component_name
-                    self.log(f"🔄 Debug: Mapped EXIF '{display_value}' -> '{meta_component_name}'")
-        
-        # Convert display order to internal order
-        new_internal_order = []
-        for display_value in new_order:
-            if display_value in value_to_component:
-                component_name = value_to_component[display_value]
-                if component_name not in new_internal_order:  # Prevent duplicates
-                    new_internal_order.append(component_name)
-        
-        # Update custom order - respect EXACT order from preview (no auto-insertion)
-        # This ensures "What You See Is What You Get"
-        self.custom_order = new_internal_order
-        
-        # Update preview to reflect the change
-        self.update_preview()
+        """Handle drag & drop reordering in the interactive preview.
+
+        The widget reports component ids (not display texts), so the order
+        is taken over as is.
+        """
+        self.preview_generator.apply_order(new_order)
     
     def on_continuous_counter_changed(self):
         """Handle continuous counter checkbox change"""
@@ -857,31 +676,25 @@ class FileRenamerApp(QMainWindow):
         if EXIFTOOL_AVAILABLE and self.exiftool_path:
             version = self._detect_exiftool_version()
             self.exif_status_label.setText(f"EXIF method: ExifTool v{version} ✓")
-            self.exif_status_label.setStyleSheet("color: green; font-weight: bold;")
+            self.exif_status_label.setStyleSheet(self._label_style("success", bold=True))
         else:
             self.exif_status_label.setText("⚠ ExifTool not found — EXIF features unavailable")
-            self.exif_status_label.setStyleSheet("color: red; font-weight: bold;")
+            self.exif_status_label.setStyleSheet(self._label_style("error", bold=True))
     
     def rename_files_action(self):
         # Guard: prevent starting a second rename while one is running
         if getattr(self, '_busy', False):
             log.warning("Rename already in progress — ignoring duplicate request")
             return
-        if hasattr(self, 'worker') and self.worker is not None and self.worker.isRunning():
+        if self.worker is not None and self.worker.isRunning():
             log.warning("Worker thread still running — ignoring duplicate request")
             return
+        # The background undo check reads the current files; let it finish
+        # (it probes at most three files) before they get renamed.
+        checker = getattr(self, '_exif_undo_checker_ref', None)
+        if checker is not None and checker.isRunning():
+            checker.wait(10000)
 
-        # Defensive fallback: ensure helper methods exist (in case of partial import issues)
-        if not hasattr(self, '_ui_set_busy'):
-            def _fallback_ui_set_busy(busy: bool):
-                if hasattr(self, 'status'):
-                    self.status.showMessage('Processing...' if busy else 'Ready', 1500)
-            self._ui_set_busy = _fallback_ui_set_busy  # type: ignore
-        if not hasattr(self, '_update_buttons'):
-            def _fallback_update_buttons():
-                if hasattr(self, 'rename_button'):
-                    self.rename_button.setEnabled(bool(self.files) and not getattr(self, '_busy', False))
-            self._update_buttons = _fallback_update_buttons  # type: ignore
         if not self.files:
             QMessageBox.warning(self, "Warning", "No files selected for renaming.")
             return
@@ -918,110 +731,23 @@ class FileRenamerApp(QMainWindow):
         except Exception:
             # Never leave the UI stuck in "Processing..." if anything before
             # the worker start fails; the global excepthook reports the error.
-            if not (getattr(self, 'worker', None) and self.worker.isRunning()):
+            if not (self.worker is not None and self.worker.isRunning()):
+                self._close_progress()
                 self._ui_set_busy(False)
             raise
 
     def _confirm_and_start_rename(self, media_files, camera_prefix, additional, use_camera,
                                   use_lens, use_date, continuous_counter, date_format, separator):
-        """Show the estimate/sync confirmations and start the rename worker."""
-        # Get EXIF date sync setting
-        sync_exif_date = getattr(self, 'checkbox_sync_exif_date', None) and self.checkbox_sync_exif_date.isChecked()
-        leave_file_names = getattr(self, 'checkbox_leave_names', None) and self.checkbox_leave_names.isChecked()
-        save_original_to_exif = getattr(self, 'checkbox_save_original_to_exif', None) and self.checkbox_save_original_to_exif.isChecked()
+        """Ask the sync questions, then compute the rename plan in the background.
 
-        # Analyze pattern complexity and estimate time
-        exif_field_count, text_field_count = analyze_pattern_complexity(
-            use_date=use_date,
-            use_camera=use_camera,
-            use_lens=use_lens,
-            additional_text=additional or "",
-            camera_prefix=camera_prefix or "",
-            selected_metadata=self.state.selected_metadata
-        )
-        
-        log.debug(f"Pattern analysis: {exif_field_count} EXIF fields, {text_field_count} text fields")
-        log.debug(f"Benchmark ready: {self.benchmark_manager.is_ready()}, results: {len(self.benchmark_manager.benchmark_results)}")
-        
-        # Get time estimate from benchmark (or use fallback)
-        confidence = 0.0  # Default for fallback path
-        if self.benchmark_manager.is_ready():
-            log.debug("Using benchmark data for estimate")
-            estimated_time, confidence = self.benchmark_manager.estimate_time(
-                file_count=len(media_files),
-                exif_field_count=exif_field_count,
-                text_field_count=text_field_count,
-                with_exif_save=save_original_to_exif
-            )
-            log.debug(f"Benchmark estimate: {estimated_time:.1f}s, confidence={confidence}")
-            confidence_text = {
-                1.0: "exact measurement",
-                0.7: "similar scenario",
-                0.5: "estimated",
-                0.3: "rough estimate"
-            }.get(confidence, "estimated")
-        else:
-            log.debug("Using fallback estimate (no benchmark data)")
-            # Fallback to simple estimation if benchmark not ready
-            base_time = len(media_files) * 0.03
-            exif_time = exif_field_count * 0.01 * len(media_files)
-            exif_save_time = len(media_files) * 0.1 if save_original_to_exif else 0
-            estimated_time = base_time + exif_time + exif_save_time
-            confidence_text = "rough estimate (no benchmark)"
-        
-        # Calculate time range based on confidence
-        # High confidence (exact match) = narrower range
-        # Low confidence (interpolated) = wider range
-        if confidence >= 0.9:
-            # Exact measurement - tight range
-            time_range_low = max(1, estimated_time * 0.9)
-            time_range_high = estimated_time * 1.1
-        elif confidence >= 0.7:
-            # Similar scenario - moderate range
-            time_range_low = max(1, estimated_time * 0.8)
-            time_range_high = estimated_time * 1.2
-        else:
-            # Rough estimate - wider range
-            time_range_low = max(1, estimated_time * 0.7)
-            time_range_high = estimated_time * 1.3
-        
-        # Format time as min:sec if > 60 seconds
-        def format_time(seconds: float) -> str:
-            if seconds >= 60:
-                mins = int(seconds // 60)
-                secs = int(seconds % 60)
-                return f"{mins}:{secs:02d}"
-            else:
-                return f"{seconds:.1f}s"
-        
-        time_range_text = f"{format_time(time_range_low)}-{format_time(time_range_high)}"
-        
-        # Build pattern complexity description
-        complexity_parts = []
-        if exif_field_count > 0:
-            complexity_parts.append(f"{exif_field_count} EXIF field{'s' if exif_field_count != 1 else ''}")
-        if text_field_count > 0:
-            complexity_parts.append(f"{text_field_count} text field{'s' if text_field_count != 1 else ''}")
-        if save_original_to_exif:
-            complexity_parts.append("metadata save enabled")
-        
-        complexity_desc = ", ".join(complexity_parts) if complexity_parts else "simple pattern"
-        
-        # Always show estimation dialog before renaming
-        reply = QMessageBox.information(
-            self,
-            "⏱️ Operation Time Estimate",
-            f"Ready to rename {len(media_files)} files\n\n"
-            f"Pattern complexity: {complexity_desc}\n"
-            f"Estimated time: {time_range_text}\n"
-            f"Confidence: {confidence_text}\n\n"
-            f"Continue with rename operation?",
-            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Ok
-        )
-        if reply != QMessageBox.StandardButton.Ok:
-            self._ui_set_busy(False)
-            return
+        Flow: (optional) timestamp-sync confirmation -> plan (background,
+        cancellable) -> RenamePlanDialog listing every old -> new name ->
+        execution with a progress dialog (cancellable) -> results.
+        """
+        sync_exif_date = self.checkbox_sync_exif_date.isChecked()
+        leave_file_names = self.checkbox_leave_names.isChecked()
+        save_original_to_exif = self.checkbox_save_original_to_exif.isChecked()
+        rename_sidecars = self.checkbox_rename_sidecars.isChecked()
 
         timestamp_options = None
         if sync_exif_date:
@@ -1040,57 +766,140 @@ class FileRenamerApp(QMainWindow):
                 self._ui_set_busy(False)
                 return
             dlg = TimestampSyncOptionsDialog(self)
-            if dlg.exec() == QDialog.DialogCode.Accepted:
-                timestamp_options = dlg.get_result()
-                if not timestamp_options:
-                    self._ui_set_busy(False)
-                    return
-            else:
+            if dlg.exec() != QDialog.DialogCode.Accepted or not dlg.get_result():
                 self._ui_set_busy(False)
                 return
-        
-        # Store estimation data for calibration after rename completes
-        self._last_estimate_data = {
-            'estimated_time': estimated_time,
-            'file_count': len(media_files),
-            'exif_field_count': exif_field_count,
-            'text_field_count': text_field_count,
-            'with_exif_save': save_original_to_exif,
-            'start_time': time.time()
-        }
+            timestamp_options = dlg.get_result()
+        elif leave_file_names:
+            QMessageBox.information(
+                self, "Nothing to Do",
+                "'Leave file names as-is' is enabled and timestamp sync is off, "
+                "so there is nothing to change."
+            )
+            self._ui_set_busy(False)
+            return
 
-        # The background benchmark only feeds the time estimate; stop it so
-        # it doesn't compete for disk I/O (or read files being renamed).
-        if self.benchmark_thread is not None and self.benchmark_thread.isRunning():
-            self.benchmark_thread.requestInterruption()
-
-        # Start worker thread for background processing
-        self.worker = RenameWorkerThread(
-            media_files,
-            camera_prefix,
-            additional,
-            use_camera,
-            use_lens,
-            self.exif_method,
-            separator,
-            self.exiftool_path,
-            self.custom_order,
-            date_format,
-            use_date,
-            continuous_counter,
-            self.selected_metadata,
-            sync_exif_date,
+        # Everything needed to create the plan and the execution workers
+        self._rename_request = dict(
+            files=media_files,
+            camera_prefix=camera_prefix,
+            additional=additional,
+            use_camera=use_camera,
+            use_lens=use_lens,
+            exif_method=self.exif_method,
+            separator=separator,
+            exiftool_path=self.exiftool_path,
+            custom_order=list(self.custom_order),
+            date_format=date_format,
+            use_date=use_date,
+            continuous_counter=continuous_counter,
+            selected_metadata=dict(self.selected_metadata),
+            sync_exif_date=sync_exif_date,
             timestamp_options=timestamp_options,
             leave_names=leave_file_names,
             save_original_to_exif=save_original_to_exif,
+            rename_sidecars=rename_sidecars,
+        )
+
+        if leave_file_names:
+            # Only the timestamp sync: no names to review
+            self._start_rename_execution([], [])
+            return
+
+        self._start_worker("plan")
+        self.worker.plan_ready.connect(self.on_plan_ready)
+        self._show_progress("Reading metadata and computing new names...", busy=True)
+        self.worker.start()
+
+    def _start_worker(self, mode, **extra):
+        """Create the rename worker for *mode* from the stored request."""
+        request = self._rename_request
+        self.worker = RenameWorkerThread(
+            request['files'],
+            request['camera_prefix'],
+            request['additional'],
+            request['use_camera'],
+            request['use_lens'],
+            request['exif_method'],
+            request['separator'],
+            request['exiftool_path'],
+            request['custom_order'],
+            request['date_format'],
+            request['use_date'],
+            request['continuous_counter'],
+            request['selected_metadata'],
+            request['sync_exif_date'],
+            timestamp_options=request['timestamp_options'],
+            leave_names=request['leave_names'],
+            save_original_to_exif=request['save_original_to_exif'],
+            rename_sidecars=request['rename_sidecars'],
             log_callable=self.log,
-            exif_service=self.exif_service,  # NEW: Pass ExifService instance
+            exif_service=self.exif_service,
             prior_originals=dict(self.original_filenames),
+            mode=mode,
             parent=self,
+            **extra,
         )
         self.worker.progress_update.connect(self.update_status)
-        self.worker.finished.connect(self.on_rename_finished)
         self.worker.error.connect(self.on_rename_error)
+
+    def _show_progress(self, text, busy=False, total=0):
+        """Modal progress dialog whose Cancel button stops the worker."""
+        from PyQt6.QtWidgets import QProgressDialog
+
+        self._close_progress()
+        progress = QProgressDialog(text, "Cancel", 0, 0 if busy else max(total, 1), self)
+        progress.setWindowTitle("RenamePy")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(300)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setValue(0)
+        worker = self.worker
+        progress.canceled.connect(worker.requestInterruption)
+        progress.canceled.connect(lambda: progress.setLabelText("Cancelling after the current file..."))
+        worker.progress_update.connect(progress.setLabelText)
+
+        def on_value(done, total_):
+            if progress.maximum() != total_:
+                progress.setMaximum(max(total_, 1))
+            progress.setValue(done)
+
+        worker.progress_value.connect(on_value)
+        self._progress_dialog = progress
+
+    def _close_progress(self):
+        progress = getattr(self, '_progress_dialog', None)
+        if progress is not None:
+            progress.close()
+            progress.deleteLater()
+            self._progress_dialog = None
+
+    def on_plan_ready(self, entries, errors):
+        """Show the complete plan and execute it after confirmation."""
+        from .dialogs import RenamePlanDialog
+
+        self._close_progress()
+        worker = self.worker
+        worker.wait()
+        if worker.was_cancelled:
+            self._ui_set_busy(False)
+            self.status.showMessage("Rename cancelled", 4000)
+            return
+
+        dialog = RenamePlanDialog(entries, errors, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self._ui_set_busy(False)
+            self.status.showMessage("Rename cancelled - no files were changed", 4000)
+            return
+        self._start_rename_execution(entries, errors)
+
+    def _start_rename_execution(self, entries, plan_errors):
+        self._start_worker("execute", plan=entries, plan_errors=plan_errors)
+        self.worker.finished.connect(self.on_rename_finished)
+        total = sum(1 for e in entries if e.changed)
+        self._show_progress("Renaming files..." if total else "Synchronizing timestamps...",
+                            busy=not total, total=total)
         self.worker.start()
     
     def update_status(self, message):
@@ -1218,11 +1027,11 @@ class FileRenamerApp(QMainWindow):
             error_layout = QVBoxLayout(error_dialog)
             
             success_label = QLabel(f"Successfully renamed: {len(renamed_files)} files")
-            success_label.setStyleSheet("color: green; font-weight: bold;")
+            success_label.setStyleSheet(self._label_style("success", bold=True))
             error_layout.addWidget(success_label)
 
             error_label = QLabel(f"❌ Problems encountered: {len(error_lines)}")
-            error_label.setStyleSheet("color: red; font-weight: bold;")
+            error_label.setStyleSheet(self._label_style("error", bold=True))
             error_layout.addWidget(error_label)
 
             error_text = QPlainTextEdit()
@@ -1256,20 +1065,7 @@ class FileRenamerApp(QMainWindow):
         """
         from .backup_journal import rekey_entries
 
-        # Calibrate benchmark safety factor based on actual operation time
-        # (measured now, before any modal dialog adds waiting time)
-        if hasattr(self, '_last_estimate_data') and self._last_estimate_data:
-            actual_time = time.time() - self._last_estimate_data['start_time']
-            self.benchmark_manager.calibrate_from_actual(
-                estimated_time=self._last_estimate_data['estimated_time'],
-                actual_time=actual_time,
-                file_count=self._last_estimate_data['file_count'],
-                exif_field_count=self._last_estimate_data['exif_field_count'],
-                text_field_count=self._last_estimate_data['text_field_count'],
-                with_exif_save=self._last_estimate_data['with_exif_save']
-            )
-            self._last_estimate_data = None  # Clear after calibration
-
+        self._close_progress()
         rename_mapping = rename_mapping or {}
         moved = {old: new for new, old in rename_mapping.items() if new != old}
 
@@ -1304,6 +1100,7 @@ class FileRenamerApp(QMainWindow):
         self.status.showMessage(f"Completed: {len(renamed_files)} files renamed", 5000)
 
     def on_rename_error(self, error_message):
+        self._close_progress()
         self._ui_set_busy(False)
         QMessageBox.critical(self, "Critical Error", f"Unexpected error during renaming:\n{error_message}")
         self.status.showMessage("Rename operation failed", 3000)
@@ -1394,11 +1191,9 @@ class FileRenamerApp(QMainWindow):
             event.ignore()
             return
 
-        for thread in (getattr(self, 'benchmark_thread', None),
-                       getattr(self, '_exif_undo_checker_ref', None)):
-            if thread is not None and thread.isRunning():
-                thread.requestInterruption()
-                thread.wait()
+        checker = getattr(self, '_exif_undo_checker_ref', None)
+        if checker is not None and checker.isRunning():
+            checker.wait()
 
         if hasattr(self, 'exif_service') and self.exif_service:
             self.exif_service.cleanup()
@@ -1433,91 +1228,6 @@ class FileRenamerApp(QMainWindow):
                     file_info = f"File: {os.path.basename(file_path)}\nPath: {file_path}"
                     item.setToolTip(file_info)
         return super().eventFilter(obj, event)
-
-
-def analyze_file_statistics(files):
-    """Analyze file statistics by type and extension"""
-    stats = {
-        'total': 0,
-        'images': 0,
-        'videos': 0,
-        'extensions': {},
-        'categories': {
-            'JPEG': 0,
-            'RAW': 0,
-            'PNG/Other Images': 0,
-            'MP4/MOV': 0,
-            'MKV/AVI': 0,
-            'Other Videos': 0
-        }
-    }
-    
-    # Define category mappings
-    jpeg_extensions = ['.jpg', '.jpeg']
-    raw_extensions = ['.cr2', '.nef', '.arw', '.orf', '.rw2', '.dng', '.raw', '.sr2', '.pef', '.raf', '.3fr', '.erf', '.kdc', '.mos', '.nrw', '.srw', '.x3f']
-    png_other_image_extensions = ['.png', '.bmp', '.tiff', '.tif', '.gif']
-    mp4_mov_extensions = ['.mp4', '.mov', '.m4v']
-    mkv_avi_extensions = ['.mkv', '.avi', '.wmv', '.flv']
-    other_video_extensions = ['.webm', '.mpg', '.mpeg', '.m2v', '.mts', '.m2ts', '.ts', '.vob', '.asf', '.rm', '.rmvb', '.f4v', '.ogv', '.3gp']
-    
-    for file_path in files:
-        if is_media_file(file_path):
-            stats['total'] += 1
-            
-            # Get extension
-            ext = os.path.splitext(file_path)[1].lower()
-            stats['extensions'][ext] = stats['extensions'].get(ext, 0) + 1
-            
-            # Categorize by type
-            if ext in jpeg_extensions + raw_extensions + png_other_image_extensions:
-                stats['images'] += 1
-                
-                # Subcategorize images
-                if ext in jpeg_extensions:
-                    stats['categories']['JPEG'] += 1
-                elif ext in raw_extensions:
-                    stats['categories']['RAW'] += 1
-                elif ext in png_other_image_extensions:
-                    stats['categories']['PNG/Other Images'] += 1
-                    
-            elif ext in mp4_mov_extensions + mkv_avi_extensions + other_video_extensions:
-                stats['videos'] += 1
-                
-                # Subcategorize videos
-                if ext in mp4_mov_extensions:
-                    stats['categories']['MP4/MOV'] += 1
-                elif ext in mkv_avi_extensions:
-                    stats['categories']['MKV/AVI'] += 1
-                elif ext in other_video_extensions:
-                    stats['categories']['Other Videos'] += 1
-    
-    return stats
-
-def format_file_statistics(stats):
-    """Format file statistics into a human-readable string"""
-    if stats['total'] == 0:
-        return "No media files loaded"
-    
-    # Build summary line
-    summary_parts = []
-    if stats['images'] > 0:
-        summary_parts.append(f"{stats['images']} image{'s' if stats['images'] != 1 else ''}")
-    if stats['videos'] > 0:
-        summary_parts.append(f"{stats['videos']} video{'s' if stats['videos'] != 1 else ''}")
-    
-    summary = f"📊 Total: {stats['total']} files ({', '.join(summary_parts)})"
-    
-    # Build detailed breakdown
-    details = []
-    for category, count in stats['categories'].items():
-        if count > 0:
-            details.append(f"{category}: {count}")
-    
-    if details:
-        detail_text = " | ".join(details)
-        return f"{summary}\n💾 {detail_text}"
-    else:
-        return summary
 
 
 def _install_excepthook():

@@ -7,33 +7,36 @@ Integration tests for Phase 1 critical fixes:
 ``powershell -Command`` are appended to the script text, so the helper was
 injectable through file names and was never used by the application.)
 
-Uses real images from C:\\Users\\yshub\\Desktop\\Bilbao when available.
+Uses real camera images (read-only) from $RENAMEPY_TEST_IMAGES, Tests/Testbilder
+or C:\\Users\\yshub\\Desktop\\Bilbao, whichever exists first.
 """
 
 import os
 import sys
-import shutil
-import tempfile
 import threading
-import time
 import pytest
 
 # Make sure modules are importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 
-BILBAO_DIR = r"C:\Users\yshub\Desktop\Bilbao"
+_IMAGE_DIRS = [
+    os.environ.get("RENAMEPY_TEST_IMAGES", ""),
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "Testbilder"),
+    r"C:\Users\yshub\Desktop\Bilbao",
+]
+IMAGE_DIR = next((d for d in _IMAGE_DIRS if d and os.path.isdir(d)), None)
 SAMPLE_FILES = []
 
 # Collect a small subset of real test images (first 3 JPGs)
-if os.path.isdir(BILBAO_DIR):
+if IMAGE_DIR:
     all_jpgs = sorted(
-        f for f in os.listdir(BILBAO_DIR) if f.upper().endswith('.JPG')
+        f for f in os.listdir(IMAGE_DIR) if f.upper().endswith('.JPG')
     )[:3]
-    SAMPLE_FILES = [os.path.join(BILBAO_DIR, f) for f in all_jpgs]
+    SAMPLE_FILES = [os.path.join(IMAGE_DIR, f) for f in all_jpgs]
 
 HAS_IMAGES = len(SAMPLE_FILES) > 0
-skip_no_images = pytest.mark.skipif(not HAS_IMAGES, reason="No test images in Bilbao dir")
+skip_no_images = pytest.mark.skipif(not HAS_IMAGES, reason="No real test images (see module docstring)")
 
 
 # ===========================================================================

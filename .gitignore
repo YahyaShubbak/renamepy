@@ -40,6 +40,8 @@ desktop.ini
 *.lnk
 
 # Test files and temporary data
+# Real camera images for local tests (hundreds of MB - never commit)
+Tests/Testbilder/
 test_images/
 sample_files/
 temp/

@@ -9,9 +9,8 @@ All PyQt6 widgets are tested in isolation (no app-level startup needed).
 
 import os
 import sys
-import platform
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

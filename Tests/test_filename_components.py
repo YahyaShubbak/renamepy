@@ -12,7 +12,6 @@ Covers the pure-function component builder with no I/O:
 import os
 import sys
 import pytest
-from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

@@ -6,7 +6,7 @@ Covers pure functions with no external dependencies:
 - Media file detection (is_image_file, is_video_file, is_media_file)
 - Natural sort key generation
 - Filename sanitization
-- Path validation and safe path generation
+- Path length validation and safe path generation
 - Directory scanning
 """
 
@@ -14,7 +14,6 @@ import os
 import sys
 import pytest
 from pathlib import Path
-from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -26,12 +25,8 @@ from modules.file_utilities import (
     sanitize_filename,
     sanitize_final_filename,
     validate_path_length,
-    validate_path,
     get_safe_target_path,
-    get_safe_filename,
-    scan_directory,
     scan_directory_recursive,
-    check_file_access,
     FileConstants,
 )
 
@@ -233,40 +228,6 @@ class TestValidatePathLength:
         assert validate_path_length(path) is True
 
 
-class TestValidatePath:
-    """Test comprehensive path validation."""
-
-    def test_empty_path(self):
-        is_valid, msg = validate_path("")
-        assert is_valid is False
-        assert "empty" in msg.lower()
-
-    def test_nonexistent_path(self):
-        is_valid, msg = validate_path("/nonexistent/file.jpg")
-        assert is_valid is False
-
-    def test_valid_media_file(self, tmp_path):
-        test_file = tmp_path / "test.jpg"
-        test_file.touch()
-        is_valid, msg = validate_path(str(test_file))
-        assert is_valid is True
-        assert msg == "Valid"
-
-    def test_non_media_file(self, tmp_path):
-        test_file = tmp_path / "test.txt"
-        test_file.touch()
-        is_valid, msg = validate_path(str(test_file))
-        assert is_valid is False
-        assert "media" in msg.lower()
-
-    def test_directory_not_valid(self, tmp_path):
-        is_valid, msg = validate_path(str(tmp_path))
-        assert is_valid is False
-
-
-# ---------------------------------------------------------------------------
-# Safe target path
-# ---------------------------------------------------------------------------
 class TestGetSafeTargetPath:
     """Test conflict-free target path generation."""
 
@@ -303,19 +264,6 @@ class TestGetSafeTargetPath:
         assert os.path.normcase(result) == os.path.normcase(str(original))
 
 
-class TestGetSafeFilename:
-    """Test safe filename generation in a directory."""
-
-    def test_no_conflict(self, tmp_path):
-        result = get_safe_filename(str(tmp_path), "new_file.jpg")
-        assert result == "new_file.jpg"
-
-    def test_with_conflict(self, tmp_path):
-        (tmp_path / "existing.jpg").touch()
-        result = get_safe_filename(str(tmp_path), "existing.jpg")
-        assert result == "existing(1).jpg"
-
-
 # ---------------------------------------------------------------------------
 # Directory scanning
 # ---------------------------------------------------------------------------
@@ -333,17 +281,6 @@ class TestScanDirectory:
         (sub / "photo3.nef").touch()
         (sub / "notes.md").touch()
 
-    def test_flat_scan(self, tmp_path):
-        self._create_test_tree(tmp_path)
-        results = scan_directory(str(tmp_path), include_subdirs=False)
-        basenames = [os.path.basename(f) for f in results]
-        assert "photo1.jpg" in basenames
-        assert "photo2.CR2" in basenames
-        assert "video.mp4" in basenames
-        assert "readme.txt" not in basenames
-        # Subdirectory files should NOT appear
-        assert "photo3.nef" not in basenames
-
     def test_recursive_scan(self, tmp_path):
         self._create_test_tree(tmp_path)
         results = scan_directory_recursive(str(tmp_path))
@@ -354,27 +291,12 @@ class TestScanDirectory:
         assert "notes.md" not in basenames
 
     def test_empty_directory(self, tmp_path):
-        results = scan_directory(str(tmp_path), include_subdirs=False)
-        assert results == []
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        assert scan_directory_recursive(str(empty)) == []
 
     def test_nonexistent_directory(self):
-        results = scan_directory("/nonexistent/path", include_subdirs=False)
-        assert results == []
-
-
-# ---------------------------------------------------------------------------
-# File access check
-# ---------------------------------------------------------------------------
-class TestCheckFileAccess:
-    """Test file accessibility checks."""
-
-    def test_accessible_file(self, tmp_path):
-        f = tmp_path / "test.jpg"
-        f.write_bytes(b"\xff\xd8")  # minimal JPEG-ish bytes
-        assert check_file_access(str(f)) is True
-
-    def test_nonexistent_file(self):
-        assert check_file_access("/nonexistent/file.jpg") is False
+        assert scan_directory_recursive("/nonexistent/path") == []
 
 
 # ---------------------------------------------------------------------------

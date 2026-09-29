@@ -121,7 +121,7 @@ def main():
 
     # --- Full benchmark ---
     with tempfile.TemporaryDirectory(prefix="renamepy_bench_") as tmpdir:
-        print(f"\nCopying files to temp dir...")
+        print("\nCopying files to temp dir...")
         t0 = time.perf_counter()
         files = copy_test_files(BILBAO_DIR, tmpdir)
         copy_time = time.perf_counter() - t0
@@ -135,7 +135,7 @@ def main():
         elapsed_small = run_benchmark(files, f"SMALL BENCHMARK ({len(files)} files, ISO+Aperture)")
 
     print(f"\n{'#'*60}")
-    print(f"  SUMMARY")
+    print("  SUMMARY")
     print(f"{'#'*60}")
     print(f"  Full:  {elapsed_full:.2f}s  ({len(all_files)} files)")
     print(f"  Small: {elapsed_small:.2f}s  (20 pairs)")

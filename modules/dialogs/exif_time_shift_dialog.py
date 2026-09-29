@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QMessageBox, QProgressDialog
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont
+from PyQt6.QtGui import QFont, QColor
 import os
 from datetime import datetime, timedelta
 
@@ -34,6 +34,10 @@ BACKUP_DATE_FIELDS = (
 )
 
 
+# Files per ExifTool invocation (one backup write, one shift, one check)
+SHIFT_CHUNK = 50
+
+
 class TimeShiftWorker(QThread):
     """Worker thread for applying time shifts to EXIF data"""
     progress_update = pyqtSignal(str)
@@ -49,19 +53,22 @@ class TimeShiftWorker(QThread):
         self.exiftool_path = exiftool_path
     
     def run(self):
-        """Apply time shift to all files and create EXIF backup"""
-        from ..exif_processor import get_exiftool_metadata_shared
+        """Apply the time shift to all files, backing up their dates first.
+
+        Works in chunks: one batched metadata read, one journal write for the
+        chunk's backups (before anything is modified), one ExifTool process
+        shifting the whole chunk, then a second read that confirms per file
+        that its dates moved by exactly the requested amount.
+        """
+        from ..exif_processor import get_exiftool_metadata_batch
         from ..backup_journal import PersistedBackupDict
-        from ..exif_service_new import run_exiftool_on_file
+        from ..exif_service_new import run_exiftool_on_files
         
         success_count = 0
         errors = []
-        # PersistedBackupDict writes each file's backup to the on-disk undo
-        # journal immediately - before the -overwrite_original ExifTool call
-        # below runs for that file - so a crash mid-batch can't lose backups
-        # for files already processed. It starts with the backups still
-        # pending from earlier shifts: a file shifted twice keeps the backup
-        # of its original dates.
+        # The journal-backed dict starts with the backups still pending from
+        # earlier shifts: a file shifted twice keeps the backup of its
+        # original dates.
         exif_backup = PersistedBackupDict("exif_backup")
         total_files = len(self.files)
         
@@ -69,62 +76,87 @@ class TimeShiftWorker(QThread):
         delta_minutes = self.hours * 60 + self.minutes
         if self.direction == 'backward':
             delta_minutes = -delta_minutes
+        delta = timedelta(minutes=delta_minutes)
 
         # ExifTool accepts: -AllDates+=HH:MM:SS or -AllDates-=HH:MM:SS
         hours_shift = abs(delta_minutes) // 60
         minutes_shift = abs(delta_minutes) % 60
         time_shift = f"{hours_shift}:{minutes_shift:02d}:00"
         operator = "+=" if delta_minutes >= 0 else "-="
+        options = [f"-AllDates{operator}{time_shift}", "-overwrite_original"]
         
-        for idx, file_path in enumerate(self.files):
+        for start in range(0, total_files, SHIFT_CHUNK):
             if self.isInterruptionRequested():
-                errors.append((file_path, f"Cancelled - {total_files - idx} files not processed"))
+                errors.append(("", f"Cancelled - {total_files - start} files not processed"))
                 break
-            backup_created = False
-            try:
-                self.progress_update.emit(f"Processing {os.path.basename(file_path)}...")
-                self.progress_value.emit(int((idx / total_files) * 100))
-                
-                # Backup original EXIF timestamps BEFORE modifying. Without a
-                # backup the change could not be undone, so the file is
-                # skipped instead.
+            chunk = self.files[start:start + SHIFT_CHUNK]
+            self.progress_update.emit(f"Processing files {start + 1}-{start + len(chunk)} of {total_files}...")
+            self.progress_value.emit(int(start / total_files * 100))
+
+            before = get_exiftool_metadata_batch(chunk, self.exiftool_path)
+
+            # Back up original dates. Without a backup the change could not
+            # be undone, so such files are skipped instead.
+            new_backups = {}
+            eligible = []
+            for file_path in chunk:
+                meta = before.get(file_path) or {}
+                if not meta:
+                    errors.append((file_path, "Could not read metadata - skipped (no backup possible)"))
+                    continue
                 if file_path not in exif_backup:
-                    exif_data = get_exiftool_metadata_shared(file_path, self.exiftool_path)
-                    if not exif_data:
-                        errors.append((file_path, "Could not read metadata - skipped (no backup possible)"))
-                        continue
-                    backup_fields = {
-                        field: exif_data[field] for field in BACKUP_DATE_FIELDS if field in exif_data
-                    }
-                    if not backup_fields:
+                    fields = {field: meta[field] for field in BACKUP_DATE_FIELDS if field in meta}
+                    if not fields:
                         errors.append((file_path, "No date tags found - skipped"))
                         continue
-                    exif_backup[file_path] = backup_fields
-                    backup_created = True
-                
-                result = run_exiftool_on_file(
-                    self.exiftool_path,
-                    [f"-AllDates{operator}{time_shift}", "-overwrite_original"],
-                    file_path,
-                    timeout=60,
+                    new_backups[file_path] = fields
+                eligible.append(file_path)
+            created = exif_backup.record_originals(new_backups)
+            if not eligible:
+                continue
+
+            stderr = ""
+            try:
+                result = run_exiftool_on_files(
+                    self.exiftool_path, options, eligible, timeout=60 + 2 * len(eligible)
                 )
-                
-                if result.returncode == 0:
+                stderr = result.stderr.strip()
+            except Exception as e:
+                stderr = str(e)
+
+            after = get_exiftool_metadata_batch(eligible, self.exiftool_path)
+            failed = []
+            for file_path in eligible:
+                if _dates_shifted(before.get(file_path) or {}, after.get(file_path) or {}, delta):
                     success_count += 1
                 else:
-                    errors.append((file_path, result.stderr.strip() or "ExifTool error"))
-                    # Remove the backup created for this (unchanged) file
-                    if backup_created:
-                        del exif_backup[file_path]
-                    
-            except Exception as e:
-                errors.append((file_path, str(e)))
-                # Remove the backup created for this (unchanged) file
-                if backup_created and file_path in exif_backup:
-                    del exif_backup[file_path]
+                    failed.append(file_path)
+                    errors.append((file_path, _error_for(file_path, stderr) or "Dates were not changed"))
+            # Drop the backups created for files that stayed unchanged
+            exif_backup.remove_many(f for f in failed if f in created)
         
         self.progress_value.emit(100)
         self.finished_signal.emit(success_count, errors, dict(exif_backup))
+
+
+def _dates_shifted(before, after, delta):
+    """True if at least one backed-up date moved by exactly *delta*."""
+    from ..exif_service_new import parse_exif_datetime
+
+    for field in BACKUP_DATE_FIELDS:
+        old = parse_exif_datetime(before.get(field))
+        new = parse_exif_datetime(after.get(field))
+        if old is not None and new is not None and new - old == delta:
+            return True
+    return False
+
+
+def _error_for(file_path, stderr):
+    """ExifTool's error line for *file_path* ("Error: ... - <path>"), if any."""
+    for line in stderr.splitlines():
+        if line.endswith(file_path) or line.endswith(os.path.basename(file_path)):
+            return line.strip()
+    return stderr.splitlines()[0].strip() if stderr else ""
 
 
 class ExifTimeShiftDialog(QDialog):
@@ -187,7 +219,7 @@ class ExifTimeShiftDialog(QDialog):
             "→ Set time shift: +1 hour 0 minutes"
         )
         desc.setWordWrap(True)
-        desc.setStyleSheet("color: #555; padding: 10px; background-color: #f0f0f0; border-radius: 5px;")
+        desc.setStyleSheet("padding: 10px; border: 1px solid palette(mid); border-radius: 5px;")
         layout.addWidget(desc)
         
         # Time shift settings
@@ -254,7 +286,7 @@ class ExifTimeShiftDialog(QDialog):
         
         # File count info
         self.info_label = QLabel(f"📊 Total files: {len(self.files)}")
-        self.info_label.setStyleSheet("color: #555; font-weight: bold;")
+        self.info_label.setStyleSheet("font-weight: bold;")
         layout.addWidget(self.info_label)
         
         # Buttons
@@ -335,10 +367,9 @@ class ExifTimeShiftDialog(QDialog):
                 
                 # Update table with color coding
                 item = QTableWidgetItem(new_time_str)
-                if is_forward:
-                    item.setBackground(Qt.GlobalColor.green)
-                else:
-                    item.setBackground(Qt.GlobalColor.yellow)
+                # Light tints with explicit dark text: readable in every theme
+                item.setBackground(QColor("#c8f7c5") if is_forward else QColor("#fff3b0"))
+                item.setForeground(QColor("#000000"))
                 
                 self.preview_table.setItem(row, 2, item)
                 
@@ -406,7 +437,7 @@ class ExifTimeShiftDialog(QDialog):
         
         # Show results
         if errors:
-            error_msg = f"Time shift completed with errors:\n\n"
+            error_msg = "Time shift completed with errors:\n\n"
             error_msg += f"✅ Successfully updated: {success_count} files\n"
             error_msg += f"❌ Failed: {len(errors)} files\n\n"
             error_msg += "First 5 errors:\n"

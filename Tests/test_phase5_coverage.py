@@ -10,12 +10,7 @@ settings_manager helpers, and handlers/exif_handler.
 
 import os
 import sys
-import re
-import datetime
-import tempfile
-import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -348,7 +343,7 @@ class TestRenameEngineExifServicePath:
         return RenameWorkerThread(**defaults)
 
     def test_pre_extract_uses_batch(self, tmp_path):
-        """_pre_extract_exif_cache() should call batch_get_raw_metadata."""
+        """pre_extract_exif_cache() should call batch_get_raw_metadata."""
         files = []
         for i in range(5):
             for ext in (".jpg", ".arw"):
@@ -364,8 +359,8 @@ class TestRenameEngineExifServicePath:
         }
 
         worker = self._make_worker(files, exif_service=mock_service)
-        groups = worker._create_file_groups()
-        cache = worker._pre_extract_exif_cache(groups)
+        groups = worker.planner.create_file_groups()
+        cache = worker.planner.pre_extract_exif_cache(groups)
 
         mock_service.batch_get_raw_metadata.assert_called_once()
         # Cache should have entries
@@ -397,7 +392,7 @@ class TestRenameEngineExifServicePath:
         mock_service.clear_cache.assert_not_called()
 
     def test_process_group_uses_cached_all_metadata(self, tmp_path):
-        """_plan_file_group should use all_metadata from cache, not make new ExifTool calls."""
+        """plan_file_group should use all_metadata from cache, not make new ExifTool calls."""
         p = tmp_path / "DSC10000.jpg"
         p.touch()
 
@@ -423,7 +418,7 @@ class TestRenameEngineExifServicePath:
         }
 
         reserved = set()
-        plan_entries, errors = worker._plan_file_group([str(p)], {}, exif_cache, reserved)
+        plan_entries, errors = worker.planner.plan_file_group([str(p)], {}, exif_cache, reserved)
 
         # Should NOT call get_all_metadata or get_selective_cached_exif_data
         mock_service.get_all_metadata.assert_not_called()

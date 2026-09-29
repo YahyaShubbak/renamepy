@@ -353,7 +353,7 @@ echo ""
 echo " The following packages will be installed:"
 while IFS= read -r line || [ -n "$line" ]; do
     # Skip comments and blank lines
-    [[ "$line" =~ ^\s*# ]] && continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
     [[ -z "${line// }" ]] && continue
     echo -e "   ${ORANGE}${line}${NC}"
 done < requirements.txt

@@ -15,8 +15,7 @@ import re
 import datetime
 import pytest
 from pathlib import Path
-from collections import defaultdict
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -130,12 +129,12 @@ def _mock_all_exif(selective_side_effect=None):
 # File grouping
 # ---------------------------------------------------------------------------
 class TestFileGrouping:
-    """Test _create_file_groups for RAW/JPEG sibling pairing."""
+    """Test RenamePlanner.create_file_groups for RAW/JPEG sibling pairing."""
 
     def test_pairs_grouped(self, tmp_path):
         files = _create_pairs(tmp_path, count=5)
         worker = _make_worker(files)
-        groups = worker._create_file_groups()
+        groups = worker.planner.create_file_groups()
 
         # 5 pairs → 5 groups of size 2
         assert len(groups) == 5
@@ -147,14 +146,14 @@ class TestFileGrouping:
     def test_orphan_file(self, tmp_path):
         (tmp_path / "lonely.jpg").touch()
         worker = _make_worker([str(tmp_path / "lonely.jpg")])
-        groups = worker._create_file_groups()
+        groups = worker.planner.create_file_groups()
         assert len(groups) == 1
         assert len(groups[0]) == 1
 
     def test_non_media_files_excluded(self, tmp_path):
         (tmp_path / "readme.txt").touch()
         worker = _make_worker([str(tmp_path / "readme.txt")])
-        groups = worker._create_file_groups()
+        groups = worker.planner.create_file_groups()
         assert len(groups) == 0
 
     def test_mixed_media_and_non_media(self, tmp_path):
@@ -164,7 +163,7 @@ class TestFileGrouping:
             str(tmp_path / "photo.jpg"),
             str(tmp_path / "notes.txt"),
         ])
-        groups = worker._create_file_groups()
+        groups = worker.planner.create_file_groups()
         assert len(groups) == 1
 
     def test_files_in_different_dirs(self, tmp_path):
@@ -177,7 +176,7 @@ class TestFileGrouping:
         (d2 / "DSC001.jpg").touch()
 
         worker = _make_worker([str(d1 / "DSC001.jpg"), str(d2 / "DSC001.jpg")])
-        groups = worker._create_file_groups()
+        groups = worker.planner.create_file_groups()
         # Should be separate groups (different directories)
         assert len(groups) == 2
 
@@ -186,7 +185,7 @@ class TestFileGrouping:
 # Sort key generation
 # ---------------------------------------------------------------------------
 class TestExifSortKey:
-    """Test _get_exif_sort_key for chronological ordering."""
+    """Test RenamePlanner.exif_sort_key for chronological ordering."""
 
     def test_sort_by_mtime(self, tmp_path):
         """When there is no EXIF cache, fall back to file modification time."""
@@ -201,8 +200,8 @@ class TestExifSortKey:
         worker = _make_worker([str(f1), str(f2)])
         exif_cache: dict = {}  # empty cache → falls back to mtime
 
-        key1 = worker._get_exif_sort_key([str(f1)], exif_cache)
-        key2 = worker._get_exif_sort_key([str(f2)], exif_cache)
+        key1 = worker.planner.exif_sort_key([str(f1)], exif_cache)
+        key2 = worker.planner.exif_sort_key([str(f2)], exif_cache)
         assert key1 < key2
 
     def test_sort_by_cached_exif(self, tmp_path):
@@ -231,8 +230,8 @@ class TestExifSortKey:
             },
         }
 
-        key1 = worker._get_exif_sort_key([str(f1)], exif_cache)
-        key2 = worker._get_exif_sort_key([str(f2)], exif_cache)
+        key1 = worker.planner.exif_sort_key([str(f1)], exif_cache)
+        key2 = worker.planner.exif_sort_key([str(f2)], exif_cache)
         assert key1 < key2
 
     def test_filename_number_tiebreaker(self, tmp_path):
@@ -246,8 +245,8 @@ class TestExifSortKey:
         os.utime(f2, (1000, 1000))
 
         worker = _make_worker([str(f1), str(f2)])
-        key1 = worker._get_exif_sort_key([str(f1)], {})
-        key2 = worker._get_exif_sort_key([str(f2)], {})
+        key1 = worker.planner.exif_sort_key([str(f1)], {})
+        key2 = worker.planner.exif_sort_key([str(f2)], {})
         # Tiebreaker: file_number 1 < 2
         assert key1 < key2
 

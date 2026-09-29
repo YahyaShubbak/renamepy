@@ -5,11 +5,11 @@ Separates the UI construction from the main application logic.
 """
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QScrollArea, QFrame, 
     QLineEdit, QCheckBox, QComboBox, QListWidget, QStyle
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon, QAction
+from PyQt6.QtGui import QAction
 
 from ..ui_components import InteractivePreviewWidget, CollapsibleSection
 
@@ -61,13 +61,20 @@ class MainWindowUI:
         workspace_layout.addLayout(window.left_layout, 1)
         
         right_container = QWidget()
-        right_container.setMaximumWidth(360)
         window.right_layout = QVBoxLayout(right_container)
-        window.right_layout.setContentsMargins(0, 0, 0, 0)
-        workspace_layout.addWidget(right_container, 0, Qt.AlignmentFlag.AlignTop)
+        window.right_layout.setContentsMargins(0, 0, 6, 0)
+        # Scrollable, so the options never get squeezed on top of each other
+        # when the window is small or the advanced section is expanded.
+        right_scroll = QScrollArea()
+        right_scroll.setWidget(right_container)
+        right_scroll.setWidgetResizable(True)
+        right_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        window.right_scroll = right_scroll
+        workspace_layout.addWidget(right_scroll, 0)
         
-        # Advanced options: continuous counter, EXIF date sync, leave-names-
-        # as-is, save-original-to-metadata. These are used far less often
+        # Advanced options: EXIF date sync, leave-names-as-is, save-original-
+        # to-metadata, sidecar renaming. These are used far less often
         # than date/prefix/separator but previously sat visually equal to
         # them - collapsing them here cuts the always-visible surface
         # roughly in half without removing any capability. Created here so
@@ -105,6 +112,7 @@ class MainWindowUI:
         # Advanced options section goes last in the right column
         window.right_layout.addWidget(window.advanced_section)
         window.right_layout.addStretch()
+        self._fit_right_column(window)
         
         # Setup File List
         self._setup_file_list(window)
@@ -116,6 +124,22 @@ class MainWindowUI:
         window.status = window.statusBar()
         window.exif_status_label = QLabel()
         window.status.addPermanentWidget(window.exif_status_label)
+
+    @staticmethod
+    def _fit_right_column(window):
+        """Make the options column exactly as wide as its widest content.
+
+        Measured with the advanced section expanded, so opening it never
+        cuts off options; uses the real font metrics (DPI, font size).
+        """
+        content = window.advanced_section.content_widget
+        was_visible = content.isVisibleTo(window.advanced_section)
+        content.setVisible(True)
+        width = window.right_scroll.widget().minimumSizeHint().width()
+        content.setVisible(was_visible)
+        scrollbar = window.right_scroll.verticalScrollBar().sizeHint().width()
+        window.right_scroll.setMinimumWidth(width + scrollbar + 4)
+        window.right_scroll.setMaximumWidth(width + scrollbar + 60)
 
     def _setup_menu_bar(self, window):
         if not hasattr(window, 'menuBar'):
@@ -258,7 +282,8 @@ class MainWindowUI:
         date_options_row.addStretch()
         window.right_layout.addLayout(date_options_row)
 
-        # Continuous Counter
+        # Continuous Counter - always visible, right below the date options
+        # it belongs to (numbering per day vs. across all days)
         continuous_counter_row = QHBoxLayout()
         window.checkbox_continuous_counter = QCheckBox("Continuous counter for vacation/multi-day shoots")
         window.checkbox_continuous_counter.setChecked(False)
@@ -272,7 +297,7 @@ class MainWindowUI:
         
         continuous_counter_row.addWidget(window.checkbox_continuous_counter)
         continuous_counter_row.addStretch()
-        window.advanced_section.addLayout(continuous_counter_row)
+        window.right_layout.addLayout(continuous_counter_row)
 
     def _setup_input_fields(self, window):
         # Camera Prefix
@@ -436,7 +461,9 @@ class MainWindowUI:
             "Skip renaming and only perform timestamp (and future metadata) operations.\n"
             "Useful when you only want to normalize filesystem dates without changing filenames."
         )
-        sync_date_layout.addWidget(window.checkbox_leave_names)
+        sync_date_layout.addStretch()
+        window.advanced_section.addLayout(sync_date_layout)
+        window.advanced_section.addWidget(window.checkbox_leave_names)
         
         window.checkbox_save_original_to_exif = QCheckBox("Save original filename to metadata")
         window.checkbox_save_original_to_exif.setStyleSheet("""
@@ -464,10 +491,18 @@ class MainWindowUI:
             "the standard XMP tag PreservedFileName (an existing one is kept).\n"
             "This modifies the files themselves, including RAW files."
         )
-        sync_date_layout.addWidget(window.checkbox_save_original_to_exif)
-        
-        sync_date_layout.addStretch()
-        window.advanced_section.addLayout(sync_date_layout)
+        window.advanced_section.addWidget(window.checkbox_save_original_to_exif)
+
+        # Sidecar files (.xmp, .pp3, ...) keep their photo's name
+        window.checkbox_rename_sidecars = QCheckBox("Rename sidecar files with their photos")
+        window.checkbox_rename_sidecars.setChecked(True)
+        window.checkbox_rename_sidecars.setToolTip(
+            "Also rename edit/metadata files that belong to a photo, so they stay linked:\n"
+            "• IMG_0001.xmp (Lightroom) and IMG_0001.CR2.xmp (darktable)\n"
+            "• .pp3 (RawTherapee), .dop (DxO), .aae (Apple), .thm (video thumbnails)\n\n"
+            "A sidecar whose new name is already taken is left unchanged."
+        )
+        window.advanced_section.addWidget(window.checkbox_rename_sidecars)
 
     def _setup_file_list(self, window):
         window.file_list = QListWidget()

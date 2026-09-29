@@ -6,11 +6,8 @@ from __future__ import annotations
 
 import os
 import re
-import sys
-from functools import lru_cache
 from .logger_util import get_logger
 log = get_logger()
-from .filename_components import build_ordered_components
 
 def natural_sort_key(filename: str) -> list:
     """Generate a sort key for natural sorting (handles numbers correctly).
@@ -22,23 +19,6 @@ def natural_sort_key(filename: str) -> list:
         return int(text) if text.isdigit() else text.lower()
     
     return [convert(c) for c in re.split(r'(\d+)', filename)]
-
-# remove duplicated get_filename_components_static definition and provide thin wrapper if needed for backward compatibility
-def get_filename_components_static(date_taken, camera_prefix, additional, camera_model, lens_model, use_camera, use_lens, num, custom_order, date_format="YYYY-MM-DD", use_date=True, selected_metadata=None):
-    return build_ordered_components(
-        date_taken=date_taken,
-        camera_prefix=camera_prefix,
-        additional=additional,
-        camera_model=camera_model,
-        lens_model=lens_model,
-        use_camera=use_camera,
-        use_lens=use_lens,
-        number=num,
-        custom_order=custom_order,
-        date_format=date_format,
-        use_date=use_date,
-        selected_metadata=selected_metadata,
-    )
 
 class FileConstants:
     """Constants for file processing"""
@@ -59,19 +39,6 @@ class FileConstants:
 
     # Combined list for media files (images + videos)
     MEDIA_EXTENSIONS = IMAGE_EXTENSIONS + VIDEO_EXTENSIONS
-    
-    # Date formats
-    DATE_FORMATS = [
-        "YYYY-MM-DD",
-        "YYYY-MM-DD_HH-MM-SS", 
-        "YYYYMMDD",
-        "YYYYMMDD_HHMMSS",
-        "DD-MM-YYYY",
-        "MM-DD-YYYY"
-    ]
-    
-    # Component separators
-    SEPARATORS = ["_", "-", " ", ".", "None"]
 
 # Legacy constants for backward compatibility
 IMAGE_EXTENSIONS = FileConstants.IMAGE_EXTENSIONS
@@ -100,6 +67,50 @@ def is_system_artifact(filename: str) -> bool:
     """True for macOS AppleDouble files (``._DSC0001.ARW``) that carry a
     media extension but are really resource-fork metadata of another file."""
     return os.path.basename(filename).startswith('._')
+
+
+# Sidecar files written by raw converters / cameras next to a photo. They are
+# renamed along with it, otherwise edits (Lightroom/darktable .xmp,
+# RawTherapee .pp3, DxO .dop, Apple .aae) or video thumbnails (.thm) end up
+# orphaned. Both naming styles exist: "IMG_0001.xmp" and "IMG_0001.CR2.xmp".
+SIDECAR_EXTENSIONS = ('.xmp', '.pp3', '.dop', '.aae', '.thm')
+
+
+def find_sidecars(photo_path: str, names: dict[str, str] | None = None) -> list[tuple[str, str, str]]:
+    """Sidecar files next to *photo_path*.
+
+    Args:
+        photo_path: The photo.
+        names: Optional ``{lower-case name: actual name}`` listing of the
+            photo's folder (avoids listing the folder once per photo).
+
+    Returns:
+        ``(sidecar_path, kind, suffix)`` tuples: *kind* is ``"name"`` for
+        ``IMG_0001.CR2.xmp`` and ``"stem"`` for ``IMG_0001.xmp``; *suffix*
+        is the part after the photo's name/stem (e.g. ``".xmp"``).
+    """
+    directory = os.path.dirname(photo_path)
+    if names is None:
+        try:
+            names = {name.lower(): name for name in os.listdir(directory or '.')}
+        except OSError:
+            return []
+    base = os.path.basename(photo_path)
+    stem = os.path.splitext(base)[0]
+    found = []
+    for kind, prefix in (("name", base), ("stem", stem)):
+        for ext in SIDECAR_EXTENSIONS:
+            actual = names.get((prefix + ext).lower())
+            if actual:
+                found.append((os.path.join(directory, actual), kind, actual[len(prefix):]))
+    return found
+
+
+def sidecar_target(photo_target: str, kind: str, suffix: str) -> str:
+    """Name a sidecar gets when its photo is renamed to *photo_target*."""
+    base = os.path.basename(photo_target)
+    prefix = base if kind == "name" else os.path.splitext(base)[0]
+    return os.path.join(os.path.dirname(photo_target), prefix + suffix)
 
 
 def media_file_dialog_filter() -> str:
@@ -257,25 +268,6 @@ def _get_windows_max_path() -> int:
     # Classic Windows MAX_PATH (260) minus a small safety buffer
     return 255
 
-def check_file_access(file_path):
-    """
-    Check if file can be accessed and renamed.
-    Returns True if accessible, False otherwise.
-    """
-    try:
-        # Test if file exists and is accessible
-        if not os.path.exists(file_path):
-            return False
-        
-        # Test read access
-        with open(file_path, 'rb') as f:
-            f.read(1)  # Try to read one byte
-        
-        # Test if file is locked by checking if we can open it for writing
-        return True
-    except (PermissionError, OSError, IOError):
-        return False
-
 def get_safe_target_path(original_path, new_name):
     """
     Generate a safe target path, avoiding conflicts with existing files.
@@ -428,109 +420,3 @@ def is_safe_restore_name(original_name, current_path: str) -> bool:
         return False
     current_ext = os.path.splitext(current_path)[1].lower()
     return os.path.splitext(original_name)[1].lower() == current_ext
-
-
-def scan_directory(directory, include_subdirs=False):
-    """
-    Scan directory for media files (images and videos).
-    
-    Args:
-        directory: Path to the directory to scan
-        include_subdirs: If True, scan subdirectories recursively
-    
-    Returns:
-        List of media file paths found
-    """
-    if include_subdirs:
-        return scan_directory_recursive(directory)
-    else:
-        media_files = []
-        try:
-            if os.path.exists(directory):
-                for file in os.listdir(directory):
-                    file_path = os.path.join(directory, file)
-                    if os.path.isfile(file_path) and is_media_file(file):
-                        media_files.append(file_path)
-        except Exception as e:
-            log.warning(f"Error scanning directory {directory}: {e}")
-        
-        return sorted(media_files, key=lambda x: (os.path.dirname(x), natural_sort_key(os.path.basename(x))))
-
-def get_safe_filename(directory, new_name):
-    """
-    Generate a safe filename that doesn't conflict with existing files.
-    
-    Args:
-        directory: Directory where the file will be placed
-        new_name: Desired filename
-        
-    Returns:
-        Safe filename that doesn't conflict with existing files
-    """
-    # Check if file already exists
-    new_path = os.path.join(directory, new_name)
-    if not os.path.exists(new_path):
-        return new_name
-    
-    # Generate alternative name if conflict exists
-    base, ext = os.path.splitext(new_name)
-    attempt = 1
-    
-    while os.path.exists(new_path) and attempt <= 999:
-        new_name_attempt = f"{base}({attempt}){ext}"
-        new_path = os.path.join(directory, new_name_attempt)
-        attempt += 1
-    
-    if attempt > 999:
-        raise RuntimeError(f"Cannot generate unique filename for {new_name}")
-    
-    return os.path.basename(new_path)
-
-def validate_path(file_path: str) -> tuple[bool, str]:
-    """Validate a file path for various criteria.
-
-    Args:
-        file_path: Path to validate.
-
-    Returns:
-        Tuple of (is_valid, error_message).
-    """
-    if not file_path:
-        return False, "Path is empty"
-
-    if not os.path.exists(file_path):
-        return False, "Path does not exist"
-
-    # Check path length (validate_path_length returns bool)
-    if not validate_path_length(file_path):
-        return False, f"Path too long ({len(file_path)} chars, max 250)"
-
-    # Check if it's a file
-    if not os.path.isfile(file_path):
-        return False, "Path is not a file"
-
-    # Check if it's a media file
-    if not is_media_file(file_path):
-        return False, "File is not a supported media type"
-
-    return True, "Valid"
-
-def rename_files(files, camera_prefix, additional, use_camera, use_lens, exif_method, separator="_", exiftool_path=None, custom_order=None, date_format="YYYY-MM-DD", use_date=True):
-    """
-    Optimized batch rename function using cached EXIF processing.
-    Simply delegates to the optimized_rename_files function for better performance.
-    
-    Counter behavior:
-    - When use_date=True: Counter resets per date (001, 002, 003... per day)
-    - When use_date=False: Counter runs continuously across all files (001, 002, 003... regardless of date)
-    
-    Returns a list of new file paths and any errors encountered.
-    """
-    from .rename_engine import RenameWorkerThread
-    
-    # Create a temporary worker thread instance to use its optimized function
-    worker = RenameWorkerThread(files, camera_prefix, additional, use_camera, use_lens, 
-                               exif_method, separator, exiftool_path, custom_order, date_format, use_date)
-    
-    # Use the optimized rename function directly
-    return worker.optimized_rename_files()

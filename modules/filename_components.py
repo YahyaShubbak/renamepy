@@ -6,10 +6,13 @@ Provides a single source of truth for assembling ordered filename parts
 """
 from __future__ import annotations
 import re
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 
 # Public API
-__all__ = ["build_ordered_components"]
+__all__ = [
+    "build_named_components", "build_ordered_components",
+    "resolve_metadata_flags", "compose_filename",
+]
 
 FORBIDDEN_CHARS_PATTERN = re.compile(r'[<>:"/\\|?*]')
 WHITESPACE_PATTERN = re.compile(r'\s+')
@@ -79,7 +82,30 @@ def _format_metadata(key: str, value) -> Optional[str]:
     return _sanitize_component(s)
 
 
-def build_ordered_components(
+def resolve_metadata_flags(
+    selected_metadata: Optional[Dict[str, object]],
+    all_metadata: Optional[Dict[str, object]],
+) -> Dict[str, object]:
+    """Replace ``True`` flags ("read this field from the file") with the file's values.
+
+    ``selected_metadata`` holds ``True`` for per-file fields such as ISO or
+    aperture; ``all_metadata`` is ``ExifService.parse_all_metadata_from_raw``
+    of one file. Flags the file has no value for are dropped. Shared by the
+    rename engine and the preview so both produce the same names.
+    """
+    resolved: Dict[str, object] = {}
+    for key, value in (selected_metadata or {}).items():
+        if value is True:
+            source_key = 'shutter_speed' if key == 'shutter' else key
+            file_value = (all_metadata or {}).get(source_key)
+            if file_value:
+                resolved[key] = file_value
+        else:
+            resolved[key] = value
+    return resolved
+
+
+def build_named_components(
     *,
     date_taken: Optional[str],
     camera_prefix: Optional[str],
@@ -93,10 +119,13 @@ def build_ordered_components(
     date_format: str = "YYYY-MM-DD",
     use_date: bool = True,
     selected_metadata: Optional[Dict[str, object]] = None,
-) -> List[str]:
-    """Return ordered, sanitized components (without joining / separator).
-    custom_order may include base names (Date, Prefix, Additional, Camera, Lens, Number)
-    and dynamic metadata entries (Meta_<key>). Metadata flags (True) are ignored until resolved.
+) -> List[Tuple[str, str]]:
+    """Return ordered, sanitized ``(component_id, text)`` pairs.
+
+    Component ids are the names used in ``custom_order``: Date, Prefix,
+    Additional, Camera, Lens, Number and ``Meta_<key>`` for metadata fields.
+    Metadata flags (True) are ignored until resolved (see
+    ``resolve_metadata_flags``).
     """
     formatted_date = _format_date(date_taken, date_format) if (use_date and date_taken) else None
 
@@ -112,32 +141,46 @@ def build_ordered_components(
         'Number': f"{number:03d}",
     }
 
-    parts: List[str] = []
+    parts: List[Tuple[str, str]] = []
 
-    def add(value: Optional[str]):
+    def add(component_id: str, value: Optional[str]):
         if value:
-            parts.append(_sanitize_component(value))
+            text = _sanitize_component(value)
+            if text:
+                parts.append((component_id, text))
 
     for name in custom_order:
         if name in base:
-            add(base[name])
+            add(name, base[name])
         elif name.startswith('Meta_') and selected_metadata:
             raw_key = name[5:]
             if raw_key in selected_metadata:
-                formatted = _format_metadata(raw_key, selected_metadata[raw_key])
-                if formatted:
-                    add(formatted)
+                add(name, _format_metadata(raw_key, selected_metadata[raw_key]))
 
     # Fallback: append any metadata not explicitly ordered (only if no Meta_ present)
     if selected_metadata:
         has_explicit = any(c.startswith('Meta_') for c in custom_order)
         if not has_explicit:
             for k, v in selected_metadata.items():
-                formatted = _format_metadata(k, v)
-                if formatted:
-                    add(formatted)
+                add(f"Meta_{k}", _format_metadata(k, v))
 
     # If Number not explicitly ordered, append at end
     if 'Number' not in custom_order:
-        add(base['Number'])
+        add('Number', base['Number'])
     return parts
+
+
+def build_ordered_components(**kwargs) -> List[str]:
+    """Return ordered, sanitized components (without joining / separator).
+
+    Same arguments as :func:`build_named_components`, without the ids.
+    """
+    return [text for _component_id, text in build_named_components(**kwargs)]
+
+
+def compose_filename(parts: List[str], separator: str, extension: str) -> str:
+    """Join components with the separator ("None" = no separator) and sanitize."""
+    from .file_utilities import sanitize_final_filename
+
+    sep = '' if separator in (None, 'None') else separator
+    return sanitize_final_filename(sep.join(parts) + extension)

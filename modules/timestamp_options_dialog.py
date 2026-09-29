@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QCheckBox, QPushButton, QDateTimeEdit, QGroupBox
 )
-from PyQt6.QtCore import Qt, QDateTime
+from PyQt6.QtCore import QDateTime
 
 
 class TimestampSyncOptionsDialog(QDialog):

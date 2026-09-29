@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from modules.exif_processor import find_exiftool_path, set_default_exif_service
 from modules.exif_service_new import ExifService
-from modules.file_utilities import is_media_file, scan_directory_recursive
+from modules.file_utilities import scan_directory_recursive
 from modules.rename_engine import RenameWorkerThread
 from modules import backup_journal as _backup_journal
 

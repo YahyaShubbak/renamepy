@@ -191,9 +191,6 @@ class MetadataDialogManager:
         """Show detailed EXIF metadata dialog with two-stage display and checkboxes for filename inclusion"""
         file_type = "Video" if is_video_file(file_path) else "Image"
         
-        # Parse the full metadata to extract essential information
-        essential_info = self.extract_essential_metadata(info_str, file_path)
-        
         dialog = QDialog(self.parent)
         dialog.setWindowTitle(f"{file_type} Metadata: {os.path.basename(file_path)}")
         dialog.setModal(True)
@@ -260,6 +257,7 @@ class MetadataDialogManager:
                 row_layout = QHBoxLayout()
                 row_layout.setContentsMargins(0, 2, 0, 2)
 
+                checkbox = None
                 if metadata_key in self.FILENAME_METADATA_KEYS:
                     checkbox = QCheckBox()
                     checkbox.setChecked(self._is_included(metadata_key) or checked)
@@ -286,7 +284,7 @@ class MetadataDialogManager:
         
         # FILE INFORMATION section
         file_section = QLabel("📁 FILE INFORMATION")
-        file_section.setStyleSheet("font-weight: bold; color: #666; margin: 5px 0px 3px 0px;")
+        file_section.setStyleSheet("font-weight: bold; margin: 5px 0px 3px 0px;")
         layout.addWidget(file_section)
         
         add_metadata_row(layout, "File", os.path.basename(file_path))
@@ -314,7 +312,7 @@ class MetadataDialogManager:
         
         # CAMERA & LENS section
         camera_section = QLabel("📷 CAMERA & LENS")
-        camera_section.setStyleSheet("font-weight: bold; color: #666; margin: 10px 0px 3px 0px;")
+        camera_section.setStyleSheet("font-weight: bold; margin: 10px 0px 3px 0px;")
         layout.addWidget(camera_section)
         
         make = metadata_dict.get('EXIF:Make', '')
@@ -327,7 +325,7 @@ class MetadataDialogManager:
         
         # SHOOTING SETTINGS section
         shooting_section = QLabel("⚙️ SHOOTING SETTINGS")
-        shooting_section.setStyleSheet("font-weight: bold; color: #666; margin: 10px 0px 3px 0px;")
+        shooting_section.setStyleSheet("font-weight: bold; margin: 10px 0px 3px 0px;")
         layout.addWidget(shooting_section)
         
         date_taken = metadata_dict.get('EXIF:DateTimeOriginal', metadata_dict.get('EXIF:CreateDate', ''))
@@ -357,7 +355,7 @@ class MetadataDialogManager:
         
         # IMAGE PROPERTIES section
         image_section = QLabel("🖼️ IMAGE PROPERTIES")
-        image_section.setStyleSheet("font-weight: bold; color: #666; margin: 10px 0px 3px 0px;")
+        image_section.setStyleSheet("font-weight: bold; margin: 10px 0px 3px 0px;")
         layout.addWidget(image_section)
         
         width = metadata_dict.get('EXIF:ExifImageWidth', metadata_dict.get('EXIF:ImageWidth', ''))
@@ -372,7 +370,7 @@ class MetadataDialogManager:
         
         # CAMERA SETTINGS section
         settings_section = QLabel("🔧 CAMERA SETTINGS")
-        settings_section.setStyleSheet("font-weight: bold; color: #666; margin: 10px 0px 3px 0px;")
+        settings_section.setStyleSheet("font-weight: bold; margin: 10px 0px 3px 0px;")
         layout.addWidget(settings_section)
         
         exposure_mode = metadata_dict.get('EXIF:ExposureProgram', '')
@@ -491,122 +489,6 @@ class MetadataDialogManager:
         checkbox = self.parent.shooting_setting_checkboxes[key]
         self._set_shooting_flag(key, checkbox.isChecked())
         self.parent.update_preview()
-    
-    def extract_essential_metadata(self, full_metadata, file_path):
-        """Extract the most relevant metadata for human users"""
-        lines = full_metadata.split('\n')
-        essential = {}
-        
-        # Parse all metadata into a dictionary for easier access
-        metadata_dict = {}
-        for line in lines:
-            if ':' in line and line.strip():
-                try:
-                    # Split only on the first colon to handle values that contain colons
-                    parts = line.split(':', 2)  # Split into max 3 parts
-                    if len(parts) >= 2:
-                        key = parts[0].strip() + ':' + parts[1].strip()
-                        value = parts[2].strip() if len(parts) > 2 else ''
-                        metadata_dict[key] = value
-                except (ValueError, IndexError):
-                    continue
-        
-        # File information
-        file_stats = os.stat(file_path)
-        file_size_mb = file_stats.st_size / (1024 * 1024)
-        
-        essential_text = f"📁 FILE INFORMATION\n"
-        essential_text += f"File: {os.path.basename(file_path)}\n"
-        essential_text += f"Size: {file_size_mb:.1f} MB\n"
-        essential_text += f"Type: {metadata_dict.get('File:FileType', 'Unknown')}\n"
-        
-        # Camera information
-        make = metadata_dict.get('EXIF:Make', '')
-        model = metadata_dict.get('EXIF:Model', '')
-        camera = f"{make} {model}".strip()
-        lens = metadata_dict.get('EXIF:LensModel', metadata_dict.get('MakerNotes:LensSpec', 'Unknown'))
-        
-        essential_text += f"\n📷 CAMERA & LENS\n"
-        essential_text += f"Camera: {camera if camera else 'Unknown'}\n"
-        essential_text += f"Lens: {lens}\n"
-        
-        # Shooting information
-        essential_text += f"\n⚙️ SHOOTING SETTINGS\n"
-        
-        # Date/Time
-        date_taken = metadata_dict.get('EXIF:DateTimeOriginal', metadata_dict.get('EXIF:CreateDate', ''))
-        if date_taken:
-            essential_text += f"Date: {date_taken}\n"
-        
-        # Exposure settings
-        iso = metadata_dict.get('EXIF:ISO', metadata_dict.get('MakerNotes:SonyISO', ''))
-        if iso:
-            essential_text += f"ISO: {iso}\n"
-        
-        aperture = metadata_dict.get('EXIF:FNumber', metadata_dict.get('Composite:Aperture', ''))
-        if aperture:
-            essential_text += f"Aperture: f/{aperture}\n"
-        
-        exposure_time = metadata_dict.get('EXIF:ExposureTime', '')
-        if exposure_time:
-            essential_text += f"Shutter: {format_exposure_time(exposure_time) or exposure_time}\n"
-        
-        focal_length = metadata_dict.get('EXIF:FocalLength', '')
-        focal_length_35 = metadata_dict.get('EXIF:FocalLengthIn35mmFormat', '')
-        if focal_length:
-            if focal_length_35 and focal_length != focal_length_35:
-                essential_text += f"Focal Length: {focal_length}mm ({focal_length_35}mm equiv.)\n"
-            else:
-                essential_text += f"Focal Length: {focal_length}mm\n"
-        
-        # Image properties
-        essential_text += f"\n🖼️ IMAGE PROPERTIES\n"
-        
-        width = metadata_dict.get('EXIF:ExifImageWidth', metadata_dict.get('EXIF:ImageWidth', ''))
-        height = metadata_dict.get('EXIF:ExifImageHeight', metadata_dict.get('EXIF:ImageHeight', ''))
-        if width and height:
-            try:
-                megapixels = (int(width) * int(height)) / 1000000
-                essential_text += f"Resolution: {width} x {height} ({megapixels:.1f} MP)\n"
-            except (ValueError, TypeError):
-                essential_text += f"Resolution: {width} x {height}\n"
-        
-        # Additional useful settings
-        essential_text += f"\n🔧 CAMERA SETTINGS\n"
-        
-        exposure_mode = metadata_dict.get('EXIF:ExposureProgram', '')
-        if exposure_mode:
-            mode_names = {
-                '0': 'Manual', '1': 'Manual', '2': 'Program Auto', '3': 'Aperture Priority',
-                '4': 'Shutter Priority', '5': 'Creative Program', '6': 'Action Program'
-            }
-            mode_name = mode_names.get(exposure_mode, f'Mode {exposure_mode}')
-            essential_text += f"Exposure Mode: {mode_name}\n"
-        
-        metering_mode = metadata_dict.get('EXIF:MeteringMode', '')
-        if metering_mode:
-            meter_names = {
-                '1': 'Average', '2': 'Center-weighted', '3': 'Spot', 
-                '4': 'Multi-spot', '5': 'Multi-segment', '6': 'Partial'
-            }
-            meter_name = meter_names.get(metering_mode, f'Mode {metering_mode}')
-            essential_text += f"Metering: {meter_name}\n"
-        
-        flash = metadata_dict.get('EXIF:Flash', '')
-        if flash:
-            try:
-                flash_fired = 'Yes' if int(flash) & 1 else 'No'
-                essential_text += f"Flash: {flash_fired}\n"
-            except (ValueError, TypeError):
-                essential_text += f"Flash: {flash}\n"
-        
-        # Image stabilization (Sony specific)
-        image_stab = metadata_dict.get('MakerNotes:ImageStabilization', '')
-        if image_stab:
-            stab_status = 'On' if image_stab == '1' else 'Off'
-            essential_text += f"Image Stabilization: {stab_status}\n"
-        
-        return essential_text
     
     def toggle_full_metadata(self, dialog, layout, full_info, essential_widget):
         """Toggle between essential and full metadata view"""

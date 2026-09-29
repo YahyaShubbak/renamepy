@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import os
 import re
-import time
 import subprocess
 import glob
 import shutil
@@ -17,11 +16,11 @@ from .logger_util import get_logger
 log = get_logger()
 
 # EXIF processing imports - exact same as original
-try:
-    import exiftool #### pip install PyExifTool
-    EXIFTOOL_AVAILABLE = True
-except ImportError:
-    EXIFTOOL_AVAILABLE = False
+import importlib.util
+
+# PyExifTool (pip install PyExifTool) is used through exif_service_new;
+# here only its availability matters.
+EXIFTOOL_AVAILABLE = importlib.util.find_spec("exiftool") is not None
 
 # ---------------------------------------------------------------------------
 # Module-level ExifService reference for backward-compatible delegate functions.
@@ -105,7 +104,7 @@ if os.name == 'nt':
 # Thin delegates — route to the registered ExifService instance.
 #
 # These exist so that modules which import from exif_processor (handlers,
-# dialogs, file_list_manager, performance_benchmark, tests) continue to
+# dialogs, file_list_manager, tests) continue to
 # work without changing their import statements.
 # ---------------------------------------------------------------------------
 
@@ -130,6 +129,39 @@ def get_exiftool_metadata_shared(image_path: str, exiftool_path: str | None = No
     except Exception as e:
         log.warning(f"get_exiftool_metadata_shared fallback failed: {e}")
         return {}
+
+
+def get_exiftool_metadata_batch(file_paths: list[str], exiftool_path: str | None = None) -> dict:
+    """Read raw metadata of many files ({path: metadata}, {} for unreadable ones).
+
+    Uses the shared ExifService (one IPC call per chunk) or, if none is
+    registered, a one-shot ExifTool process.
+    """
+    if not file_paths:
+        return {}
+    if _default_exif_service:
+        return _default_exif_service.batch_get_raw_metadata(list(file_paths))
+    from .exif_service_new import new_exiftool_helper
+    results = {path: {} for path in file_paths}
+    existing = [p for p in file_paths if os.path.exists(p)]
+    by_norm = {os.path.normpath(p): p for p in existing}
+    try:
+        if not exiftool_path:
+            exiftool_path = find_exiftool_path()
+        with new_exiftool_helper(exiftool_path) as et:
+            for start in range(0, len(existing), 50):
+                try:
+                    metas = et.get_metadata(existing[start:start + 50])
+                except Exception as e:
+                    log.warning(f"Batch metadata read failed: {e}")
+                    continue
+                for meta in metas:
+                    path = by_norm.get(os.path.normpath(str(meta.get('SourceFile', ''))))
+                    if path:
+                        results[path] = meta
+    except Exception as e:
+        log.warning(f"get_exiftool_metadata_batch failed: {e}")
+    return results
 
 
 def cleanup_global_exiftool() -> None:
@@ -499,19 +531,37 @@ def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None
                 progress_callback(f"Prefetch failed, falling back: {e}")
             prefetch_map = {}
 
-    for i, file_path in enumerate(file_paths):
-        if progress_callback:
-            progress_callback(f"Processing {i+1}/{len(file_paths)}: {os.path.basename(file_path)}")
+    # Back up a whole chunk with one journal write before modifying any file
+    # of it (one write per file would make large batches quadratic).
+    SYNC_CHUNK = 200
+    for start in range(0, len(file_paths), SYNC_CHUNK):
+        chunk = file_paths[start:start + SYNC_CHUNK]
+        originals = {}
+        for file_path in chunk:
+            if file_path in backup_data or not os.path.exists(file_path):
+                continue
+            try:
+                originals[file_path] = _capture_original_times(file_path)
+            except OSError as e:
+                log.debug(f"Could not read timestamps of {file_path}: {e}")
+        backup_data.record_originals(originals)
 
-        pre_dt = prefetch_map.get(file_path)
-        success, message, original_times = sync_exif_date_to_file_date(
-            file_path, exiftool_path, backup_data, options=options, preexif_dt=pre_dt
-        )
+        for i, file_path in enumerate(chunk, start=start):
+            if progress_callback:
+                progress_callback(f"Processing {i+1}/{len(file_paths)}: {os.path.basename(file_path)}")
+            if file_path not in backup_data and os.path.exists(file_path):
+                errors.append((file_path, "Could not back up the original timestamps - skipped"))
+                continue
 
-        if success:
-            successes.append((file_path, message))
-        else:
-            errors.append((file_path, message))
+            pre_dt = prefetch_map.get(file_path)
+            success, message, _original_times = sync_exif_date_to_file_date(
+                file_path, exiftool_path, None, options=options, preexif_dt=pre_dt
+            )
+
+            if success:
+                successes.append((file_path, message))
+            else:
+                errors.append((file_path, message))
 
     return successes, errors, backup_data
 

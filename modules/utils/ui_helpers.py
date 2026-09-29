@@ -3,7 +3,6 @@ UI Helper Utilities - Common utility functions for UI operations
 Extracted from main_application.py to reduce clutter
 """
 
-import os
 from ..file_utilities import is_video_file as _is_video_file_canonical
 
 

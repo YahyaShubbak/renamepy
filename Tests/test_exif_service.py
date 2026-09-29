@@ -8,8 +8,7 @@ verifying caching, cleanup, selective extraction, and error handling.
 
 import os
 import sys
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

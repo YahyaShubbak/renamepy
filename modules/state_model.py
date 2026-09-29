@@ -4,7 +4,7 @@ State Model for RenamePy.
 This module encapsulates the application state (data), separating it from the UI logic.
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from dataclasses import dataclass, field
 
 @dataclass
@@ -14,10 +14,6 @@ class RenamerState:
     """
     # The list of files currently loaded
     files: List[str] = field(default_factory=list)
-    
-    # Metadata caches
-    camera_models: Dict[str, str] = field(default_factory=dict)
-    lens_models: Dict[str, str] = field(default_factory=dict)
     
     # Undo / Restore data
     original_filenames: Dict[str, str] = field(default_factory=dict)
@@ -33,8 +29,6 @@ class RenamerState:
     def clear_files(self):
         """Clears all file-related data."""
         self.files.clear()
-        self.camera_models.clear()
-        self.lens_models.clear()
         # Note: We might want to keep undo data or clear it depending on UX requirements
         # For now, clearing files usually implies a reset
     

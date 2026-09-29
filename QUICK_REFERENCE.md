@@ -4,7 +4,7 @@
 
 ### 1. Installation (One-time Setup)
 
-**Windows (PowerShell):**
+**Windows:** double-click `install.bat` (or in PowerShell:)
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
@@ -22,7 +22,8 @@ start.bat
 start.bat --debug    # With debug information
 ```
 
-**Linux / macOS:**
+**Linux / macOS:** use the "RenamePy" entry in the application menu (Linux) or the
+`RenamePy.command` shortcut on the desktop (macOS), or:
 ```bash
 conda activate renamepy && python RenameFiles.py
 # or (if using venv):
@@ -31,11 +32,22 @@ source .venv/bin/activate && python RenameFiles.py
 
 ---
 
+## Renaming Workflow
+
+1. Load files (buttons or drag & drop), choose the name components
+2. Click **Rename Files** → a table shows every old → new name (sidecars included)
+3. Confirm → progress dialog (can be cancelled between files)
+4. **Restore** undoes renames, timestamp syncs and EXIF time shifts - also after a crash or restart
+5. **Tools → Forget Undo Data…** once you are happy with the result
+
+---
+
 ## Key Files
 
 | File | Purpose | When to Use |
 |------|---------|-------------|
-| **install.ps1** | Windows installation | Once only |
+| **install.bat** | Windows installation (double-click) | Once only |
+| **install.ps1** | Windows installation (PowerShell) | Once only |
 | **install.sh** | Linux/macOS installation | Once only |
 | **start.bat** | Start app (Windows) | Always |
 | **activate_env.bat** | Manual env activation | Optional |
@@ -48,9 +60,9 @@ source .venv/bin/activate && python RenameFiles.py
 
 ### "ModuleNotFoundError: PyQt6"
 ```bash
-# Reinstall packages:
-conda activate renamepy
-pip install -r requirements.txt
+# Reinstall packages into the environment:
+conda activate renamepy            # or: source .venv/bin/activate / renamepy\Scripts\activate
+python -m pip install -r requirements.txt
 ```
 
 ### "Conda not found"
@@ -105,10 +117,11 @@ After installation, you have two options:
 
 ```powershell
 # Check installation
-conda env list
+conda env list            # Conda
+ls .venv renamepy         # venv
 
 # Manually activate
-conda activate renamepy
+conda activate renamepy   # or: source .venv/bin/activate
 
 # List all packages
 pip list

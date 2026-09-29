@@ -14,7 +14,7 @@ A powerful and user-friendly PyQt6 application for batch renaming image files wi
 - **ExifTool Integration**: Professional-grade metadata extraction using the excellent https://exiftool.org/
 
 ### 🎯 **Flexible Naming System**
-- **Interactive Preview**: Drag & drop components to customize filename order
+- **Interactive Preview**: Drag & drop components to customize filename order; the example is computed by the same code that renames, so it always matches the result
 - **Multiple Date Formats**: YYYY-MM-DD, DD-MM-YYYY, YYYYMMDD, and more
 - **Custom Prefixes**: Add camera identifiers (e.g., A7R3, D850)
 - **Additional Fields**: Project names, locations, events
@@ -24,51 +24,26 @@ A powerful and user-friendly PyQt6 application for batch renaming image files wi
 - **Subdirectory Support**: Recursive folder scanning
 - **File Safety**: Access validation and conflict resolution
 - **Undo Functionality**: Restore original filenames, timestamps and EXIF dates — even after a crash or restart (undo journal)
-- **Batch Processing**: Handle hundreds of files efficiently
-- **Dark/Light Themes**: Customizable UI appearance
+- **Sidecar Files**: `.xmp`, `.pp3`, `.dop`, `.aae`, `.thm` are renamed together with their photo
+- **Batch Processing**: Batched ExifTool calls; handles thousands of files
+- **Themes**: Light, Dark, or follow the system (including dark mode)
 
 ### 🚀 **User Experience**
 - **Drag & Drop Interface**: Easy file selection
-- **Live Preview**: See results before renaming
-- **Progress Tracking**: Real-time operation feedback
+- **Review Table**: Every old → new name is shown for confirmation before anything changes
+- **Progress & Cancel**: Progress dialog; renames can be cancelled between files
 - **Error Handling**: Detailed failure reports
 - **Tooltips & Help**: Built-in guidance system
 
 ## 🖥️ Screenshots
 
-### Main Interface (System Theme)
-```
-┌────────────────────────────────────────────────────────────┐
-│ Theme: [System ▼]                                          │
-│                                                            │
-│ [📄 Select Files] [📁 Select Folder] [🗑️ Clear Files]      │
-│                                                            │
-│ ☑ Include date in filename  Date Format: [YYYY-MM-DD ▼]    │
-│                                                            │
-│ Camera Prefix: [A7R3                    ] ℹ️               │
-│ Additional:    [vacation                ] ℹ️               │
-│ Separator:     [- ▼] ℹ️                                    │
-│                                                            │
-│ Interactive Preview (Drag & Drop): ℹ️                      │
-│ ┌────────────────────────────────────────────────────────┐ │
-│ │ [2025-07-29] - [A7R3] - [vacation] - [001]             │ │
-│ └────────────────────────────────────────────────────────┘ │
-│                                                            │
-│ ☐ Include camera model from EXIF (Sony ILCE-7RM3)          │
-│ ☐ Include lens model from EXIF (FE 24-70mm F2.8 GM)        │
-│                                                            │
-│ EXIF Method: [exiftool ▼]   ExifTool Path: [Browse...]     │
-│                                                            │
-│ ┌─── File List (0 files) ────────────────────────────────┐ │
-│ │ 📁 Drag and drop image files here...                   │ │
-│ │    Supports: RAW (.arw, .cr2, .nef), JPEG, PNG, etc.   │ │
-│ └────────────────────────────────────────────────────────┘ │
-│                                                            │
-│ [🚀 Rename Files] [↶ Restore Original Names]               │
-│                                                            │
-│ Status: Ready to rename files                              │
-└────────────────────────────────────────────────────────────┘
-```
+| Light | Dark |
+|---|---|
+| ![Main window, light theme](docs/screenshots/main-light.png) | ![Main window, dark theme](docs/screenshots/main-dark.png) |
+
+**Review before renaming** – every old → new name, sidecar files and name conflicts (orange) at a glance:
+
+![Review dialog](docs/screenshots/review-dialog.png)
 
 ## 📋 Requirements
 
@@ -164,12 +139,12 @@ sudo apt-get install libimage-exiftool-perl
 ## 📖 Usage Guide
 
 ### Basic Workflow
-1. **Select Files**: Use buttons or drag & drop
+1. **Select Files**: Use buttons or drag & drop (files already in the list are skipped)
 2. **Configure Settings**: Set date format, prefixes, etc.
 3. **Preview Results**: Check the interactive preview
 4. **Customize Order**: Drag components to reorder
-5. **Rename Files**: Click the rename button
-6. **Undo if Needed**: Use restore function
+5. **Rename Files**: Click the rename button, review the table of old → new names, confirm
+6. **Undo if Needed**: Use the restore function (also works after restarting the app); **Tools → Forget Undo Data…** once you are happy
 
 ### Advanced Features
 
@@ -212,7 +187,8 @@ Drag components in the Interactive Preview to customize order:
 Folder scans skip hidden folders, NAS thumbnail folders (e.g. Synology `@eaDir`) and macOS `._*` resource-fork files.
 
 ### Undo and Safety
-- Renames never overwrite an existing file; name conflicts get `(1)`, `(2)` suffixes.
+- Nothing is renamed before you confirm the full list of old → new names; a running rename can be cancelled between files.
+- Renames never overwrite an existing file; name conflicts get `(1)`, `(2)` suffixes (sidecar files are never suffixed – if their name is taken they are left alone).
 - Before any file is renamed or its timestamps/EXIF dates are changed, the original values are written to an undo journal in the per-user app-data folder. After a crash or restart, **Restore** can still undo the operation.
 - Repeating a timestamp sync or EXIF time shift keeps the backup of the *original* values.
 - Only successfully restored entries are removed from the journal; **Tools → Forget Undo Data…** discards everything once you are happy with the result.
@@ -267,7 +243,7 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 ```bash
 git clone https://github.com/YahyaShubbak/renamepy.git
 cd renamepy
-pip install -r requirements.txt pytest pytest-qt
+pip install -r requirements-dev.txt
 # Run tests (headless; tests against a real ExifTool run if one is installed)
 QT_QPA_PLATFORM=offscreen python -m pytest Tests/
 ```
