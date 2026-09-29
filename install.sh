@@ -239,7 +239,7 @@ done
 
 # Try PATH
 if [ -z "$CONDA_EXE" ]; then
-    CONDA_EXE=$(which conda 2>/dev/null || true)
+    CONDA_EXE=$(command -v conda 2>/dev/null || true)
 fi
 
 if [ -n "$CONDA_EXE" ] && [ -x "$CONDA_EXE" ]; then
@@ -456,7 +456,9 @@ Terminal=false
 Categories=Graphics;Photography;
 EOF
         chmod +x "$SHORTCUT_PATH"
-        command -v update-desktop-database &>/dev/null && update-desktop-database "$APPS_DIR" &>/dev/null || true
+        if command -v update-desktop-database &>/dev/null; then
+            update-desktop-database "$APPS_DIR" &>/dev/null || true
+        fi
         print_ok "Application menu entry created: $SHORTCUT_PATH"
 
         # Optional copy on the desktop
@@ -468,7 +470,9 @@ EOF
             cp "$SHORTCUT_PATH" "$DESKTOP_DIR/RenamePy.desktop"
             chmod +x "$DESKTOP_DIR/RenamePy.desktop"
             # GNOME only starts desktop launchers marked as trusted
-            command -v gio &>/dev/null && gio set "$DESKTOP_DIR/RenamePy.desktop" metadata::trusted true &>/dev/null || true
+            if command -v gio &>/dev/null; then
+                gio set "$DESKTOP_DIR/RenamePy.desktop" metadata::trusted true &>/dev/null || true
+            fi
             print_ok "Desktop shortcut created: $DESKTOP_DIR/RenamePy.desktop"
         fi
 
