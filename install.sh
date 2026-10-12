@@ -3,9 +3,10 @@
 #  RenamePy - Automated Installation Script (Linux/macOS)
 #  Creates a virtual environment with all required dependencies
 #
-#  Usage: ./install.sh [--yes]
+#  Usage: ./install.sh [--yes] [--venv]
 #    --yes   ask nothing, take every default (also automatic without a
 #            terminal, e.g. CI); sudo may still ask for a password
+#    --venv  use a Python venv even if conda is installed
 # ============================================================================
 
 set -e  # Exit on error
@@ -14,9 +15,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 ASSUME_YES=false
+FORCE_VENV=false
 for arg in "$@"; do
     case "$arg" in
         -y|--yes) ASSUME_YES=true ;;
+        --venv) FORCE_VENV=true ;;
         -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
         *) echo "Unknown option: $arg (see --help)" >&2; exit 2 ;;
     esac
@@ -289,7 +292,9 @@ if [ -z "$CONDA_EXE" ]; then
     CONDA_EXE=$(command -v conda 2>/dev/null || true)
 fi
 
-if [ -n "$CONDA_EXE" ] && [ -x "$CONDA_EXE" ]; then
+if [ "$FORCE_VENV" = true ]; then
+    print_info "Using Python venv (--venv)."
+elif [ -n "$CONDA_EXE" ] && [ -x "$CONDA_EXE" ]; then
     print_ok "Conda found: $CONDA_EXE"
     echo ""
     echo -e "  Choose environment type:"
@@ -300,11 +305,18 @@ if [ -n "$CONDA_EXE" ] && [ -x "$CONDA_EXE" ]; then
     if [[ "$ENV_CHOICE" == "2" ]]; then
         print_info "Using Python venv."
     else
-        USE_CONDA=true
-        CONDA_BASE=$(dirname "$(dirname "$CONDA_EXE")")
-        # shellcheck disable=SC1091
-        source "$CONDA_BASE/etc/profile.d/conda.sh"
-        print_info "Using Conda."
+        # Ask conda for its base instead of taking two levels up from the
+        # executable: /usr/bin/conda (a symlink or wrapper, as on GitHub's
+        # Ubuntu runners) gave /usr, which has no etc/profile.d/conda.sh.
+        CONDA_BASE="$("$CONDA_EXE" info --base 2>/dev/null || true)"
+        if [ -n "$CONDA_BASE" ] && [ -f "$CONDA_BASE/etc/profile.d/conda.sh" ]; then
+            USE_CONDA=true
+            # shellcheck disable=SC1091
+            source "$CONDA_BASE/etc/profile.d/conda.sh"
+            print_info "Using Conda ($CONDA_BASE)."
+        else
+            print_warning "Conda's shell setup (etc/profile.d/conda.sh) was not found. Using Python venv instead."
+        fi
     fi
 else
     print_info "Conda not found. Using Python venv."

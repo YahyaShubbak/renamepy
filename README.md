@@ -89,8 +89,9 @@ install.bat
 
 Unattended installation (e.g. for scripts or CI): `./install.sh --yes` or
 `install.bat -Yes` takes every default answer; this also happens
-automatically when there is no terminal to ask. Further Windows options:
-`-ForceVenv` (use venv even if conda is installed), `-SkipExifCheck`.
+automatically when there is no terminal to ask. To use a Python venv even
+if conda is installed: `./install.sh --venv` / `install.bat -ForceVenv`.
+Windows also has `-SkipExifCheck`.
 
 > 💡 **Conda**: the installers create the environment from **conda-forge**
 > only. Anaconda's own `defaults` channel falls under its terms of service,

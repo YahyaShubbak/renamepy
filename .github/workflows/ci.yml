@@ -98,7 +98,7 @@ jobs:
         path: "Fotos [2024] (Uni)/renamepy"
     - name: Install non-interactively
       working-directory: "Fotos [2024] (Uni)/renamepy"
-      run: ./install.sh --yes < /dev/null
+      run: ./install.sh --yes --venv < /dev/null
     - name: The environment imports the app's packages
       working-directory: "Fotos [2024] (Uni)/renamepy"
       env:

@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Paths with umlauts**: `activate_env.bat` is written as UTF-8 with `chcp 65001`, and Python/conda output is read as UTF-8, so the existing-environment check no longer misses an environment and lets `conda create -y` replace it.
 - **conda environments come from conda-forge with Python 3.12** (Windows and Linux alike): Anaconda's `defaults` channel needs a paid licence in organisations of more than 200 people, and recent conda refuses it until its terms are accepted.
 - **Unattended mode**: `install.bat -Yes` / `./install.sh --yes`, automatic without a terminal. `install.sh` no longer aborts silently without `TERM` or stdin, runs `apt-get update` only after you agreed, and uses `sudo -n` without a terminal instead of waiting for a password.
+- **`install.sh` aborted when `conda` was a symlink or wrapper** (e.g. `/usr/bin/conda` on GitHub's Ubuntu runners): the conda base was guessed as two folders above the executable. It is now asked from conda (`conda info --base`), and without a usable `conda.sh` the installer falls back to a venv. New option `--venv` (like `-ForceVenv` on Windows).
 - A broken environment (no working Python/pip) is offered for recreation with Yes as the default; unknown options are rejected; `install.bat` passes options through and returns the real exit code; the "start manually" hint works in PowerShell; the newest of several ExifTool versions is used.
 - CI runs both installers from folders with spaces and brackets, and weekly.
 
