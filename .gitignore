@@ -18,6 +18,14 @@ env/
 ENV/
 .venv/
 .env
+# The venv install.ps1 creates. Python 3.13+ venvs ignore themselves, but
+# 3.10-3.12 venvs showed up as untracked files.
+/renamepy/
+
+# Written by the installers with this machine's absolute paths
+/activate_env.bat
+# Left behind by setup_exiftool.ps1 when a download or checksum fails
+/temp_download/
 
 # IDE files
 .vscode/

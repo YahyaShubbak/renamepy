@@ -6,7 +6,11 @@
 param(
     [switch]$Force = $false,
     [switch]$Verbose = $false,
-    [switch]$SkipChecksumVerification = $false
+    [switch]$SkipChecksumVerification = $false,
+    # Set by install.ps1 -Yes: no questions. Also automatic with redirected
+    # input. The one question (install without checksum?) is then answered
+    # No: an unverified download is never installed unattended.
+    [switch]$Unattended = $false
 )
 
 $ErrorActionPreference = "Continue"
@@ -122,12 +126,12 @@ function Initialize-ExifToolGlobals {
 # Function: Check whether ExifTool already exists
 # ============================================================================
 function Test-ExifToolExists {
-    if (Test-Path $script:EXIFTOOL_DIR) {
+    if (Test-Path -LiteralPath $script:EXIFTOOL_DIR) {
         # Check both possible exe names
         $exeFile1 = Join-Path $script:EXIFTOOL_DIR "exiftool.exe"
         $exeFile2 = Join-Path $script:EXIFTOOL_DIR "exiftool(-k).exe"
         
-        $exeFile = if (Test-Path $exeFile1) { $exeFile1 } elseif (Test-Path $exeFile2) { $exeFile2 } else { $null }
+        $exeFile = if (Test-Path -LiteralPath $exeFile1) { $exeFile1 } elseif (Test-Path -LiteralPath $exeFile2) { $exeFile2 } else { $null }
         
         if ($exeFile) {
             Write-Success "ExifTool already present: $($script:EXIFTOOL_DIR)"
@@ -153,7 +157,7 @@ function Invoke-ExifToolDownload {
     Write-Info "Downloading ExifTool $($script:EXIFTOOL_VERSION)..."
     
     # Create download directory
-    if (-not (Test-Path $DOWNLOAD_DIR)) {
+    if (-not (Test-Path -LiteralPath $DOWNLOAD_DIR)) {
         New-Item -ItemType Directory -Path $DOWNLOAD_DIR | Out-Null
         Write-Info "Download directory created"
     }
@@ -161,8 +165,8 @@ function Invoke-ExifToolDownload {
     $zipFile = Join-Path $DOWNLOAD_DIR $script:EXIFTOOL_ZIP
     
     # Remove old ZIP if present
-    if (Test-Path $zipFile) {
-        Remove-Item $zipFile -Force
+    if (Test-Path -LiteralPath $zipFile) {
+        Remove-Item -LiteralPath $zipFile -Force
     }
     
     # Set TLS 1.2 for secure downloads
@@ -176,10 +180,20 @@ function Invoke-ExifToolDownload {
             # SourceForge serves an HTML "download starting" page to
             # browser-like user agents (which includes PowerShell's default);
             # a Wget user agent gets redirected straight to the file.
-            Invoke-WebRequest -Uri $url -OutFile $zipFile -MaximumRedirection 10 -UseBasicParsing -TimeoutSec 120 -UserAgent $DOWNLOAD_USER_AGENT
-            
-            if (Test-Path $zipFile) {
-                $fileSize = [math]::Round((Get-Item $zipFile).Length / 1MB, 2)
+            # Downloaded to the temp folder first: Windows PowerShell 5.1's
+            # -OutFile reads "[...]" as a wildcard and fails for a project
+            # folder like "Fotos [2024]" (there is no -LiteralPath for it).
+            $tmpZip = Join-Path ([System.IO.Path]::GetTempPath()) ("exiftool-" + [guid]::NewGuid().ToString("N") + ".zip")
+            try {
+                Invoke-WebRequest -Uri $url -OutFile $tmpZip -MaximumRedirection 10 -UseBasicParsing -TimeoutSec 120 -UserAgent $DOWNLOAD_USER_AGENT
+                if (Test-Path -LiteralPath $tmpZip) { Move-Item -LiteralPath $tmpZip -Destination $zipFile -Force }
+            }
+            finally {
+                Remove-Item -LiteralPath $tmpZip -Force -ErrorAction SilentlyContinue
+            }
+
+            if (Test-Path -LiteralPath $zipFile) {
+                $fileSize = [math]::Round((Get-Item -LiteralPath $zipFile).Length / 1MB, 2)
                 
                 if ($fileSize -gt 5.0) {
                     Write-Success "Download completed ($fileSize MB)"
@@ -187,7 +201,7 @@ function Invoke-ExifToolDownload {
                 }
                 else {
                     Write-Warning-Custom "Download too small ($fileSize MB), trying next URL..."
-                    Remove-Item $zipFile -Force -ErrorAction SilentlyContinue
+                    Remove-Item -LiteralPath $zipFile -Force -ErrorAction SilentlyContinue
                 }
             }
         }
@@ -271,7 +285,7 @@ function Test-ExifToolChecksum {
     }
 
     Write-Info "Verifying SHA-256 checksum against exiftool.org..."
-    $actual = (Get-FileHash -Path $ZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actual = (Get-FileHash -LiteralPath $ZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
     if ($actual -eq $expected) {
         Write-Success "Checksum verified: $actual"
@@ -294,28 +308,34 @@ function Expand-ExifToolArchive {
     Write-Info "Extracting ExifTool..."
     
     try {
-        # Extract into temp_download
-        Expand-Archive -Path $ZipPath -DestinationPath $DOWNLOAD_DIR -Force
+        # Extract into temp_download with .NET: Expand-Archive's
+        # -DestinationPath has no literal form and fails for a project folder
+        # like "Fotos [2024]" in Windows PowerShell 5.1. ExtractToDirectory
+        # does not overwrite, so a folder left by an earlier run goes first.
+        $previous = Join-Path $DOWNLOAD_DIR $script:EXIFTOOL_FOLDER
+        if (Test-Path -LiteralPath $previous) { Remove-Item -LiteralPath $previous -Recurse -Force }
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $DOWNLOAD_DIR)
         Write-Success "ZIP extracted"
         
         # Check whether the exiftool folder was inside the ZIP
         $unpackedDir = Join-Path $DOWNLOAD_DIR $script:EXIFTOOL_FOLDER
         
-        if (-not (Test-Path $unpackedDir)) {
+        if (-not (Test-Path -LiteralPath $unpackedDir)) {
             Write-Error-Custom "$($script:EXIFTOOL_FOLDER) folder not found after extraction"
             Write-Info "Contents of temp_download:"
-            Get-ChildItem $DOWNLOAD_DIR | ForEach-Object { Write-Info "  - $($_.Name)" }
+            Get-ChildItem -LiteralPath $DOWNLOAD_DIR | ForEach-Object { Write-Info "  - $($_.Name)" }
             return $false
         }
         
         # Move directly into the repository (not nested!)
-        if (Test-Path $script:EXIFTOOL_DIR) {
+        if (Test-Path -LiteralPath $script:EXIFTOOL_DIR) {
             Write-Warning-Custom "ExifTool folder already exists - removing..."
-            Remove-Item -Path $script:EXIFTOOL_DIR -Recurse -Force
+            Remove-Item -LiteralPath $script:EXIFTOOL_DIR -Recurse -Force
         }
         
         Write-Info "Moving $($script:EXIFTOOL_FOLDER) into repository..."
-        Move-Item -Path $unpackedDir -Destination $script:EXIFTOOL_DIR -Force
+        Move-Item -LiteralPath $unpackedDir -Destination $script:EXIFTOOL_DIR -Force
         
         Write-Success "ExifTool installed: $($script:EXIFTOOL_DIR)"
         
@@ -323,22 +343,22 @@ function Expand-ExifToolArchive {
         $exeFile1 = Join-Path $script:EXIFTOOL_DIR "exiftool.exe"
         $exeFile2 = Join-Path $script:EXIFTOOL_DIR "exiftool(-k).exe"
         
-        if (Test-Path $exeFile1) {
+        if (Test-Path -LiteralPath $exeFile1) {
             Write-Success "exiftool.exe found"
             return $true
         }
-        elseif (Test-Path $exeFile2) {
+        elseif (Test-Path -LiteralPath $exeFile2) {
             Write-Success "exiftool(-k).exe found"
             
             # Copy to exiftool.exe for easier usage
-            Copy-Item -Path $exeFile2 -Destination $exeFile1 -Force
+            Copy-Item -LiteralPath $exeFile2 -Destination $exeFile1 -Force
             Write-Info "Copied to exiftool.exe"
             return $true
         }
         else {
             Write-Error-Custom "No exiftool.exe found"
             Write-Info "Contents of $($script:EXIFTOOL_FOLDER):"
-            Get-ChildItem $script:EXIFTOOL_DIR | ForEach-Object { Write-Info "  - $($_.Name)" }
+            Get-ChildItem -LiteralPath $script:EXIFTOOL_DIR | ForEach-Object { Write-Info "  - $($_.Name)" }
             return $false
         }
     }
@@ -354,8 +374,8 @@ function Expand-ExifToolArchive {
 function Remove-TempDirectory {
     Write-Info "Cleaning up temporary files..."
     
-    if (Test-Path $DOWNLOAD_DIR) {
-        Remove-Item -Path $DOWNLOAD_DIR -Recurse -Force
+    if (Test-Path -LiteralPath $DOWNLOAD_DIR) {
+        Remove-Item -LiteralPath $DOWNLOAD_DIR -Recurse -Force
         Write-Success "Temporary directory removed"
     }
 }
@@ -368,7 +388,7 @@ function Test-ExifToolFunctionality {
     $exeFile1 = Join-Path $script:EXIFTOOL_DIR "exiftool.exe"
     $exeFile2 = Join-Path $script:EXIFTOOL_DIR "exiftool(-k).exe"
     
-    $exeFile = if (Test-Path $exeFile1) { $exeFile1 } elseif (Test-Path $exeFile2) { $exeFile2 } else { $null }
+    $exeFile = if (Test-Path -LiteralPath $exeFile1) { $exeFile1 } elseif (Test-Path -LiteralPath $exeFile2) { $exeFile2 } else { $null }
     
     if (-not $exeFile) {
         Write-Error-Custom "No exiftool.exe found"
@@ -435,16 +455,24 @@ function Main {
         if ($checksumResult -eq 'Mismatch') {
             Write-Error-Custom "The downloaded file does not match the official checksum and will NOT be installed."
             Write-Error-Custom "This could mean a corrupted download or a tampered file - do not install it manually without investigating further."
-            Remove-Item -Path $zipFile -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $zipFile -Force -ErrorAction SilentlyContinue
             return $false
         }
         elseif ($checksumResult -eq 'Unavailable') {
             Write-Warning-Custom "Could not verify the download's integrity (exiftool.org's checksum page was unreachable)."
-            $response = Read-Host "Install anyway without verification? [y/[N]]"
+            $noConsole = $Unattended
+            try { if ([Console]::IsInputRedirected) { $noConsole = $true } } catch { }
+            if ($noConsole) {
+                Write-Info "Unattended run: not installing an unverified download."
+                $response = "n"
+            }
+            else {
+                $response = Read-Host "Install anyway without verification? [y/[N]]"
+            }
             if ($response -notmatch '^[Yy]') {
                 Write-Info "Installation aborted."
                 Write-Info "You can try again later, or verify manually against https://exiftool.org/checksums-$($script:EXIFTOOL_VERSION).txt"
-                Remove-Item -Path $zipFile -Force -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath $zipFile -Force -ErrorAction SilentlyContinue
                 return $false
             }
             Write-Warning-Custom "Proceeding without checksum verification, at the user's request."

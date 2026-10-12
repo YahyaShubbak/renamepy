@@ -66,10 +66,11 @@ python -m pip install -r requirements.txt
 ```
 
 ### "Conda not found"
-```bash
-# Install Miniconda: https://docs.conda.io/miniconda.html
-# Then run install.ps1 / install.sh again
-```
+Conda is optional: without it the installers use a Python venv. The message
+only means that a venv will be created instead. If you want conda, install
+Miniforge (https://github.com/conda-forge/miniforge) or Miniconda and run
+install.bat / install.sh again; the installers find both in their default
+folders even when conda is not on PATH.
 
 ### "Python not found"
 ```bash

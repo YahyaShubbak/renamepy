@@ -2,12 +2,34 @@
 # ============================================================================
 #  RenamePy - Automated Installation Script (Linux/macOS)
 #  Creates a virtual environment with all required dependencies
+#
+#  Usage: ./install.sh [--yes]
+#    --yes   ask nothing, take every default (also automatic without a
+#            terminal, e.g. CI); sudo may still ask for a password
 # ============================================================================
 
 set -e  # Exit on error
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+
+ASSUME_YES=false
+for arg in "$@"; do
+    case "$arg" in
+        -y|--yes) ASSUME_YES=true ;;
+        -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+        *) echo "Unknown option: $arg (see --help)" >&2; exit 2 ;;
+    esac
+done
+# No terminal to ask (CI, piped input, IDE run button): take the defaults
+# instead of aborting at the first `read` under set -e. sudo then runs with
+# -n: it fails at once when it needs a password nobody can type, instead of
+# waiting forever for one (a controlling terminal may still exist).
+SUDO="sudo"
+if [ ! -t 0 ]; then
+    ASSUME_YES=true
+    SUDO="sudo -n"
+fi
 
 # Colors for output
 RED='\033[0;31m'
@@ -26,6 +48,19 @@ print_error()   { echo -e "  ${RED}[ERROR]${NC} $1"; }
 print_warning() { echo -e "  ${YELLOW}[WARNING]${NC} $1"; }
 print_info()    { echo -e "  ${ORANGE}[INFO]${NC} $1"; }
 
+# ask "prompt" default  ->  prints the answer (the default with --yes, without
+# a terminal, or on Enter). Every question goes through here.
+ask() {
+    local prompt="$1" default="$2" answer=""
+    if [ "$ASSUME_YES" = true ]; then
+        echo "${prompt}${default} (default)" >&2
+        echo "$default"
+        return 0
+    fi
+    read -r -p "$prompt" answer || answer=""
+    echo "${answer:-$default}"
+}
+
 # Ask user to confirm a step. Default is YES (Enter = proceed).
 # Usage: confirm_step "Step name" "Description" || exit 1
 confirm_step() {
@@ -38,8 +73,8 @@ confirm_step() {
         echo -e "   ${desc}"
     fi
     echo ""
-    read -r -p " Do you want to continue? [[Y]/n]: " _resp
-    if [[ "$_resp" =~ ^[Nn]$ ]]; then
+    _resp="$(ask " Do you want to continue? [[Y]/n]: " y)"
+    if [[ "$_resp" =~ ^[Nn] ]]; then
         print_warning "Aborted by user."
         return 1
     fi
@@ -49,7 +84,9 @@ confirm_step() {
 # ============================================================================
 #  Welcome
 # ============================================================================
-clear
+# clear fails without a usable TERM (CI, some ssh sessions); under set -e that
+# ended the script before it printed anything.
+clear 2>/dev/null || true
 echo -e "${ORANGE}"
 cat << "EOF"
 ===============================================================================
@@ -82,7 +119,9 @@ echo -e "   - PyExifTool (EXIF metadata extraction)"
 echo ""
 print_header
 echo ""
-read -r -p " Press Enter to continue..."
+if [ "$ASSUME_YES" != true ]; then
+    read -r -p " Press Enter to continue..." || true
+fi
 
 # ============================================================================
 #  Step 1: System Dependencies
@@ -93,6 +132,10 @@ echo ""
 
 # Install missing packages with the given package manager command.
 # Failure is reported but not fatal: the Python part can still be set up.
+# PRE_INSTALL_CMD (e.g. "apt-get update") runs only after the user agreed:
+# running it before asking made users without admin rights face a sudo
+# password prompt before they had agreed to anything.
+PRE_INSTALL_CMD=""
 install_missing() {
     local manager="$1"; shift
     local install_cmd="$1"; shift
@@ -102,10 +145,14 @@ install_missing() {
         return 0
     fi
     print_warning "Missing system packages: ${pkgs[*]}"
-    read -r -p "  Install them now with ${manager}? [[Y]/n]: " DO_INSTALL
-    if [[ ! "$DO_INSTALL" =~ ^[Nn]$ ]]; then
+    DO_INSTALL="$(ask "  Install them now with ${manager} (needs sudo)? [[Y]/n]: " y)"
+    if [[ ! "$DO_INSTALL" =~ ^[Nn] ]]; then
+        if [ -n "$PRE_INSTALL_CMD" ]; then
+            # shellcheck disable=SC2086  # trusted command lines
+            $SUDO $PRE_INSTALL_CMD || true
+        fi
         # shellcheck disable=SC2086  # install_cmd is a trusted command line
-        if sudo $install_cmd "${pkgs[@]}"; then
+        if $SUDO $install_cmd "${pkgs[@]}"; then
             print_ok "System packages installed."
         else
             print_warning "Installing system packages failed - Qt6/ExifTool may not work."
@@ -123,8 +170,8 @@ install_system_deps() {
         if command -v exiftool &>/dev/null; then
             :
         elif command -v brew &>/dev/null; then
-            read -r -p "  ExifTool is missing. Install it with Homebrew (brew install exiftool)? [[Y]/n]: " DO_INSTALL
-            if [[ ! "$DO_INSTALL" =~ ^[Nn]$ ]]; then
+            DO_INSTALL="$(ask "  ExifTool is missing. Install it with Homebrew (brew install exiftool)? [[Y]/n]: " y)"
+            if [[ ! "$DO_INSTALL" =~ ^[Nn] ]]; then
                 brew install exiftool || print_warning "brew install exiftool failed."
             fi
         else
@@ -160,9 +207,7 @@ install_system_deps() {
         for pkg in "${DEB_DEPS[@]}"; do
             dpkg -s "$pkg" &>/dev/null || MISSING_PKGS+=("$pkg")
         done
-        if [ ${#MISSING_PKGS[@]} -gt 0 ]; then
-            sudo apt-get update || true
-        fi
+        PRE_INSTALL_CMD="apt-get update"
         install_missing apt "apt-get install -y" "${MISSING_PKGS[@]}"
 
     elif command -v dnf &>/dev/null; then
@@ -220,6 +265,8 @@ ENV_NAME="renamepy"
 CONDA_LOCATIONS=(
     "$HOME/miniconda3/bin/conda"
     "$HOME/anaconda3/bin/conda"
+    "$HOME/miniforge3/bin/conda"
+    "$HOME/mambaforge/bin/conda"
     "$HOME/.miniconda3/bin/conda"
     "$HOME/.anaconda3/bin/conda"
     "/opt/miniconda3/bin/conda"
@@ -249,7 +296,7 @@ if [ -n "$CONDA_EXE" ] && [ -x "$CONDA_EXE" ]; then
     echo -e "    ${ORANGE}[1]${NC} Conda environment (recommended if you use conda)"
     echo -e "    ${ORANGE}[2]${NC} Python venv (lightweight, no conda needed)"
     echo ""
-    read -r -p "  Your choice [[1]/2]: " ENV_CHOICE
+    ENV_CHOICE="$(ask "  Your choice [[1]/2]: " 1)"
     if [[ "$ENV_CHOICE" == "2" ]]; then
         print_info "Using Python venv."
     else
@@ -296,22 +343,25 @@ if [ "$USE_CONDA" = true ]; then
     if conda env list | grep -q "^${ENV_NAME} "; then
         print_warning "Conda environment '$ENV_NAME' already exists."
         echo ""
-        read -r -p "  Recreate it? All changes will be lost! [y/[N]]: " RECREATE
+        RECREATE="$(ask "  Recreate it? All changes will be lost! [y/[N]]: " n)"
         # Default (Enter) is No: only an explicit "y" deletes the environment
-        if [[ "$RECREATE" =~ ^[Yy]$ ]]; then
+        if [[ "$RECREATE" =~ ^[Yy] ]]; then
             echo "  Removing existing environment..."
             conda remove -n "$ENV_NAME" --all -y
             print_ok "Old environment removed."
             echo ""
             echo "  Creating new environment..."
-            conda create -n "$ENV_NAME" python=3.12 -y
+            conda create -n "$ENV_NAME" --override-channels -c conda-forge python=3.12 -y
             print_ok "Environment created."
         else
             print_info "Keeping existing environment. Will update packages."
         fi
     else
+        # conda-forge only: the "defaults" channel falls under Anaconda's terms
+        # of service (paid licence in organisations of more than 200 people,
+        # universities included; recent conda refuses it until accepted).
         echo "  Creating Conda environment '$ENV_NAME' with Python 3.12..."
-        conda create -n "$ENV_NAME" python=3.12 -y
+        conda create -n "$ENV_NAME" --override-channels -c conda-forge python=3.12 -y
         print_ok "Environment created."
     fi
     conda activate "$ENV_NAME"
@@ -321,12 +371,24 @@ else
     VENV_DIR="$SCRIPT_DIR/.venv"
 
     if [ -d "$VENV_DIR" ]; then
-        print_warning "venv directory already exists: $VENV_DIR"
+        # A venv that cannot run pip (Debian without python3-venv leaves one
+        # behind; its base Python may have been removed) is useless: offer
+        # to recreate it with Yes as the default, instead of reusing it and
+        # failing later at `source`/pip with a cryptic error.
+        if "$VENV_DIR/bin/python" -m pip --version &>/dev/null; then
+            print_warning "venv directory already exists: $VENV_DIR"
+            RECREATE_DEFAULT=n
+            RECREATE_PROMPT="  Recreate it? [y/[N]]: "
+        else
+            print_warning "The venv in $VENV_DIR is broken (its Python or pip does not start)."
+            RECREATE_DEFAULT=y
+            RECREATE_PROMPT="  Recreate it? [[Y]/n]: "
+        fi
         echo ""
-        read -r -p "  Recreate it? [y/[N]]: " RECREATE
-        # Default (Enter) is No: only an explicit "y" deletes the venv
-        if [[ "$RECREATE" =~ ^[Yy]$ ]]; then
-            rm -rf "$VENV_DIR"
+        RECREATE="$(ask "$RECREATE_PROMPT" "$RECREATE_DEFAULT")"
+        # Default (Enter) is No for a working venv: only "y" deletes it
+        if [[ "$RECREATE" =~ ^[Yy] ]]; then
+            rm -rf -- "$VENV_DIR"
             print_ok "Old venv removed."
             "$PYTHON_BIN" -m venv "$VENV_DIR"
             print_ok "New venv created."
@@ -358,8 +420,8 @@ while IFS= read -r line || [ -n "$line" ]; do
     echo -e "   ${ORANGE}${line}${NC}"
 done < requirements.txt
 echo ""
-read -r -p " Do you want to continue? [[Y]/n]: " _pkg_resp
-if [[ "$_pkg_resp" =~ ^[Nn]$ ]]; then
+_pkg_resp="$(ask " Do you want to continue? [[Y]/n]: " y)"
+if [[ "$_pkg_resp" =~ ^[Nn] ]]; then
     print_warning "Aborted by user."
     exit 1
 fi
@@ -408,7 +470,7 @@ echo ""
 # ============================================================================
 #  Step 6: Desktop Shortcut (Linux)
 # ============================================================================
-read -r -p " Create a desktop shortcut for RenamePy? [[Y]/n]: " CREATE_SHORTCUT
+CREATE_SHORTCUT="$(ask " Create a desktop shortcut for RenamePy? [[Y]/n]: " y)"
 
 # Python interpreter of the environment (works without activating it)
 ENV_PYTHON="$(python -c 'import sys; print(sys.executable)')"
@@ -425,7 +487,7 @@ desktop_quote() {
     printf '"%s"' "$arg"
 }
 
-if [[ ! "$CREATE_SHORTCUT" =~ ^[Nn]$ ]]; then
+if [[ ! "$CREATE_SHORTCUT" =~ ^[Nn] ]]; then
     echo ""
     echo "  Creating shortcut..."
 
@@ -507,7 +569,7 @@ echo ""
 echo -e "  ${GREEN}[R]${NC}  Start RenamePy now"
 echo -e "  ${NC}[any other key]  Exit${NC}"
 echo ""
-read -r -p " [Any key] / R: " _launch
+_launch="$(ask " [Any key] / R: " "")"
 if [[ "$_launch" =~ ^[Rr]$ ]]; then
     echo ""
     print_info "Launching RenamePy..."

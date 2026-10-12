@@ -61,13 +61,23 @@ for %%D in (
     "%USERPROFILE%\miniforge3"
     "%LOCALAPPDATA%\miniconda3"
     "%LOCALAPPDATA%\anaconda3"
+    "%LOCALAPPDATA%\miniforge3"
     "%PROGRAMDATA%\miniconda3"
     "%PROGRAMDATA%\anaconda3"
+    "%PROGRAMDATA%\miniforge3"
     "C:\miniconda3"
     "C:\anaconda3"
 ) do (
     if exist "%%~D\Scripts\activate.bat" if exist "%%~D\envs\renamepy" (
         echo [INFO] Activating Conda environment 'renamepy' from %%~D
+        call "%%~D\Scripts\activate.bat" renamepy
+        if not errorlevel 1 goto :env_ready
+    )
+    REM An all-users installation (ProgramData) puts a non-admin user's
+    REM environments into %USERPROFILE%\.conda\envs; activate.bat finds them
+    REM by name.
+    if exist "%%~D\Scripts\activate.bat" if exist "%USERPROFILE%\.conda\envs\renamepy" (
+        echo [INFO] Activating Conda environment 'renamepy' from "%USERPROFILE%\.conda\envs"
         call "%%~D\Scripts\activate.bat" renamepy
         if not errorlevel 1 goto :env_ready
     )

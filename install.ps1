@@ -7,20 +7,55 @@
 param(
     [switch]$SkipExifCheck = $false,
     [switch]$ForceVenv = $false,
+    [switch]$Yes = $false,
     [switch]$Verbose = $false
 )
+# -Yes: ask nothing and take every default (also automatic when input is
+# redirected, e.g. in CI). Passed through by install.bat (install.bat -Yes).
 
-# Set encoding to UTF-8 for correct display of special characters
+# Without [CmdletBinding()] (which would clash with the own -Verbose switch)
+# PowerShell puts unknown arguments into $args silently: a typo like
+# "-ForceVnev" ran a full installation with conda instead of venv.
+if ($args.Count -gt 0) {
+    Write-Host "Unknown option(s): $($args -join ' ')" -ForegroundColor Red
+    Write-Host "Options: -Yes -ForceVenv -SkipExifCheck -Verbose"
+    exit 2
+}
+
+# Set encoding to UTF-8 for correct display of special characters.
+# PYTHONIOENCODING makes Python (and conda, which is Python) write UTF-8;
+# [Console]::OutputEncoding makes PowerShell *read* their output as UTF-8.
+# Without the latter it decodes with the OEM code page (850), and a path
+# like "C:\Users\Juergen Mueller" with real umlauts comes back mangled, so
+# Test-Path on it fails.
 [System.Environment]::SetEnvironmentVariable('PYTHONIOENCODING', 'utf-8', 'Process')
 $OutputEncoding = [System.Text.UTF8Encoding]::new()
+try { [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false) } catch { }  # no console (e.g. ISE)
+
+# All file-system calls below use -LiteralPath: with -Path, PowerShell reads
+# "[...]" as a wildcard, so a project folder like "Fotos [2024]" made every
+# Test-Path report its files as missing.
 
 # ============================================================================
 # Global Configuration
 # ============================================================================
 $SCRIPT_VERSION = "1.0.0"
 $VENV_NAME = "renamepy"
-$REQUIREMENTS_FILE = "requirements.txt"
 $PROJECT_ROOT = Split-Path -Parent $MyInvocation.MyCommand.Path
+# Absolute: the script may be started from another working directory.
+$REQUIREMENTS_FILE = Join-Path $PROJECT_ROOT "requirements.txt"
+# Same version as install.sh uses for conda; CI tests 3.10-3.13.
+$CONDA_PYTHON = "3.12"
+
+# Default install locations of Miniconda / Anaconda / Miniforge. The
+# installers do not put conda on PATH by default, and install.bat starts
+# PowerShell with -NoProfile, so `conda init powershell` never runs here.
+$CondaRoots = @(
+    "$env:USERPROFILE\miniconda3", "$env:USERPROFILE\anaconda3", "$env:USERPROFILE\miniforge3",
+    "$env:LOCALAPPDATA\miniconda3", "$env:LOCALAPPDATA\anaconda3", "$env:LOCALAPPDATA\miniforge3",
+    "$env:PROGRAMDATA\miniconda3", "$env:PROGRAMDATA\anaconda3", "$env:PROGRAMDATA\miniforge3",
+    "C:\miniconda3", "C:\anaconda3"
+)
 
 # Colored output
 $Colors = @{
@@ -69,6 +104,22 @@ function Write-Debug-Custom {
 # Function: Ask user to confirm a step before proceeding
 # Returns $true if confirmed, $false if aborted
 # ============================================================================
+$script:Interactive = -not $Yes
+try { if ([Console]::IsInputRedirected) { $script:Interactive = $false } } catch { }
+
+# Every question goes through here: returns the answer, or the default with
+# -Yes / redirected input / Enter.
+function Read-Answer {
+    param([string]$Prompt, [string]$Default = "")
+    if (-not $script:Interactive) {
+        Write-Host "$Prompt $Default (default)"
+        return $Default
+    }
+    $answer = Read-Host $Prompt
+    if ([string]::IsNullOrWhiteSpace($answer)) { return $Default }
+    return $answer.Trim()
+}
+
 function Confirm-Step {
     param(
         [string]$StepName,
@@ -93,8 +144,8 @@ function Confirm-Step {
 
     Write-Host ""
     # [Y] = default (Enter accepts), n = must be typed explicitly
-    $response = Read-Host "Do you want to continue? [[Y]/n]"
-    if ([string]$response -eq "" -or $response -match "^[yY]") {
+    $response = Read-Answer "Do you want to continue? [[Y]/n]" "y"
+    if ($response -match "^[yYjJ]") {
         return $true
     }
 
@@ -157,37 +208,47 @@ function Find-PythonExecutable {
     if (Test-CommandExists "py") {
         try {
             $pyPath = & py -3 -c "import sys; print(sys.executable)" 2>&1
-            if ($LASTEXITCODE -eq 0 -and (Test-Path $pyPath)) {
+            if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $pyPath)) {
                 $candidates = @($pyPath) + $candidates
             }
         }
         catch { }
     }
 
-    # Search common Windows installation paths
+    # Search common Windows installation paths. These hold one subfolder per
+    # version (Python312\python.exe), so their subfolders are searched; -Path
+    # on purpose, "Python*" is a wildcard.
     $searchRoots = @(
         "$env:LOCALAPPDATA\Programs\Python",
         "$env:PROGRAMFILES\Python*",
         "${env:PROGRAMFILES(x86)}\Python*",
-        "$env:USERPROFILE\AppData\Local\Programs\Python",
-        "$env:USERPROFILE\miniconda3",
-        "$env:USERPROFILE\anaconda3"
+        "$env:USERPROFILE\AppData\Local\Programs\Python"
     )
 
     foreach ($root in $searchRoots) {
         foreach ($dir in (Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue)) {
             $exe = Join-Path $dir.FullName "python.exe"
-            if (Test-Path $exe) {
+            if (Test-Path -LiteralPath $exe) {
                 $candidates += $exe
             }
         }
     }
 
+    # Conda installations keep python.exe directly in their root folder (the
+    # subfolder search above missed it, so Miniconda-only users were told
+    # that no Python exists).
+    foreach ($root in $CondaRoots) {
+        $exe = Join-Path $root "python.exe"
+        if (Test-Path -LiteralPath $exe) {
+            $candidates += $exe
+        }
+    }
+
     # Microsoft Store Python (WindowsApps)
     $storeDir = "$env:LOCALAPPDATA\Microsoft\WindowsApps"
-    if (Test-Path $storeDir) {
+    if (Test-Path -LiteralPath $storeDir) {
         $storeExe = Join-Path $storeDir "python.exe"
-        if (Test-Path $storeExe) {
+        if (Test-Path -LiteralPath $storeExe) {
             $candidates += $storeExe
         }
     }
@@ -243,23 +304,29 @@ function Get-CondaInfo {
         @{Name = "Conda"; Command = "conda" },
         @{Name = "Mamba"; Command = "mamba" }
     )
-    
+    # Not on PATH: the default install locations (see $CondaRoots).
+    foreach ($root in $CondaRoots) {
+        $bat = Join-Path $root "condabin\conda.bat"
+        if (Test-Path -LiteralPath $bat) { $condaTools += @{Name = "Conda"; Command = $bat } }
+    }
+
+    # "Stop" would turn any line a native tool writes to stderr (a conda
+    # deprecation warning, say) into a terminating error and silently fall
+    # back to venv; exit codes are checked instead.
+    $ErrorActionPreference = "Continue"
     foreach ($tool in $condaTools) {
-        if (Test-CommandExists $tool.Command) {
+        if ((Test-CommandExists $tool.Command) -or (Test-Path -LiteralPath $tool.Command)) {
             try {
-                $output = & $tool.Command --version 2>&1
-                Write-Success "$($tool.Name) found: $output"
-                
-                # Determine Conda environment path
-                $condaPath = & $tool.Command info --base 2>&1
-                if ($condaPath) {
-                    $envPath = Join-Path $condaPath "envs"
+                $output = (& $tool.Command --version 2>$null | Out-String).Trim()
+                if ($LASTEXITCODE -ne 0) { continue }
+                $condaPath = (& $tool.Command info --base 2>$null | Out-String).Trim()
+                if ($LASTEXITCODE -eq 0 -and $condaPath -and (Test-Path -LiteralPath $condaPath)) {
+                    Write-Success "$($tool.Name) found: $output ($condaPath)"
                     return @{
                         Available = $true
                         Tool      = $tool.Command
                         Name      = $tool.Name
                         Version   = $output
-                        EnvPath   = $envPath
                         BasePath  = $condaPath
                     }
                 }
@@ -276,9 +343,26 @@ function Get-CondaInfo {
         Tool      = $null
         Name      = $null
         Version   = $null
-        EnvPath   = $null
         BasePath  = $null
     }
+}
+
+# ============================================================================
+# Function: Does a conda environment of this name exist?
+# ============================================================================
+# Asks conda instead of guessing "<base>\envs\<name>": with an all-users
+# Anaconda the environment lives in %USERPROFILE%\.conda\envs, and a missed
+# environment would end in `conda create -y`, which silently replaces it.
+function Test-CondaEnvironment {
+    param([string]$CondaTool, [string]$EnvName)
+    $ErrorActionPreference = "Continue"
+    $json = & $CondaTool env list --json 2>$null | Out-String
+    # Throw rather than report "no environment": the caller would then run
+    # `conda create -y` over an environment it merely failed to list.
+    if ($LASTEXITCODE -ne 0) { throw "Could not list the conda environments ($CondaTool env list)." }
+    $match = @((ConvertFrom-Json $json).envs | Where-Object { (Split-Path -Leaf $_) -eq $EnvName })
+    if ($match.Count -gt 0) { return $match[0] }
+    return $null
 }
 
 # ============================================================================
@@ -287,17 +371,17 @@ function Get-CondaInfo {
 function New-CondaEnvironment {
     param(
         [string]$CondaTool,
-        [string]$EnvName,
-        [string]$EnvPath
+        [string]$EnvName
     )
-    
-    $envFullPath = Join-Path $EnvPath $EnvName
-    
-    if (Test-Path $envFullPath) {
+
+    try { $envFullPath = Test-CondaEnvironment -CondaTool $CondaTool -EnvName $EnvName }
+    catch { Write-Error-Custom "$_"; return $false }
+
+    if ($envFullPath) {
         Write-Warning-Custom "Conda environment '$EnvName' already exists at $envFullPath"
-        $response = Read-Host "Delete and recreate the environment? [y/[N]]"
-        
-        if ($response -match "^[yY]") {
+        $response = Read-Answer "Delete and recreate the environment? [y/[N]]" "n"
+
+        if ($response -match "^[yYjJ]") {
             Write-Log -Message "Deleting existing environment..." -Level "Info"
             & $CondaTool env remove -n $EnvName -y
             if ($LASTEXITCODE -ne 0) {
@@ -311,8 +395,13 @@ function New-CondaEnvironment {
         }
     }
     
-    Write-Log -Message "Creating Conda environment '$EnvName' with Python..." -Level "Info"
-    & $CondaTool create -n $EnvName python -y
+    # conda-forge only: the "defaults" channel (repo.anaconda.com) falls under
+    # Anaconda's terms of service, which require a paid licence in
+    # organisations of more than 200 people (universities included), and
+    # recent conda refuses it until the terms are accepted interactively.
+    # Python pinned like install.sh, instead of whatever is newest.
+    Write-Log -Message "Creating Conda environment '$EnvName' with Python $CONDA_PYTHON (conda-forge)..." -Level "Info"
+    & $CondaTool create -n $EnvName --override-channels -c conda-forge "python=$CONDA_PYTHON" -y
     
     if ($LASTEXITCODE -ne 0) {
         Write-Error-Custom "Could not create Conda environment"
@@ -331,13 +420,34 @@ function New-VenvEnvironment {
     
     $venvPath = Join-Path $PROJECT_ROOT $EnvName
     
-    if (Test-Path $venvPath) {
-        Write-Warning-Custom "Venv environment '$EnvName' already exists at $venvPath"
-        $response = Read-Host "Delete and recreate the environment? [y/[N]]"
-        
-        if ($response -match "^[yY]") {
+    if (Test-Path -LiteralPath $venvPath) {
+        # A venv that cannot run pip (its base Python was removed or
+        # upgraded, or it was copied from another PC) is useless: offer to
+        # recreate it with Yes as the default instead of reusing it.
+        $venvPy = Join-Path $venvPath "Scripts\python.exe"
+        $works = $false
+        if (Test-Path -LiteralPath $venvPy) {
+            $ErrorActionPreference = "Continue"
+            # try: a python.exe that cannot be executed at all (0 bytes, an
+            # interrupted copy) throws instead of setting an exit code.
+            try {
+                & $venvPy -m pip --version *> $null
+                $works = ($LASTEXITCODE -eq 0)
+            }
+            catch { $works = $false }
+        }
+        if ($works) {
+            Write-Warning-Custom "Venv environment '$EnvName' already exists at $venvPath"
+            $response = Read-Answer "Delete and recreate the environment? [y/[N]]" "n"
+        }
+        else {
+            Write-Warning-Custom "The venv at $venvPath is broken (its Python or pip does not start)."
+            $response = Read-Answer "Delete and recreate the environment? [[Y]/n]" "y"
+        }
+
+        if ($response -match "^[yYjJ]") {
             Write-Log -Message "Deleting existing environment..." -Level "Info"
-            Remove-Item -Path $venvPath -Recurse -Force
+            Remove-Item -LiteralPath $venvPath -Recurse -Force
         }
         else {
             Write-Log -Message "Using existing environment" -Level "Info"
@@ -379,7 +489,7 @@ function Install-Packages {
         [bool]$UsesConda = $false
     )
     
-    if (-not (Test-Path $REQUIREMENTS_FILE)) {
+    if (-not (Test-Path -LiteralPath $REQUIREMENTS_FILE)) {
         Write-Error-Custom "requirements.txt not found!"
         return $false
     }
@@ -399,7 +509,7 @@ function Install-Packages {
         # through it would install the packages outside the venv - even with
         # the venv activated - and the app would then fail to start.
         $venvPython = Get-VenvPython -EnvName $EnvName
-        if (-not (Test-Path $venvPython)) {
+        if (-not (Test-Path -LiteralPath $venvPython)) {
             Write-Error-Custom "venv Python not found: $venvPython"
             return $false
         }
@@ -429,11 +539,13 @@ function Test-ExifToolInstallation {
     Write-Log -Message "Checking ExifTool installation..." -Level "Info"
     
     # Search for any exiftool-* folder in the project
-    $exiftoolDirs = Get-ChildItem -Path $PROJECT_ROOT -Directory -Filter "exiftool*" -ErrorAction SilentlyContinue
+    # Newest version first, the same order the app uses.
+    $exiftoolDirs = Get-ChildItem -LiteralPath $PROJECT_ROOT -Directory -Filter "exiftool*" -ErrorAction SilentlyContinue |
+        Sort-Object -Descending { if ($_.Name -match '(\d+(\.\d+)+)') { [version]$Matches[1] } else { [version]'0.0' } }
     
     foreach ($dir in $exiftoolDirs) {
         $exiftoolExe = Join-Path $dir.FullName "exiftool.exe"
-        if (Test-Path $exiftoolExe) {
+        if (Test-Path -LiteralPath $exiftoolExe) {
             try {
                 $exiftoolVersion = & $exiftoolExe -ver 2>&1
                 Write-Success "ExifTool found (local): Version $exiftoolVersion"
@@ -465,15 +577,16 @@ function Test-ExifToolInstallation {
     
     Write-Host "  exiftool  (~10 MB, from exiftool.org)" -ForegroundColor DarkYellow
     Write-Host ""
-    $response = Read-Host "Download and install ExifTool automatically? [[Y]/n]"
-    
-    if ([string]$response -eq "" -or $response -match "^[yY]") {
+    $response = Read-Answer "Download and install ExifTool automatically? [[Y]/n]" "y"
+
+    if ($response -match "^[yYjJ]") {
         Write-Log -Message "Starting ExifTool setup..." -Level "Info"
         $setupScript = Join-Path $PROJECT_ROOT "setup_exiftool.ps1"
         
-        if (Test-Path $setupScript) {
+        if (Test-Path -LiteralPath $setupScript) {
             try {
-                & $setupScript
+                # -Unattended: -Yes must reach the ExifTool setup too.
+                & $setupScript -Unattended:(-not $script:Interactive)
                 if ($LASTEXITCODE -eq 0) {
                     Write-Success "ExifTool successfully installed"
                 }
@@ -517,7 +630,7 @@ function Test-InstallationSuccess {
     }
     else {
         $venvPython = Get-VenvPython -EnvName $EnvName
-        if (-not (Test-Path $venvPython)) {
+        if (-not (Test-Path -LiteralPath $venvPython)) {
             Write-Error-Custom "venv Python not found: $venvPython"
             return $false
         }
@@ -538,36 +651,39 @@ function Test-InstallationSuccess {
 function Create-ActivationScripts {
     param(
         [string]$EnvName,
-        [bool]$UsesConda = $false
+        [bool]$UsesConda = $false,
+        [string]$CondaBase = ""
     )
-    
+
     $activateBat = Join-Path $PROJECT_ROOT "activate_env.bat"
-    
+
     if ($UsesConda) {
-        # Create activate.bat for Conda
+        # Activate via the base's own activate.bat: works without conda on PATH.
+        $activateScriptPath = Join-Path $CondaBase "Scripts\activate.bat"
         $lines = @(
             "@echo off",
+            "chcp 65001 >nul",
             "REM Activate Conda environment",
-            "call conda activate $EnvName"
+            "call `"$activateScriptPath`" $EnvName"
         )
-        $content = $lines -join [Environment]::NewLine
-        Set-Content -Path $activateBat -Value $content
-        Write-Success "Activation script created: $activateBat"
     }
     else {
-        # Create activate.bat for Venv
         $venvPath = Join-Path $PROJECT_ROOT $EnvName
         $activateScriptPath = Join-Path $venvPath "Scripts\activate.bat"
-        
         $lines = @(
             "@echo off",
+            "chcp 65001 >nul",
             "REM Activate Venv environment",
             "call `"$activateScriptPath`""
         )
-        $content = $lines -join [Environment]::NewLine
-        Set-Content -Path $activateBat -Value $content
-        Write-Success "Activation script created: $activateBat"
     }
+    # UTF-8 without BOM, and chcp 65001 before the first path: cmd reads a
+    # batch file in the console's code page (850 on German Windows), so a
+    # path with umlauts written by Set-Content (ANSI in PowerShell 5.1, UTF-8
+    # in 7) was misread and the call failed with "path not found". This
+    # leaves the console on code page 65001 afterwards, which is harmless.
+    [System.IO.File]::WriteAllText($activateBat, ($lines -join "`r`n") + "`r`n", [System.Text.UTF8Encoding]::new($false))
+    Write-Success "Activation script created: $activateBat"
 }
 
 # ============================================================================
@@ -576,20 +692,21 @@ function Create-ActivationScripts {
 function Create-DesktopShortcut {
     param(
         [string]$EnvName,
-        [bool]$UsesConda = $false
+        [bool]$UsesConda = $false,
+        [string]$CondaBase = ""
     )
 
     Write-Host ""
-    $response = Read-Host "Create a desktop shortcut for RenamePy? [[Y]/n]"
+    $response = Read-Answer "Create a desktop shortcut for RenamePy? [[Y]/n]" "y"
 
-    if ([string]$response -ne "" -and $response -notmatch "^[yY]") {
+    if ($response -notmatch "^[yYjJ]") {
         Write-Log -Message "Desktop shortcut skipped" -Level "Info"
         return
     }
 
     try {
         $desktopPath = [Environment]::GetFolderPath("Desktop")
-        if (-not $desktopPath -or -not (Test-Path $desktopPath)) {
+        if (-not $desktopPath -or -not (Test-Path -LiteralPath $desktopPath)) {
             $desktopPath = Join-Path $env:USERPROFILE "Desktop"
         }
 
@@ -599,16 +716,17 @@ function Create-DesktopShortcut {
         $shortcut = $WScriptShell.CreateShortcut($shortcutPath)
 
         if ($UsesConda) {
-            # Launch via cmd that activates conda then runs python
-            $condaBase = (& conda info --base 2>&1).Trim()
-            $activateBat = Join-Path $condaBase "Scripts\activate.bat"
+            # Launch via cmd that activates conda then runs python. The base
+            # found earlier, not `conda` from PATH: conda may only have been
+            # found in its default folder, or only as mamba.
+            $activateBat = Join-Path $CondaBase "Scripts\activate.bat"
             $shortcut.TargetPath = "cmd.exe"
             $shortcut.Arguments = "/c `"call `"$activateBat`" $EnvName && python RenameFiles.py`""
         }
         else {
             # pythonw.exe: no console window next to the GUI
             $pythonExe = Get-VenvPython -EnvName $EnvName -Windowed
-            if (-not (Test-Path $pythonExe)) {
+            if (-not (Test-Path -LiteralPath $pythonExe)) {
                 $pythonExe = Get-VenvPython -EnvName $EnvName
             }
             $shortcut.TargetPath = $pythonExe
@@ -621,7 +739,7 @@ function Create-DesktopShortcut {
 
         # Use .ico if available
         $iconPath = Join-Path $PROJECT_ROOT "icon.ico"
-        if (Test-Path $iconPath) {
+        if (Test-Path -LiteralPath $iconPath) {
             $shortcut.IconLocation = $iconPath
         }
 
@@ -665,7 +783,7 @@ function Main {
     }
     
     # Step 2: Check requirements
-    if (-not (Test-Path $REQUIREMENTS_FILE)) {
+    if (-not (Test-Path -LiteralPath $REQUIREMENTS_FILE)) {
         Write-Error-Custom "requirements.txt not found in: $PROJECT_ROOT"
         exit 1
     }
@@ -685,7 +803,7 @@ function Main {
     Write-Log -Message "========== Environment Creation ==========" -Level "Info"
     
     if ($usesConda) {
-        if (-not (New-CondaEnvironment -CondaTool $condaInfo.Tool -EnvName $VENV_NAME -EnvPath $condaInfo.EnvPath)) {
+        if (-not (New-CondaEnvironment -CondaTool $condaInfo.Tool -EnvName $VENV_NAME)) {
             Write-Error-Custom "Installation aborted"
             exit 1
         }
@@ -698,7 +816,7 @@ function Main {
     }
     
     # Step 5: Install packages - read requirements.txt and display package list
-    $packageLines = Get-Content $REQUIREMENTS_FILE -ErrorAction SilentlyContinue |
+    $packageLines = Get-Content -LiteralPath $REQUIREMENTS_FILE -ErrorAction SilentlyContinue |
         Where-Object { $_ -notmatch '^\s*#' -and $_.Trim() -ne '' }
 
     $pkgDesc = "The following packages will be installed into the [${VENV_NAME}] environment:"
@@ -737,10 +855,10 @@ function Main {
     }
     
     # Step 8: Create shortcuts
-    Create-ActivationScripts -EnvName $VENV_NAME -UsesConda $usesConda
+    Create-ActivationScripts -EnvName $VENV_NAME -UsesConda $usesConda -CondaBase $condaInfo.BasePath
 
     # Step 9: Create desktop shortcut
-    Create-DesktopShortcut -EnvName $VENV_NAME -UsesConda $usesConda
+    Create-DesktopShortcut -EnvName $VENV_NAME -UsesConda $usesConda -CondaBase $condaInfo.BasePath
 
     # ============ Completion Screen ============
     $o = [char]27 + "[38;5;208m"
@@ -751,13 +869,17 @@ function Main {
     Write-Host "${o}  ======================================================${r}"
     Write-Host ""
 
+    # start.bat finds the environment by itself. The former hint
+    # ".\activate_env.bat && python ..." was a syntax error in Windows
+    # PowerShell 5.1 and, in PowerShell 7, ran the system Python: a .bat file
+    # cannot activate an environment for the PowerShell session.
+    Write-Host "  To start manually later: double-click start.bat, or in a terminal:" -ForegroundColor DarkYellow
     if ($usesConda) {
-        Write-Host "  To start manually later:" -ForegroundColor DarkYellow
-        Write-Host "    conda activate $VENV_NAME && python RenameFiles.py" -ForegroundColor Green
+        Write-Host "    conda activate $VENV_NAME" -ForegroundColor Green
+        Write-Host "    python RenameFiles.py" -ForegroundColor Green
     }
     else {
-        Write-Host "  To start manually later:" -ForegroundColor DarkYellow
-        Write-Host "    .\activate_env.bat && python RenameFiles.py" -ForegroundColor Green
+        Write-Host "    .\$VENV_NAME\Scripts\python.exe RenameFiles.py" -ForegroundColor Green
     }
 
     Write-Host ""
@@ -765,7 +887,7 @@ function Main {
     Write-Host "  [any other key]  Exit" -ForegroundColor Gray
     Write-Host ""
 
-    $choice = Read-Host "[Any key] / R"
+    $choice = Read-Answer "[Any key] / R" ""
     if ($choice -match "^[rR]") {
         Start-RenamePy -EnvName $VENV_NAME -CondaTool $condaInfo.Tool -UsesConda $usesConda
     }

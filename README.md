@@ -52,10 +52,12 @@ A powerful and user-friendly PyQt6 application for batch renaming image files wi
 - **Operating System**: Windows, macOS, Linux (cross-platform compatible)
 
 ### Python Dependencies
+Listed in `requirements.txt` (the installers install them for you):
 ```bash
-pip install PyQt6>=6.0.0        # Core GUI framework
-pip install PyExifTool>=0.5.5   # ExifTool Python wrapper (required)
+pip install "PyQt6>=6.5,<7"            # Core GUI framework
+pip install "PyExifTool>=0.5.5,<0.6"   # ExifTool Python wrapper (required)
 ```
+The quotes matter: without them the shell reads `>` as a redirection.
 
 ### External Dependencies
 - **ExifTool**: Professional metadata extraction tool
@@ -85,13 +87,28 @@ install.bat
 ```
 > 💡 Double-click `install.bat` — it handles PowerShell execution policy automatically. ExifTool is downloaded and installed as part of the process (latest version is detected automatically, the download is verified against the official SHA-256 checksum). Start the app afterwards with `start.bat` or the desktop shortcut.
 
+Unattended installation (e.g. for scripts or CI): `./install.sh --yes` or
+`install.bat -Yes` takes every default answer; this also happens
+automatically when there is no terminal to ask. Further Windows options:
+`-ForceVenv` (use venv even if conda is installed), `-SkipExifCheck`.
+
+> 💡 **Conda**: the installers create the environment from **conda-forge**
+> only. Anaconda's own `defaults` channel falls under its terms of service,
+> which require a paid licence in organisations with more than 200 people
+> (universities included), and recent conda versions refuse it until the
+> terms are accepted.
+
 ### Option 2: Manual Installation
 ```bash
 git clone https://github.com/YahyaShubbak/renamepy.git
 cd renamepy
-pip install -r requirements.txt
-python RenameFiles.py
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt     # Windows: .venv\Scripts\python.exe -m pip ...
+.venv/bin/python RenameFiles.py                         # Windows: .venv\Scripts\python.exe RenameFiles.py
 ```
+A virtual environment is needed on current Debian/Ubuntu and Homebrew
+Python: a plain `pip install` into the system Python is refused there
+("externally-managed-environment", PEP 668).
 
 > ⚠️ **Linux users**: You also need Qt6 system libraries and ExifTool:
 > - **Arch**: `sudo pacman -S mesa libxcb xcb-util xcb-util-cursor libxkbcommon libxkbcommon-x11 perl-image-exiftool`
@@ -135,6 +152,27 @@ sudo apt-get install libimage-exiftool-perl
 2. Extract to any folder containing "exiftool" in the name
 3. **No renaming required** - keep `exiftool(-k).exe` as is!
 4. The application will automatically detect it!
+
+### Uninstall
+RenamePy installs nothing system-wide, except the system packages
+`install.sh` offers (after you agreed, or by default with `--yes` / without a
+terminal). To remove it, delete:
+- the program folder (with the `renamepy/` or `.venv/` environment and any
+  `exiftool-*` folder inside it), or for conda: `conda env remove -n renamepy`
+- **Windows**: the `RenamePy` shortcut on the desktop
+- **Linux**: `~/.local/share/applications/renamepy.desktop`,
+  `~/.local/share/icons/renamepy.png` and `RenamePy.desktop` on the desktop
+- **macOS**: `RenamePy.command` on the desktop
+
+The undo journal (`pending_undo.json`) lives in the per-user app-data
+folder, e.g. `%APPDATA%\FileRenamer\File Renamer` on Windows,
+`~/.local/share/FileRenamer/File Renamer` on Linux,
+`~/Library/Application Support/FileRenamer/File Renamer` on macOS (or
+`~/.renamepy` as a fallback). Delete it only after you no longer need to
+undo a rename. The app's settings are stored by Qt under
+`RenamePy/FileRenamer`: the registry key `HKCU\Software\RenamePy\FileRenamer`
+on Windows, `~/.config/RenamePy/FileRenamer.conf` on Linux,
+`~/Library/Preferences/com.renamepy.FileRenamer.plist` on macOS.
 
 ## 📖 Usage Guide
 

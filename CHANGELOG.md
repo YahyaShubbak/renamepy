@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Installers
+- **Miniconda/Anaconda-only Windows users got "Python not found"**: the search listed the conda folder's subfolders and missed its own `python.exe`; conda itself was only looked for on PATH. Both are now found in their default folders.
+- **Project folders with `[ ]` broke the Windows install** (PowerShell read them as wildcards): every file call uses `-LiteralPath`, the ExifTool download goes through the temp folder and is unpacked with .NET (`-OutFile`/`Expand-Archive` have no literal form in PowerShell 5.1), and the app's ExifTool search escapes the path.
+- **Paths with umlauts**: `activate_env.bat` is written as UTF-8 with `chcp 65001`, and Python/conda output is read as UTF-8, so the existing-environment check no longer misses an environment and lets `conda create -y` replace it.
+- **conda environments come from conda-forge with Python 3.12** (Windows and Linux alike): Anaconda's `defaults` channel needs a paid licence in organisations of more than 200 people, and recent conda refuses it until its terms are accepted.
+- **Unattended mode**: `install.bat -Yes` / `./install.sh --yes`, automatic without a terminal. `install.sh` no longer aborts silently without `TERM` or stdin, runs `apt-get update` only after you agreed, and uses `sudo -n` without a terminal instead of waiting for a password.
+- A broken environment (no working Python/pip) is offered for recreation with Yes as the default; unknown options are rejected; `install.bat` passes options through and returns the real exit code; the "start manually" hint works in PowerShell; the newest of several ExifTool versions is used.
+- CI runs both installers from folders with spaces and brackets, and weekly.
+
 ### Security
 - **Undo restore validates original names from file metadata**: a crafted `OriginalName`/`PreservedFileName` (e.g. `..\..\Startup\x.bat`) could move a file anywhere when clicking Restore. Only plain file names in the same folder with the same extension are accepted now; ambiguous claims (several files, one name) are skipped, and the full list is shown before restoring.
 - Removed the unused PowerShell timestamp helper, whose file-name argument was injectable (`powershell -Command` appends arguments to the script text).

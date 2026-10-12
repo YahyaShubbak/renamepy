@@ -5,6 +5,10 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
+  # requirements.txt uses version ranges: a weekly run notices a new release
+  # inside a range that breaks something, before users install it.
+  schedule:
+    - cron: "0 5 * * 1"
 
 jobs:
   test:
@@ -84,6 +88,44 @@ jobs:
 
     - name: Run tests
       run: python -m pytest Tests -q -rs
+
+  install-linux:
+    name: install.sh --yes (Ubuntu, path with spaces and brackets)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        path: "Fotos [2024] (Uni)/renamepy"
+    - name: Install non-interactively
+      working-directory: "Fotos [2024] (Uni)/renamepy"
+      run: ./install.sh --yes < /dev/null
+    - name: The environment imports the app's packages
+      working-directory: "Fotos [2024] (Uni)/renamepy"
+      env:
+        QT_QPA_PLATFORM: offscreen
+      run: .venv/bin/python -c "import PyQt6.QtWidgets, exiftool; print('ok')"
+
+  install-windows:
+    name: install.bat -Yes (Windows, path with spaces, brackets, parentheses)
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        path: "Fotos [2024] Juergen (Uni)/renamepy"
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - name: Install non-interactively (venv, with the ExifTool download)
+      shell: cmd
+      working-directory: "Fotos [2024] Juergen (Uni)/renamepy"
+      run: call install.bat -Yes -ForceVenv < NUL
+    - name: The environment imports the app's packages and finds ExifTool
+      shell: pwsh
+      working-directory: "Fotos [2024] Juergen (Uni)/renamepy"
+      env:
+        QT_QPA_PLATFORM: offscreen
+      run: |
+        .\renamepy\Scripts\python.exe -c "import PyQt6.QtWidgets, exiftool; from modules.exif_processor import find_exiftool_path; p = find_exiftool_path(); print(p); assert p"
 
   lint-scripts:
     name: Installer scripts

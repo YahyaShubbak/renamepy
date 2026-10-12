@@ -232,7 +232,16 @@ def find_exiftool_path():
         return None
 
     # 1) Search for project-local exiftool folders with flexible names (exiftool-*)
-    for d in glob.glob(os.path.join(script_dir, "exiftool*")):
+    # glob.escape: a "[...]" in the install path ("Fotos [2024]\renamepy")
+    # would otherwise be read as a character class and match nothing.
+    # Newest version first: setup_exiftool.ps1 adds one exiftool-<ver>_64
+    # folder per release, and the first glob match was the oldest one (and
+    # "13.100" would sort before "13.59" as text).
+    def _version_key(folder: str) -> tuple[int, ...]:
+        match = re.search(r"(\d+(?:\.\d+)*)", os.path.basename(folder))
+        return tuple(int(part) for part in match.group(1).split(".")) if match else ()
+
+    for d in sorted(glob.glob(os.path.join(glob.escape(script_dir), "exiftool*")), key=_version_key, reverse=True):
         if os.path.isdir(d):
             # Auto-rename exiftool(-k).exe → exiftool.exe (Windows ZIP default)
             _auto_rename_exiftool_k(d)
