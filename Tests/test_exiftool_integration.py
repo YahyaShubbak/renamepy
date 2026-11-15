@@ -184,6 +184,25 @@ class TestUnreadableFileInBatch:
         assert exif_processor.get_exiftool_metadata_shared(empty, EXIFTOOL) == {}
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows file names cannot contain line breaks")
+class TestLineBreakInFileName:
+    """The persistent process gets its arguments separated by newlines: a
+    file name with a line break must not inject options into a read."""
+
+    def test_read_does_not_inject(self, tmp_path, service):
+        good = _make_jpeg(tmp_path / "good.jpg", "2024:05:01 10:00:00")
+        evil = tmp_path / "evil.jpg\n-FileName=pwned.jpg"
+        evil.write_bytes(open(good, "rb").read())
+        service.extract_raw_exif(good)  # shared process (main thread)
+
+        meta = service.batch_get_raw_metadata([good, str(evil)])
+
+        assert sorted(os.listdir(tmp_path)) == sorted(["good.jpg", "evil.jpg\n-FileName=pwned.jpg", "app_data"])
+        assert meta[str(evil)] == {}
+        assert service.parse_date_from_raw(meta[good]) == "20240501"
+        assert service.extract_raw_exif(str(evil)) == {}
+
+
 class TestExifTimeShiftRoundTrip:
 
     def test_backup_and_restore(self, tmp_path, service):

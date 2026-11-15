@@ -32,6 +32,24 @@ EXIFTOOL_COMMON_ARGS = ["-G", "-n", *EXIFTOOL_CHARSET_ARGS]
 EXIFTOOL_ENCODING = "utf-8"
 
 
+def argfile_safe(value) -> bool:
+    """False if *value* cannot be passed to ExifTool as one argument line.
+
+    Argument files (``-@``) and the pipe to the persistent ExifTool process
+    carry one argument per line, so a line break (or NUL) in a file name or
+    a tag value would turn the rest into further ExifTool options - with
+    write access to the user's files.
+    """
+    text = value.decode("utf-8", "replace") if isinstance(value, bytes) else str(value)
+    return not any(c in text for c in "\r\n\0")
+
+
+def argfile_path_line(path: str) -> str:
+    """*path* as an argument line: a (relative) name starting with "-" or
+    "#" would be read as an option or a comment."""
+    return f"./{path}" if path[:1] in ("-", "#") else path
+
+
 def run_exiftool_on_files(exiftool_path: str, options: list[str], file_paths: list[str],
                           timeout: int = 60) -> subprocess.CompletedProcess:
     """Run one ExifTool command on several files (same options for all).
@@ -41,13 +59,24 @@ def run_exiftool_on_files(exiftool_path: str, options: list[str], file_paths: li
     ANSI code page, which cannot represent every file name (e.g. emoji or
     non-Latin scripts), no matter which ``-charset`` is given. This also
     avoids the Windows command-line length limit.
+
+    Names that cannot be one argument line (see :func:`argfile_safe`) are
+    left out; callers verify their files' results anyway.
     """
     import tempfile
+
+    safe_paths = [p for p in file_paths if argfile_safe(p)]
+    if len(safe_paths) < len(file_paths):
+        log.warning(f"Skipped {len(file_paths) - len(safe_paths)} file(s) with a line break in the name")
+    if not safe_paths:
+        return subprocess.CompletedProcess(
+            [exiftool_path, *options], 1, "", "Unsupported characters in file name"
+        )
 
     fd, argfile = tempfile.mkstemp(prefix="renamepy_", suffix=".args")
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
-            f.write("\n".join(file_paths) + "\n")
+            f.write("\n".join(argfile_path_line(p) for p in safe_paths) + "\n")
         return subprocess.run(
             [exiftool_path, *options, *EXIFTOOL_CHARSET_ARGS, "-@", argfile],
             capture_output=True,
@@ -130,7 +159,28 @@ def new_exiftool_helper(executable: str | None = None):
     }
     if executable and os.path.exists(executable):
         kwargs["executable"] = executable
-    return exiftool.ExifToolHelper(**kwargs)
+    helper = exiftool.ExifToolHelper(**kwargs)
+    _refuse_line_breaks(helper)
+    return helper
+
+
+def _refuse_line_breaks(helper) -> None:
+    """Make *helper* refuse arguments that contain a line break.
+
+    PyExifTool sends the arguments to the persistent process separated by
+    newlines (the same as an argument file), so a file name with a line
+    break would inject options into a *read* - including tag assignments,
+    which make ExifTool write. The read then fails for that file (callers
+    treat it as unreadable) instead.
+    """
+    execute = helper.execute
+
+    def checked_execute(*params, **kwargs):
+        if not all(argfile_safe(param) for param in params):
+            raise ValueError("Unsupported characters in file name (line break)")
+        return execute(*params, **kwargs)
+
+    helper.execute = checked_execute
 
 
 def usable_metadata(meta) -> dict:

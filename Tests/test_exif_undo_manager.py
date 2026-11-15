@@ -405,6 +405,65 @@ class TestWriteTimeouts:
 
 
 # ---------------------------------------------------------------------------
+# Argument files: one argument per line, no injection
+# ---------------------------------------------------------------------------
+class TestArgfileInjection:
+
+    def test_line_break_in_original_name_is_refused(self, tmp_path, fake_exiftool):
+        good = tmp_path / "good.jpg"
+        evil = tmp_path / "evil.jpg"
+        good.touch()
+        evil.touch()
+        fake = _FakeExifTool()
+        with patch.object(exif_undo_manager, "_run_exiftool", side_effect=fake):
+            successes, errors = batch_write_original_filenames(
+                [(str(good), "DSC1.jpg"), (str(evil), "x.jpg\n-o\n/tmp/x")], fake_exiftool)
+
+        assert successes == [str(good)]
+        assert errors == [(str(evil), "Unsupported characters in file name")]
+        assert fake.write_argfiles == [[f"-{PRESERVED_FILENAME_TAG}-=",
+                                        f"-{PRESERVED_FILENAME_TAG}=DSC1.jpg", str(good)]]
+
+    @pytest.mark.skipif(os.name == "nt", reason="Windows file names cannot contain line breaks")
+    def test_line_break_in_file_name_is_refused(self, tmp_path, fake_exiftool):
+        evil = tmp_path / "evil\n-FileName=pwned.jpg"
+        evil.touch()
+        run = MagicMock()
+        with patch.object(exif_undo_manager, "_run_exiftool", run):
+            successes, errors = batch_write_original_filenames([(str(evil), "a.jpg")], fake_exiftool)
+            info = batch_get_original_filenames([str(evil)], fake_exiftool)
+        assert successes == [] and errors == [(str(evil), "Unsupported characters in file name")]
+        assert info == {str(evil): None}
+        run.assert_not_called()
+
+    def test_relative_name_starting_with_dash(self, tmp_path, fake_exiftool, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "-o.jpg").touch()
+        fake = _FakeExifTool()
+        with patch.object(exif_undo_manager, "_run_exiftool", side_effect=fake):
+            batch_write_original_filenames([("-o.jpg", "a.jpg")], fake_exiftool)
+        assert fake.write_argfiles[0][-1] == "./-o.jpg"
+
+    def test_run_exiftool_on_files_drops_unsafe_names(self, tmp_path):
+        from modules.exif_service_new import run_exiftool_on_files, argfile_safe
+        lines = []
+
+        def run(cmd, **kwargs):
+            with open(cmd[cmd.index("-@") + 1], encoding="utf-8") as f:
+                lines.extend(f.read().splitlines())
+            return _completed(0)
+
+        with patch("subprocess.run", side_effect=run):
+            run_exiftool_on_files("/fake/exiftool", ["-AllDates+=1:00:00"],
+                                  [str(tmp_path / "a.jpg"), "b.jpg\n-o\nx", "#c.jpg"])
+            only_unsafe = run_exiftool_on_files("/fake/exiftool", [], ["x\r-o"])
+
+        assert lines == [str(tmp_path / "a.jpg"), "./#c.jpg"]
+        assert only_unsafe.returncode == 1 and "Unsupported" in only_unsafe.stderr
+        assert not argfile_safe("a\0b") and argfile_safe("Straße 😀.jpg")
+
+
+# ---------------------------------------------------------------------------
 # has_original_filename
 # ---------------------------------------------------------------------------
 class TestHasOriginalFilename:

@@ -750,6 +750,7 @@ def batch_restore_exif_timestamps(backup_data, exiftool_path, progress_callback=
     from .exif_service_new import (
         EXIFTOOL_CHARSET_ARGS, exiftool_write_timeout,
         existing_exiftool_tmp_files, remove_exiftool_tmp_files,
+        argfile_safe, argfile_path_line,
     )
 
     successes = []
@@ -763,7 +764,7 @@ def batch_restore_exif_timestamps(backup_data, exiftool_path, progress_callback=
         if not original_exif:
             errors.append((file_path, "No backup EXIF data available"))
             continue
-        if any(c in file_path for c in "\r\n\0"):
+        if not argfile_safe(file_path):
             # One argument per line in the argument file
             errors.append((file_path, "Unsupported characters in file name"))
             continue
@@ -793,7 +794,7 @@ def batch_restore_exif_timestamps(backup_data, exiftool_path, progress_callback=
             if i:
                 lines.append("-execute")
             lines.extend(f"-{field}={value}" for field, value in fields.items())
-            lines.append(file_path)
+            lines.append(argfile_path_line(file_path))
 
         argfile = _write_argfile(lines)
         stderr = ""

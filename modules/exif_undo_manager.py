@@ -25,6 +25,7 @@ from typing import Optional, Tuple, List
 from .logger_util import get_logger
 from .exif_service_new import (
     exiftool_write_timeout, existing_exiftool_tmp_files, remove_exiftool_tmp_files,
+    argfile_safe, argfile_path_line,
 )
 
 log = get_logger()
@@ -103,14 +104,15 @@ def _read_rename_info(file_paths: List[str], exiftool_path: str) -> dict:
         log.warning("ExifTool executable not found")
         return result
 
-    valid_files = [f for f in file_paths if os.path.exists(f)]
+    # A name that cannot be one argument line keeps its empty result
+    valid_files = [f for f in file_paths if os.path.exists(f) and argfile_safe(f)]
     if not valid_files:
         return result
     by_norm = {os.path.normpath(p): p for p in valid_files}
 
     for start in range(0, len(valid_files), CHUNK_SIZE):
         chunk = valid_files[start:start + CHUNK_SIZE]
-        argfile = _write_argfile(chunk)
+        argfile = _write_argfile([argfile_path_line(p) for p in chunk])
         try:
             cmd = [
                 exiftool_path, "-json", *_CHARSET_ARGS,
@@ -237,7 +239,10 @@ def batch_write_original_filenames(
 
     existing = []
     for file_path, original_filename in files:
-        if os.path.exists(file_path):
+        if not argfile_safe(file_path) or not argfile_safe(original_filename):
+            # One argument per line: a line break would inject options
+            errors.append((file_path, "Unsupported characters in file name"))
+        elif os.path.exists(file_path):
             existing.append((file_path, original_filename))
         else:
             errors.append((file_path, f"File not found: {file_path}"))
@@ -251,7 +256,7 @@ def batch_write_original_filenames(
             # "-TAG-=" + "-TAG=VALUE": create the tag only if it doesn't exist.
             lines.append(f"-{PRESERVED_FILENAME_TAG}-=")
             lines.append(f"-{PRESERVED_FILENAME_TAG}={original_filename}")
-            lines.append(file_path)
+            lines.append(argfile_path_line(file_path))
 
         if progress_callback:
             progress_callback(
