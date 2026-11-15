@@ -23,6 +23,9 @@ import tempfile
 import subprocess
 from typing import Optional, Tuple, List
 from .logger_util import get_logger
+from .exif_service_new import (
+    exiftool_write_timeout, existing_exiftool_tmp_files, remove_exiftool_tmp_files,
+)
 
 log = get_logger()
 
@@ -257,18 +260,21 @@ def batch_write_original_filenames(
                 f"Batch {chunk_start // CHUNK_SIZE + 1}"
             )
 
+        chunk_paths = [p for p, _ in chunk]
         argfile = _write_argfile(lines)
         stderr = ""
+        tmp_before = existing_exiftool_tmp_files(chunk_paths)
         try:
             cmd = [exiftool_path, "-@", argfile,
                    "-common_args", "-overwrite_original", "-P", *_CHARSET_ARGS]
-            proc = _run_exiftool(cmd, timeout=max(60, 2 * len(chunk)))
+            proc = _run_exiftool(cmd, timeout=exiftool_write_timeout(chunk_paths))
             stderr = proc.stderr.strip()
             if proc.returncode != 0:
                 log.warning(f"ExifTool reported errors while writing original filenames: {stderr}")
         except subprocess.TimeoutExpired:
             stderr = "ExifTool operation timed out"
             log.error(stderr)
+            remove_exiftool_tmp_files(chunk_paths, keep=tmp_before)
         except Exception as e:
             stderr = str(e)
             log.error(f"Batch metadata write error: {e}")
@@ -280,7 +286,7 @@ def batch_write_original_filenames(
 
         # Confirm per file: the tag must now be present (either our value or
         # an older original name that was deliberately kept).
-        written = _read_rename_info([p for p, _ in chunk], exiftool_path)
+        written = _read_rename_info(chunk_paths, exiftool_path)
         for file_path, _ in chunk:
             if written[file_path]["original_filename"]:
                 successes.append(file_path)
@@ -338,7 +344,7 @@ def clear_original_filename_from_exif(
             cmd.append(f"-{EXIF_USER_COMMENT_FIELD}=")
         cmd.append(file_path)
 
-        result = _run_exiftool(cmd, timeout=30)
+        result = _run_exiftool(cmd, timeout=exiftool_write_timeout([file_path]))
 
         if result.returncode == 0:
             log.debug(f"Cleared original filename from metadata: {file_path}")

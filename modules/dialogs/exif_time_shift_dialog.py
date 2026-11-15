@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
 import os
+import subprocess
 from datetime import datetime, timedelta
 
 from ..file_utilities import is_media_file
@@ -62,7 +63,10 @@ class TimeShiftWorker(QThread):
         """
         from ..exif_processor import get_exiftool_metadata_batch
         from ..backup_journal import PersistedBackupDict
-        from ..exif_service_new import run_exiftool_on_files
+        from ..exif_service_new import (
+            run_exiftool_on_files, exiftool_write_timeout,
+            existing_exiftool_tmp_files, remove_exiftool_tmp_files,
+        )
         
         success_count = 0
         errors = []
@@ -122,11 +126,16 @@ class TimeShiftWorker(QThread):
                 continue
 
             stderr = ""
+            tmp_before = existing_exiftool_tmp_files(eligible)
             try:
                 result = run_exiftool_on_files(
-                    self.exiftool_path, options, eligible, timeout=60 + 2 * len(eligible)
+                    self.exiftool_path, options, eligible, timeout=exiftool_write_timeout(eligible)
                 )
                 stderr = result.stderr.strip()
+            except subprocess.TimeoutExpired:
+                stderr = "ExifTool operation timed out"
+                log.error(stderr)
+                remove_exiftool_tmp_files(eligible, keep=tmp_before)
             except Exception as e:
                 stderr = str(e)
 

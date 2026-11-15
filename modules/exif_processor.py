@@ -646,7 +646,7 @@ def restore_exif_timestamps(file_path, original_exif, exiftool_path):
             if not exiftool_path:
                 return False, "ExifTool executable not found"
         
-        from .exif_service_new import run_exiftool_on_file
+        from .exif_service_new import run_exiftool_on_file, exiftool_write_timeout
 
         # Add each backed-up field. The backup comes from a JSON file on
         # disk, so both the tag name (it becomes "-TAG=...", i.e. an ExifTool
@@ -667,7 +667,8 @@ def restore_exif_timestamps(file_path, original_exif, exiftool_path):
         if len(options) == len(base):
             return False, "No restorable EXIF fields in backup"
 
-        result = run_exiftool_on_file(exiftool_path, options, file_path, timeout=60)
+        result = run_exiftool_on_file(exiftool_path, options, file_path,
+                                      timeout=exiftool_write_timeout([file_path]))
         
         if result.returncode == 0:
             return True, "EXIF timestamps restored successfully"

@@ -286,6 +286,125 @@ class TestClearOriginalFilename:
 
 
 # ---------------------------------------------------------------------------
+# Write timeouts follow the file size; a killed write leaves no temp files
+# ---------------------------------------------------------------------------
+GIB = 1024 ** 3
+
+
+@pytest.fixture
+def huge_files(monkeypatch):
+    """Report a size of 10 GiB for the paths added to the returned set."""
+    huge = set()
+    real_getsize = os.path.getsize
+    monkeypatch.setattr(os.path, "getsize", lambda p: 10 * GIB if p in huge else real_getsize(p))
+    return huge
+
+
+class TestWriteTimeouts:
+
+    def test_batch_write_timeout_follows_size(self, tmp_path, fake_exiftool, huge_files):
+        f = tmp_path / "clip.mov"
+        f.touch()
+        huge_files.add(str(f))
+        timeouts = []
+
+        def run(cmd, timeout):
+            if "-json" in cmd:
+                return _completed(0, stdout="[]")
+            timeouts.append(timeout)
+            return _completed(0)
+
+        with patch.object(exif_undo_manager, "_run_exiftool", side_effect=run):
+            batch_write_original_filenames([(str(f), "C0001.MOV")], fake_exiftool)
+
+        assert timeouts and timeouts[0] >= 10 * GIB // (5 * 1024 * 1024)
+
+    def test_clear_timeout_follows_size(self, tmp_path, fake_exiftool, huge_files):
+        f = tmp_path / "clip.mov"
+        f.touch()
+        huge_files.add(str(f))
+        timeouts = []
+
+        def run(cmd, timeout):
+            timeouts.append(timeout)
+            if "-json" in cmd:
+                return _completed(0, stdout="[]")
+            return _completed(0)
+
+        with patch.object(exif_undo_manager, "_run_exiftool", side_effect=run):
+            clear_original_filename_from_exif(str(f), fake_exiftool)
+
+        assert timeouts[-1] >= 10 * GIB // (5 * 1024 * 1024)
+
+    def test_exif_restore_timeout_follows_size(self, tmp_path, fake_exiftool, huge_files, monkeypatch):
+        from modules.exif_processor import restore_exif_timestamps
+        f = tmp_path / "clip.mov"
+        f.touch()
+        huge_files.add(str(f))
+        run = MagicMock(return_value=_completed(0))
+        monkeypatch.setattr("subprocess.run", run)
+
+        ok, _msg = restore_exif_timestamps(str(f), {"QuickTime:CreateDate": "2024:01:01 10:00:00"}, fake_exiftool)
+
+        assert ok
+        assert run.call_args.kwargs["timeout"] >= 10 * GIB // (5 * 1024 * 1024)
+
+    def test_time_shift_timeout_follows_size(self, tmp_path, huge_files, monkeypatch):
+        from modules.dialogs.exif_time_shift_dialog import TimeShiftWorker
+        f = str(tmp_path / "clip.mov")
+        huge_files.add(f)
+        run = MagicMock(return_value=_completed(0))
+        monkeypatch.setattr("subprocess.run", run)
+        monkeypatch.setattr("modules.exif_processor.get_exiftool_metadata_batch",
+                            lambda paths, *a, **k: {p: {"QuickTime:CreateDate": "2024:01:01 10:00:00"} for p in paths})
+
+        TimeShiftWorker([f], 1, 0, "forward", "/fake/exiftool").run()
+
+        assert run.call_args.kwargs["timeout"] >= 10 * GIB // (5 * 1024 * 1024)
+
+    def test_batch_write_timeout_removes_own_tmp_files(self, tmp_path, fake_exiftool):
+        a = tmp_path / "a.jpg"
+        b = tmp_path / "b.jpg"
+        a.touch()
+        b.touch()
+        stale = tmp_path / "b.jpg_exiftool_tmp"  # left by an earlier crash
+        stale.write_text("keep me")
+
+        def run(cmd, timeout):
+            if "-json" in cmd:
+                return _completed(0, stdout="[]")
+            (tmp_path / "a.jpg_exiftool_tmp").write_text("partial")  # killed mid-write
+            raise subprocess.TimeoutExpired(cmd, timeout)
+
+        with patch.object(exif_undo_manager, "_run_exiftool", side_effect=run):
+            successes, errors = batch_write_original_filenames(
+                [(str(a), "A0.jpg"), (str(b), "B0.jpg")], fake_exiftool)
+
+        assert successes == [] and len(errors) == 2
+        assert not (tmp_path / "a.jpg_exiftool_tmp").exists()
+        assert stale.read_text() == "keep me"
+
+    def test_time_shift_timeout_removes_own_tmp_files(self, tmp_path, monkeypatch):
+        from modules.dialogs.exif_time_shift_dialog import TimeShiftWorker
+        f = str(tmp_path / "a.jpg")
+
+        def run(cmd, **kwargs):
+            open(f + "_exiftool_tmp", "w").close()
+            raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+
+        monkeypatch.setattr("subprocess.run", run)
+        monkeypatch.setattr("modules.exif_processor.get_exiftool_metadata_batch",
+                            lambda paths, *a, **k: {p: {"EXIF:DateTimeOriginal": "2024:01:01 10:00:00"} for p in paths})
+        worker = TimeShiftWorker([f], 1, 0, "forward", "/fake/exiftool")
+        results = []
+        worker.finished_signal.connect(lambda *args: results.append(args))
+        worker.run()
+
+        assert results[0][1] == [(f, "ExifTool operation timed out")]
+        assert not os.path.exists(f + "_exiftool_tmp")
+
+
+# ---------------------------------------------------------------------------
 # has_original_filename
 # ---------------------------------------------------------------------------
 class TestHasOriginalFilename:

@@ -167,3 +167,44 @@ class TestExifServiceExtraction:
         assert date is None
         assert camera is None
         assert lens is None
+
+
+# ---------------------------------------------------------------------------
+# ExifTool write helpers
+# ---------------------------------------------------------------------------
+class TestExifToolWriteHelpers:
+
+    def test_write_timeout_grows_with_bytes(self, tmp_path):
+        from modules.exif_service_new import exiftool_write_timeout
+        small = tmp_path / "small.jpg"
+        small.write_bytes(b"x" * 1000)
+        large = tmp_path / "large.mov"
+        large.write_bytes(b"x" * 3000)
+        missing = str(tmp_path / "missing.jpg")
+
+        timeout = exiftool_write_timeout([str(small), str(large), missing],
+                                         base=10, per_file=1, min_bytes_per_second=100)
+
+        assert timeout == 10 + 3 + 40  # base + 3 files + 4000 bytes at 100 B/s
+
+    def test_write_timeout_defaults(self, tmp_path):
+        from modules.exif_service_new import exiftool_write_timeout
+        assert exiftool_write_timeout([]) == 60
+        assert exiftool_write_timeout([str(tmp_path / "missing.jpg")]) == 62
+
+    def test_remove_tmp_files_keeps_preexisting(self, tmp_path):
+        from modules.exif_service_new import (
+            existing_exiftool_tmp_files, remove_exiftool_tmp_files,
+        )
+        a, b, c = (str(tmp_path / n) for n in ("a.jpg", "b.jpg", "c.jpg"))
+        old = b + "_exiftool_tmp"
+        open(old, "w").close()
+        before = existing_exiftool_tmp_files([a, b, c])
+        new = a + "_exiftool_tmp"
+        open(new, "w").close()
+
+        remove_exiftool_tmp_files([a, b, c], keep=before)
+
+        assert before == {old}
+        assert not os.path.exists(new)
+        assert os.path.exists(old)

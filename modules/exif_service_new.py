@@ -71,6 +71,51 @@ def run_exiftool_on_file(exiftool_path: str, options: list[str], file_path: str,
     return run_exiftool_on_files(exiftool_path, options, [file_path], timeout)
 
 
+def exiftool_write_timeout(file_paths, base: int = 60, per_file: int = 2,
+                           min_bytes_per_second: int = 5 * 1024 * 1024) -> int:
+    """Timeout in seconds for an ExifTool write to *file_paths*.
+
+    A write rewrites every file completely, so the time it needs grows with
+    the bytes, not just the number of files (a chunk of videos can be many
+    GB). Sizes that cannot be read count as 0.
+    """
+    total_size = 0
+    for path in file_paths:
+        try:
+            total_size += os.path.getsize(path)
+        except OSError:
+            pass
+    return int(base + per_file * len(file_paths) + total_size / min_bytes_per_second)
+
+
+# ExifTool writes "<file>_exiftool_tmp" and replaces the file with it when done.
+EXIFTOOL_TMP_SUFFIX = "_exiftool_tmp"
+
+
+def existing_exiftool_tmp_files(file_paths) -> set[str]:
+    """ExifTool temporary files that currently exist next to *file_paths*."""
+    return {p + EXIFTOOL_TMP_SUFFIX for p in file_paths if os.path.exists(p + EXIFTOOL_TMP_SUFFIX)}
+
+
+def remove_exiftool_tmp_files(file_paths, keep=frozenset()) -> None:
+    """Best-effort removal of the temporary files of a killed ExifTool write.
+
+    Temporary files in *keep* existed before the write and are left alone:
+    they are not ours and may be all that is left of an earlier crash.
+    """
+    for path in file_paths:
+        tmp = path + EXIFTOOL_TMP_SUFFIX
+        if tmp in keep:
+            continue
+        try:
+            os.remove(tmp)
+            log.info(f"Removed ExifTool leftover {tmp!r}")
+        except FileNotFoundError:
+            pass
+        except OSError as e:
+            log.warning(f"Could not remove ExifTool leftover {tmp!r}: {e}")
+
+
 def new_exiftool_helper(executable: str | None = None):
     """Create an ExifToolHelper with the application's common arguments."""
     kwargs = {"common_args": list(EXIFTOOL_COMMON_ARGS), "encoding": EXIFTOOL_ENCODING}
