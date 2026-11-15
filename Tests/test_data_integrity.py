@@ -418,6 +418,91 @@ class TestBackupsKeepOriginals:
 
 
 # ---------------------------------------------------------------------------
+# Timestamp sync: no needless re-reads, one ExifTool lookup, cancellable
+# ---------------------------------------------------------------------------
+class TestTimestampSyncBatch:
+
+    @pytest.fixture
+    def service(self, monkeypatch):
+        from modules import exif_processor
+        service = MagicMock()
+        monkeypatch.setattr(exif_processor, "_default_exif_service", service)
+        monkeypatch.setattr(exif_processor, "EXIFTOOL_AVAILABLE", True)
+        return service
+
+    @pytest.fixture
+    def find(self, monkeypatch):
+        find = MagicMock(return_value="/fake/exiftool")
+        monkeypatch.setattr("modules.exif_processor.find_exiftool_path", find)
+        return find
+
+    def test_prefetched_file_without_date_is_not_read_again(self, tmp_path, service, find):
+        from modules.exif_processor import batch_sync_exif_dates
+        original = datetime.datetime(2020, 1, 1)
+        f = _touch(tmp_path / "scan.png", original)
+        service.batch_get_raw_metadata.return_value = {f: {"File:FileName": "scan.png"}}
+
+        successes, errors, _backup = batch_sync_exif_dates([f])
+
+        assert successes == [] and errors == [(f, "No EXIF date found in file")]
+        service.extract_raw_exif.assert_not_called()
+        find.assert_not_called()
+        assert os.path.getmtime(f) == pytest.approx(original.timestamp())
+
+    def test_exiftool_is_looked_up_once(self, tmp_path, service, find):
+        from modules.exif_processor import batch_sync_exif_dates
+        files = [_touch(tmp_path / f"{i}.jpg") for i in range(3)]
+        service.batch_get_raw_metadata.side_effect = RuntimeError("prefetch failed")
+        service.extract_raw_exif.return_value = {"EXIF:DateTimeOriginal": "2021:01:01 10:00:00"}
+
+        successes, errors, _backup = batch_sync_exif_dates(files)
+
+        assert errors == [] and len(successes) == 3
+        assert find.call_count == 1
+
+    def test_custom_flag_without_date_uses_the_prefetch(self, tmp_path, service, find):
+        from modules.exif_processor import batch_sync_exif_dates
+        f = _touch(tmp_path / "a.jpg")
+        service.batch_get_raw_metadata.return_value = {f: {"EXIF:DateTimeOriginal": "2021:01:01 10:00:00"}}
+
+        successes, errors, _backup = batch_sync_exif_dates([f], options={"use_custom": True})
+
+        assert errors == [] and len(successes) == 1
+        service.batch_get_raw_metadata.assert_called_once()
+        service.extract_raw_exif.assert_not_called()
+
+    def test_cancel_stops_before_the_next_file(self, tmp_path):
+        from modules.exif_processor import batch_sync_exif_dates
+        original = datetime.datetime(2020, 1, 1)
+        a, b, c = (_touch(tmp_path / f"{n}.jpg", original) for n in "abc")
+        options = {"use_custom": True, "custom_dt": datetime.datetime(2022, 1, 1)}
+
+        successes, errors, _backup = batch_sync_exif_dates(
+            [a, b, c], options=options,
+            is_cancelled=lambda: os.path.getmtime(a) != pytest.approx(original.timestamp()),
+        )
+
+        assert [p for p, _ in successes] == [a]
+        assert errors == [("", "Cancelled - 2 file(s) not synchronized")]
+        assert os.path.getmtime(b) == pytest.approx(original.timestamp())
+        assert os.path.getmtime(c) == pytest.approx(original.timestamp())
+
+    def test_cancel_during_sync_renames_nothing(self, tmp_path):
+        a = _touch(tmp_path / "DSC0001.jpg", datetime.datetime(2024, 5, 1, 10))
+        options = {"use_custom": True, "custom_dt": datetime.datetime(2022, 1, 1)}
+        worker = _make_worker([a], exif_method=None, sync_exif_date=True, timestamp_options=options)
+        worker.isInterruptionRequested = lambda: True
+
+        renamed, errors, _backup, mapping = worker.optimized_rename_files()
+
+        assert renamed == [] and mapping == {}
+        assert worker.was_cancelled
+        assert ("", "Cancelled - no files were renamed") in errors
+        assert os.path.exists(a)
+        assert os.path.getmtime(a) == pytest.approx(datetime.datetime(2024, 5, 1, 10).timestamp())
+
+
+# ---------------------------------------------------------------------------
 # Nothing is modified when its backup cannot be written to the journal
 # ---------------------------------------------------------------------------
 class TestJournalWriteFailures:

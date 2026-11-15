@@ -827,7 +827,10 @@ class RenameWorkerThread(QThread):
             self.exiftool_path if self.exiftool_path else None,
             lambda msg: self.progress_update.emit(f"Date sync: {msg}"),
             options=self.timestamp_options,
+            is_cancelled=self.isInterruptionRequested,
         )
+        if self.isInterruptionRequested():
+            self.was_cancelled = True
 
         if successes:
             self.progress_update.emit(f"Successfully synced dates for {len(successes)} files")
@@ -967,6 +970,13 @@ class RenameWorkerThread(QThread):
         if self.leave_names:
             # Only syncing timestamps
             return [], list(sync_errors), timestamp_backup, {}
+        if self.was_cancelled:
+            # Cancelled during the sync: rename nothing
+            errors = [(path, f"Timestamp sync: {msg}") for path, msg in sync_errors]
+            errors += list(plan_errors)
+            if any(e.changed for e in entries):
+                errors.append(("", "Cancelled - no files were renamed"))
+            return [], errors, timestamp_backup, {}
         renamed_files, exec_errors, rename_mapping = self.execute_plan(entries)
         errors = [(path, f"Timestamp sync: {msg}") for path, msg in sync_errors]
         errors += list(plan_errors) + exec_errors

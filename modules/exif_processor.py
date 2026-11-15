@@ -484,7 +484,8 @@ def restore_file_timestamps(file_path, original_times):
     except Exception as e:
         return False, f"Error restoring timestamps: {e}"
 
-def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None, options=None):
+def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None, options=None,
+                          is_cancelled=None):
     """
     Batch synchronize EXIF dates to file dates for multiple files.
     
@@ -492,6 +493,9 @@ def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None
         file_paths: List of file paths to process
         exiftool_path: Path to ExifTool executable
         progress_callback: Optional callback function for progress updates
+        options: Dict from TimestampSyncOptionsDialog (which fields, custom date)
+        is_cancelled: Optional callable; when it returns True the sync stops
+            before the next file and reports the files left out
         
     Returns:
         tuple: (successes: list, errors: list, backup_data: dict)
@@ -511,7 +515,10 @@ def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None
     from .exif_service_new import ExifService, new_exiftool_helper, usable_metadata
 
     prefetch_map = {}
-    use_custom = options and options.get('use_custom')
+    # Files whose metadata the prefetch returned (with or without a date)
+    prefetched = set()
+    # Same rule as sync_exif_date_to_file_date: a custom date needs a value
+    use_custom = bool(options and options.get('use_custom') and options.get('custom_dt'))
     can_prefetch = EXIFTOOL_AVAILABLE and not use_custom and file_paths
     if can_prefetch:
         try:
@@ -533,17 +540,32 @@ def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None
                 dt_value = ExifService.parse_datetime_from_raw(meta)
                 if dt_value is not None:
                     prefetch_map[fpath] = dt_value
+            prefetched = set(raw_batch)
             if progress_callback:
                 progress_callback(f"Prefetched EXIF datetimes for {len(prefetch_map)} files")
         except Exception as e:
             if progress_callback:
                 progress_callback(f"Prefetch failed, falling back: {e}")
             prefetch_map = {}
+            prefetched = set()
+
+    # Files the prefetch did not cover are read one by one; discover
+    # ExifTool for them once, not once per file.
+    if not use_custom and not exiftool_path and len(prefetched) < len(file_paths):
+        exiftool_path = find_exiftool_path()
+
+    def cancelled(index):
+        if is_cancelled and is_cancelled():
+            errors.append(("", f"Cancelled - {len(file_paths) - index} file(s) not synchronized"))
+            return True
+        return False
 
     # Back up a whole chunk with one journal write before modifying any file
     # of it (one write per file would make large batches quadratic).
     SYNC_CHUNK = 200
     for start in range(0, len(file_paths), SYNC_CHUNK):
+        if cancelled(start):
+            break
         chunk = file_paths[start:start + SYNC_CHUNK]
         originals = {}
         for file_path in chunk:
@@ -555,7 +577,11 @@ def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None
                 log.debug(f"Could not read timestamps of {file_path}: {e}")
         backup_data.record_originals(originals)
 
+        stopped = False
         for i, file_path in enumerate(chunk, start=start):
+            if cancelled(i):
+                stopped = True
+                break
             if progress_callback:
                 progress_callback(f"Processing {i+1}/{len(file_paths)}: {os.path.basename(file_path)}")
             if file_path not in backup_data and os.path.exists(file_path):
@@ -563,6 +589,10 @@ def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None
                 continue
 
             pre_dt = prefetch_map.get(file_path)
+            if not use_custom and pre_dt is None and file_path in prefetched:
+                # Already read: reading it again would find no date either
+                errors.append((file_path, "No EXIF date found in file"))
+                continue
             success, message, _original_times = sync_exif_date_to_file_date(
                 file_path, exiftool_path, None, options=options, preexif_dt=pre_dt
             )
@@ -571,6 +601,8 @@ def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None
                 successes.append((file_path, message))
             else:
                 errors.append((file_path, message))
+        if stopped:
+            break
 
     return successes, errors, backup_data
 
