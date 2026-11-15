@@ -26,7 +26,7 @@ log = get_logger()
 # Import unified utilities from file_utilities module
 from .file_utilities import (
     is_media_file, get_safe_target_path, validate_path_length, safe_rename, is_case_variant,
-    SIDECAR_EXTENSIONS, find_sidecars, sidecar_target,
+    SIDECAR_EXTENSIONS, find_sidecars, sidecar_target, path_key, rename_order, rename_cycles,
 )
 
 # Import timestamp operations from exif_processor (the only remaining use)
@@ -294,14 +294,16 @@ class RenamePlanner:
     # Names
     # ------------------------------------------------------------------
 
-    def resolve_safe_target(self, original_path: str, new_name: str, reserved_targets: set[str]) -> str:
+    def resolve_safe_target(self, original_path: str, new_name: str, reserved_targets: set[str],
+                            vacating=frozenset()) -> str:
         """Resolve a conflict-free target considering disk and already planned targets.
 
         Wraps :func:`get_safe_target_path` (which performs security checks) and
         additionally checks against *reserved_targets* — paths planned for an
-        earlier file but not yet on disk.
+        earlier file but not yet on disk. Files whose ``path_key`` is in
+        *vacating* are renamed away by the same plan, so their names are free.
         """
-        target = get_safe_target_path(original_path, new_name)
+        target = get_safe_target_path(original_path, new_name, vacating)
 
         # If target is the source file itself, no conflict is possible
         if os.path.normcase(target) == os.path.normcase(original_path):
@@ -314,9 +316,12 @@ class RenamePlanner:
         # Conflict with a reserved (but not yet on-disk) target — find alternative
         directory = os.path.dirname(target)
         name, ext = os.path.splitext(os.path.basename(target))
+        original_key = path_key(original_path)
         for attempt in range(1, 1000):
             alt_path = os.path.join(directory, f"{name}({attempt}){ext}")
-            if not os.path.exists(alt_path) and os.path.normcase(alt_path) not in reserved_targets:
+            alt_key = path_key(alt_path)
+            on_disk = os.path.exists(alt_path) and alt_key not in vacating and alt_key != original_key
+            if not on_disk and os.path.normcase(alt_path) not in reserved_targets:
                 return alt_path
         raise RuntimeError(f"Cannot generate unique filename for {new_name}")
 
@@ -428,28 +433,23 @@ class RenamePlanner:
     def new_name_for(self, path: str, components: List[Tuple[str, str]]) -> str:
         return compose_filename([text for _id, text in components], self.separator, os.path.splitext(path)[1])
 
-    def plan_file_group(
+    def group_names(
         self,
         group: List[str],
         date_counter: Dict[str, int],
         exif_cache: Dict[str, Optional[Dict[str, Any]]],
-        reserved_targets: set[str],
-    ) -> Tuple[List[PlanEntry], List[Tuple[str, str]]]:
-        """
-        Compute the rename plan for one file group **without** moving files.
-
-        Conflict resolution accounts for both on-disk files and targets
-        already reserved by earlier groups.
+    ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+        """Desired new name of every file of one group (no conflict handling).
 
         Returns:
-            (plan entries, list of (file_path, error_message))
+            ([(file_path, new_name)], [(file_path, error_message)])
         """
-        plan_entries: List[PlanEntry] = []
+        names: List[Tuple[str, str]] = []
         errors: List[Tuple[str, str]] = []
 
         group_existing = [p for p in group if os.path.exists(p)]
         if not group_existing:
-            return plan_entries, errors
+            return names, errors
 
         first_file = group_existing[0]
         date_taken, camera_model, lens_model = self.group_values(group_existing, exif_cache)
@@ -460,8 +460,27 @@ class RenamePlanner:
                 components = self.file_components(
                     path, first_file, exif_cache, date_taken, camera_model, lens_model, number
                 )
-                new_name = self.new_name_for(path, components)
-                target_path = self.resolve_safe_target(path, new_name, reserved_targets)
+                names.append((path, self.new_name_for(path, components)))
+            except Exception as e:
+                errors.append((path, str(e)))
+        return names, errors
+
+    def resolve_names(
+        self,
+        names: List[Tuple[str, str]],
+        reserved_targets: set[str],
+        vacating=frozenset(),
+    ) -> Tuple[List[PlanEntry], List[Tuple[str, str]]]:
+        """Plan entries for ``(file_path, new_name)`` pairs, in order.
+
+        A name is taken if a file has it on disk (unless that file is in
+        *vacating*) or an earlier entry reserved it; then a number is added.
+        """
+        plan_entries: List[PlanEntry] = []
+        errors: List[Tuple[str, str]] = []
+        for path, new_name in names:
+            try:
+                target_path = self.resolve_safe_target(path, new_name, reserved_targets, vacating)
 
                 if not validate_path_length(target_path):
                     errors.append((path, f"Target path too long: {len(target_path)} chars"))
@@ -474,8 +493,65 @@ class RenamePlanner:
                 reserved_targets.add(os.path.normcase(target_path))
             except Exception as e:
                 errors.append((path, str(e)))
-
         return plan_entries, errors
+
+    def plan_file_group(
+        self,
+        group: List[str],
+        date_counter: Dict[str, int],
+        exif_cache: Dict[str, Optional[Dict[str, Any]]],
+        reserved_targets: set[str],
+    ) -> Tuple[List[PlanEntry], List[Tuple[str, str]]]:
+        """
+        Compute the rename plan for one file group **without** moving files.
+
+        Conflict resolution accounts for both on-disk files and targets
+        already reserved by earlier groups (but not for other renames of
+        the batch - :meth:`build_plan` resolves the whole batch together).
+
+        Returns:
+            (plan entries, list of (file_path, error_message))
+        """
+        names, errors = self.group_names(group, date_counter, exif_cache)
+        plan_entries, resolve_errors = self.resolve_names(names, reserved_targets)
+        return plan_entries, errors + resolve_errors
+
+    def resolve_batch(
+        self, names: List[Tuple[str, str]]
+    ) -> Tuple[List[PlanEntry], List[Tuple[str, str]], set[str]]:
+        """Resolve the desired names of the whole batch.
+
+        A name held by another file of the batch that is renamed away is
+        free: the executor renames in dependency order (``rename_order``),
+        so re-running a pattern does not add "(1)" to most of the set.
+        Repeats until the set of files that really move is stable (a file
+        that keeps its name, or fails, still occupies it), and turns rename
+        cycles (A->B, B->A) into chains by numbering one member of each.
+
+        Returns:
+            (plan entries, errors, reserved target keys)
+        """
+        vacating = {
+            path_key(path) for path, new_name in names
+            if path_key(os.path.join(os.path.dirname(path), new_name)) != path_key(path)
+        }
+        # Names of cycle members that must be treated as taken
+        blocked: set[str] = set()
+        # Each round shrinks *vacating* or grows *blocked*
+        for _round in range(2 * len(names) + 2):
+            reserved: set[str] = set()
+            entries, errors = self.resolve_names(names, reserved, frozenset(vacating - blocked))
+            moving = {path_key(e.source) for e in entries if e.changed}
+            if vacating - moving:
+                vacating &= moving
+                continue
+            moves = [(e.source, e.target) for e in entries if e.changed]
+            cycles = rename_cycles(moves)
+            if not cycles:
+                return entries, errors, reserved
+            for cycle in cycles:
+                blocked.add(path_key(moves[cycle[0]][1]))
+        raise RuntimeError("Could not resolve the rename plan")
 
     def plan_sidecars(
         self, entries: List[PlanEntry], reserved_targets: set[str]
@@ -485,7 +561,8 @@ class RenamePlanner:
         Supports ``<name>.<ext>.xmp`` (darktable, RawTherapee, DxO) and
         ``<stem>.xmp`` (Lightroom, Apple .aae, Canon .thm) naming. A sidecar
         whose new name is taken is left alone (with a warning) - a "(1)"
-        suffix would detach it from its photo.
+        suffix would detach it from its photo. A name held by another
+        sidecar that is renamed away in the same plan counts as free.
         """
         sidecars: List[PlanEntry] = []
         errors: List[Tuple[str, str]] = []
@@ -501,31 +578,64 @@ class RenamePlanner:
                     listings[directory] = {}
             return listings[directory]
 
+        # (sidecar path, new path, photo entry) for every sidecar of a moving photo
+        candidates: List[Tuple[str, str, PlanEntry]] = []
         for entry in entries:
             if not entry.changed:
                 continue
             directory = os.path.dirname(entry.source)
-            source_name = os.path.basename(entry.source)
             for sidecar_path, kind, suffix in find_sidecars(entry.source, listing(directory)):
-                key = os.path.normcase(os.path.abspath(sidecar_path))
+                key = path_key(sidecar_path)
                 if key in claimed or key in loaded:
                     continue
                 claimed.add(key)
-                new_path = sidecar_target(entry.target, kind, suffix)
+                candidates.append((sidecar_path, sidecar_target(entry.target, kind, suffix), entry))
+
+        def moves(path, new_path):
+            return path_key(new_path) != path_key(path)
+
+        # A name held by another sidecar that moves away is free. Repeat
+        # until the set of sidecars that really move is stable.
+        vacating = {path_key(path) for path, new_path, _e in candidates if moves(path, new_path)}
+        in_cycle: set[int] = set()  # cannot move without a temporary name
+        for _round in range(2 * len(candidates) + 2):
+            accepted: List[int] = []
+            errors = []
+            reserved = set(reserved_targets)
+            for idx, (sidecar_path, new_path, _entry) in enumerate(candidates):
                 taken = (
-                    os.path.normcase(new_path) in reserved_targets
-                    or (os.path.lexists(new_path) and not is_case_variant(sidecar_path, new_path)
+                    idx in in_cycle
+                    or os.path.normcase(new_path) in reserved
+                    or (os.path.lexists(new_path) and path_key(new_path) not in vacating
+                        and not is_case_variant(sidecar_path, new_path)
                         and os.path.normcase(new_path) != os.path.normcase(sidecar_path))
                 )
                 if taken:
                     errors.append((sidecar_path,
                                    f"Sidecar not renamed: '{os.path.basename(new_path)}' already exists"))
                     continue
-                reserved_targets.add(os.path.normcase(new_path))
-                sidecars.append(PlanEntry(
-                    sidecar_path, new_path, sidecar=True, main_source=entry.source,
-                    note=f"sidecar of {source_name}",
-                ))
+                reserved.add(os.path.normcase(new_path))
+                accepted.append(idx)
+            moving_idx = [i for i in accepted if moves(candidates[i][0], candidates[i][1])]
+            moving = {path_key(candidates[i][0]) for i in moving_idx}
+            if vacating - moving:
+                vacating &= moving
+                continue
+            cycles = rename_cycles([(candidates[i][0], candidates[i][1]) for i in moving_idx])
+            if not cycles:
+                break
+            for cycle in cycles:
+                in_cycle.update(moving_idx[c] for c in cycle)
+        else:
+            raise RuntimeError("Could not resolve the sidecar renames")
+
+        for idx in accepted:
+            sidecar_path, new_path, entry = candidates[idx]
+            reserved_targets.add(os.path.normcase(new_path))
+            sidecars.append(PlanEntry(
+                sidecar_path, new_path, sidecar=True, main_source=entry.source,
+                note=f"sidecar of {os.path.basename(entry.source)}",
+            ))
         return sidecars, errors
 
     def build_plan(self) -> Tuple[List[PlanEntry], List[Tuple[str, str]]]:
@@ -547,10 +657,9 @@ class RenamePlanner:
         self._progress("Sorting files by capture time...")
         file_groups.sort(key=lambda g: self.exif_sort_key(g, exif_cache))
 
-        entries: List[PlanEntry] = []
+        names: List[Tuple[str, str]] = []
         errors: List[Tuple[str, str]] = []
         date_counter: Dict[str, int] = {}
-        reserved_targets: set[str] = set()
         total = len(file_groups)
         for idx, group in enumerate(file_groups):
             if self._is_cancelled():
@@ -558,10 +667,16 @@ class RenamePlanner:
             if idx % 50 == 0:
                 self._progress(f"Planning group {idx + 1}/{total}")
                 self._progress_value(idx, total)
-            group_plan, group_errors = self.plan_file_group(group, date_counter, exif_cache, reserved_targets)
-            entries.extend(group_plan)
+            group_names, group_errors = self.group_names(group, date_counter, exif_cache)
+            names.extend(group_names)
             errors.extend(group_errors)
         self._progress_value(total, total)
+
+        if self._is_cancelled():
+            raise PlanningCancelled()
+        self._progress("Resolving name conflicts...")
+        entries, resolve_errors, reserved_targets = self.resolve_batch(names)
+        errors.extend(resolve_errors)
 
         if self.rename_sidecars:
             sidecar_entries, sidecar_errors = self.plan_sidecars(entries, reserved_targets)
@@ -708,6 +823,10 @@ class RenameWorkerThread(QThread):
         kill mid-way still leaves enough on disk to undo every rename that
         did happen. Stops between files if interruption is requested.
 
+        Renames within a chain (A->B while B->C) are journaled one at a
+        time: a path that still holds another file of the plan keeps that
+        file's undo entry and backups until the file has moved away.
+
         Returns:
             (renamed photo paths, errors, {new_path: old_path} incl. sidecars)
         """
@@ -716,15 +835,31 @@ class RenameWorkerThread(QThread):
         rename_mapping: Dict[str, str] = {}
 
         planned_moves = [e for e in entries if e.changed]
+        sources = {path_key(e.source) for e in planned_moves}
+        targets = {path_key(e.target) for e in planned_moves}
+        # Renames into a name another file of the plan still has
+        into_vacated = {path_key(e.source) for e in planned_moves if path_key(e.target) in sources}
+        # Renames whose journal keys are shared with another file of the plan
+        stepwise = {path_key(e.source) for e in planned_moves
+                    if path_key(e.target) in sources or path_key(e.source) in targets}
         if planned_moves:
             journaled = backup_journal.update_entries({
                 "original_filenames": {
-                    "set": {e.target: self._original_name_of(e.source) for e in planned_moves},
+                    "set": {e.target: self._original_name_of(e.source) for e in planned_moves
+                            if path_key(e.source) not in into_vacated},
                 },
             })
             if not journaled:
                 errors.append(("", "Could not write the undo journal - no files were renamed"))
                 return renamed_files, errors, rename_mapping
+
+        # A rename into a name that another file of the plan vacates must
+        # wait for that file; sidecars run after all photos.
+        def executable_order(group: List[PlanEntry]) -> List[PlanEntry]:
+            return [group[i] for i in rename_order([(e.source, e.target) for e in group])]
+
+        entries = (executable_order([e for e in entries if not e.sidecar])
+                   + executable_order([e for e in entries if e.sidecar]))
 
         moved: Dict[str, str] = {}
         total = len(entries)
@@ -747,24 +882,42 @@ class RenameWorkerThread(QThread):
                     rename_mapping[entry.source] = entry.source
                 continue
             try:
+                key = path_key(entry.source)
+                if key in into_vacated:
+                    # Only once the file that had this name has moved away
+                    # may its journal key describe the incoming file.
+                    if os.path.lexists(entry.target):
+                        raise FileExistsError(f"Target already exists: {entry.target}")
+                    if not backup_journal.update_entries({
+                        "original_filenames": {"set": {entry.target: self._original_name_of(entry.source)}},
+                    }):
+                        raise OSError("Could not write the undo journal - file not renamed")
                 safe_rename(entry.source, entry.target)
                 moved[entry.source] = entry.target
                 rename_mapping[entry.target] = entry.source
                 if not entry.sidecar:
                     renamed_files.append(entry.target)
+                if key in stepwise:
+                    # Backups follow before another file takes this name
+                    backup_journal.rekey_journal({entry.source: entry.target})
             except Exception as e:
                 errors.append((entry.source, str(e)))
         self.progress_value.emit(total, total)
 
         # Settle the journal: renamed files are tracked under their new path
-        # only, planned-but-not-done renames are dropped, and backups of
-        # timestamps/EXIF follow the file.
+        # only, planned-but-not-done renames are dropped (unless a file of
+        # the plan holds that path now), and backups of timestamps/EXIF
+        # follow the file.
         if planned_moves:
-            not_done = [e.target for e in planned_moves if e.source not in moved]
+            here = {path_key(moved.get(e.source, e.source)) for e in planned_moves}
+            stale = [e.source for e in planned_moves if e.source in moved]
+            stale += [e.target for e in planned_moves if e.source not in moved]
             backup_journal.update_entries({
-                "original_filenames": {"remove": list(moved) + not_done},
+                "original_filenames": {"remove": [p for p in stale if path_key(p) not in here]},
             })
-            backup_journal.rekey_journal(moved)
+            backup_journal.rekey_journal(
+                {old: new for old, new in moved.items() if path_key(old) not in stepwise}
+            )
 
         # Write original filenames into the renamed photos (one batched
         # ExifTool process per chunk, after all renames are complete).

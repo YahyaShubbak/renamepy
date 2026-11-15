@@ -212,6 +212,208 @@ class TestSidecarUndo:
         assert (tmp_path / "DSC0001.xmp").read_text() == "someone else's"
 
 
+class TestRenamesWithinTheBatch:
+    """Regression: a name held by a file of the batch that is renamed away
+    counted as taken, so re-running a pattern added "(1)" to most files."""
+
+    @staticmethod
+    def _numbered(tmp_path, numbers, minute_of=None, sidecars=False):
+        files = []
+        for i, n in enumerate(numbers):
+            minute = minute_of[i] if minute_of else i
+            path = _touch(tmp_path / f"2024-05-01_{n:03d}.jpg", datetime.datetime(2024, 5, 1, 10, minute))
+            if sidecars:
+                (tmp_path / f"2024-05-01_{n:03d}.xmp").write_text(f"xmp of {n:03d}")
+            files.append(path)
+        return files
+
+    @staticmethod
+    def _names(entries, sidecar=False):
+        return [(os.path.basename(e.source), os.path.basename(e.target))
+                for e in entries if e.sidecar == sidecar]
+
+    @staticmethod
+    def _photos(tmp_path):
+        return sorted(p.name for p in tmp_path.iterdir() if p.suffix in (".jpg", ".xmp"))
+
+    def test_rerun_shifts_names_without_suffixes(self, tmp_path):
+        from unittest.mock import MagicMock
+        from modules.handlers.undo_handler import UndoHandler
+        files = self._numbered(tmp_path, [2, 3, 4])
+        worker = _worker(files)
+
+        entries, errors = worker.build_plan()
+
+        assert errors == []
+        assert self._names(entries) == [
+            ("2024-05-01_002.jpg", "2024-05-01_001.jpg"),
+            ("2024-05-01_003.jpg", "2024-05-01_002.jpg"),
+            ("2024-05-01_004.jpg", "2024-05-01_003.jpg"),
+        ]
+        assert all(e.note == "" for e in entries)
+
+        renamed, errors, _ts, _mapping = worker._sync_then_execute(entries, [])
+        assert errors == []
+        assert self._photos(tmp_path) == ["2024-05-01_001.jpg", "2024-05-01_002.jpg", "2024-05-01_003.jpg"]
+
+        app = MagicMock()
+        app.files = list(renamed)
+        app.original_filenames = dict(load_journal()["original_filenames"])
+        app.timestamp_backup, app.exif_backup = {}, {}
+        restored, errors = UndoHandler(app)._restore_filenames(list(app.original_filenames.items()))
+        assert errors == [] and len(restored) == 3
+        assert self._photos(tmp_path) == ["2024-05-01_002.jpg", "2024-05-01_003.jpg", "2024-05-01_004.jpg"]
+
+    def test_executor_orders_a_chain(self, tmp_path):
+        files = self._numbered(tmp_path, [2, 3, 4])
+        worker = _worker(files)
+        entries, _errors = worker.build_plan()
+
+        _renamed, errors, _ts, _mapping = worker._sync_then_execute(list(reversed(entries)), [])
+
+        assert errors == []
+        assert self._photos(tmp_path) == ["2024-05-01_001.jpg", "2024-05-01_002.jpg", "2024-05-01_003.jpg"]
+
+    def test_swapped_names_get_one_suffix(self, tmp_path):
+        # _002 was taken first, so it now wants _001 and _001 wants _002
+        files = self._numbered(tmp_path, [1, 2], minute_of=[1, 0])
+        worker = _worker(files)
+
+        entries, errors = worker.build_plan()
+
+        assert errors == []
+        assert sum("(1)" in os.path.basename(e.target) for e in entries) == 1
+        _renamed, errors, _ts, _mapping = worker._sync_then_execute(entries, [])
+        assert errors == []
+        assert self._photos(tmp_path) == ["2024-05-01_001(1).jpg", "2024-05-01_002.jpg"]
+
+    def test_sidecars_follow_a_chain(self, tmp_path):
+        files = self._numbered(tmp_path, [2, 3, 4], sidecars=True)
+        worker = _worker(files)
+
+        entries, errors = worker.build_plan()
+
+        assert errors == []
+        assert self._names(entries, sidecar=True) == [
+            ("2024-05-01_002.xmp", "2024-05-01_001.xmp"),
+            ("2024-05-01_003.xmp", "2024-05-01_002.xmp"),
+            ("2024-05-01_004.xmp", "2024-05-01_003.xmp"),
+        ]
+        _renamed, errors, _ts, _mapping = worker._sync_then_execute(list(reversed(entries)), [])
+        assert errors == []
+        for n in (1, 2, 3):
+            assert (tmp_path / f"2024-05-01_{n:03d}.xmp").read_text() == f"xmp of {n + 1:03d}"
+
+    def test_name_held_outside_the_batch_still_gets_suffix(self, tmp_path):
+        files = self._numbered(tmp_path, [2, 3])
+        (tmp_path / "2024-05-01_001.jpg").write_bytes(b"not loaded")
+
+        entries, errors = _worker(files).build_plan()
+
+        assert errors == []
+        assert self._names(entries) == [
+            ("2024-05-01_002.jpg", "2024-05-01_001(1).jpg"),
+            ("2024-05-01_003.jpg", "2024-05-01_002.jpg"),
+        ]
+
+    def test_numbered_file_keeps_its_own_name(self, tmp_path):
+        """A file already numbered because of a conflict is not renumbered."""
+        own = _touch(tmp_path / "2024-05-01_001(1).jpg")
+        (tmp_path / "2024-05-01_001.jpg").write_bytes(b"not loaded")
+
+        entries, errors = _worker([own]).build_plan()
+
+        assert errors == []
+        assert [e.changed for e in entries] == [False]
+
+    def test_file_that_cannot_move_still_holds_its_name(self, tmp_path):
+        files = self._numbered(tmp_path, [2, 3])
+        worker = _worker(files)
+        real_validate = __import__("modules.rename_engine", fromlist=["x"]).validate_path_length
+        # The first file cannot be renamed, so its name _002 stays taken
+        with patch("modules.rename_engine.validate_path_length",
+                   side_effect=lambda p: not p.endswith("_001.jpg") and real_validate(p)):
+            entries, errors = worker.build_plan()
+
+        assert [os.path.basename(p) for p, _msg in errors] == ["2024-05-01_002.jpg"]
+        assert self._names(entries) == [("2024-05-01_003.jpg", "2024-05-01_002(1).jpg")]
+
+    def test_journal_tracks_every_file_of_a_chain(self, tmp_path):
+        """Regression: settling the journal removed the entries keyed by every
+        moved source - in a chain that is another file's new name."""
+        files = self._numbered(tmp_path, [2, 3, 4])
+        worker = _worker(files)
+        entries, _errors = worker.build_plan()
+
+        worker._sync_then_execute(entries, [])
+
+        journal = {os.path.basename(k): v for k, v in load_journal()["original_filenames"].items()}
+        assert journal == {"2024-05-01_001.jpg": "2024-05-01_002.jpg",
+                           "2024-05-01_002.jpg": "2024-05-01_003.jpg",
+                           "2024-05-01_003.jpg": "2024-05-01_004.jpg"}
+
+    def test_crash_mid_chain_leaves_a_correct_journal(self, tmp_path):
+        from modules import backup_journal
+        from modules.handlers.undo_handler import UndoHandler
+        from unittest.mock import MagicMock
+
+        class Crash(BaseException):
+            pass
+
+        files = self._numbered(tmp_path, [2, 3, 4])
+        priors = {f: f"DSC{i}.jpg" for i, f in enumerate(files, start=2)}
+        backups = {f: {"atime": float(i), "mtime": float(i), "ctime": float(i)}
+                   for i, f in enumerate(files, start=2)}
+        backup_journal.update_entries({"original_filenames": {"set": priors}})
+        backup_journal.save_backup("timestamp_backup", backups)
+        worker = _worker(files, prior_originals=priors)
+        entries, _errors = worker.build_plan()
+        from modules import rename_engine
+        real_rename = rename_engine.safe_rename
+        done = []
+
+        def rename_then_crash(source, target):
+            if len(done) == 2:
+                raise Crash()
+            real_rename(source, target)
+            done.append(source)
+
+        with patch("modules.rename_engine.safe_rename", side_effect=rename_then_crash):
+            with pytest.raises(Crash):
+                worker._sync_then_execute(entries, [])
+
+        # _002 -> _001 and _003 -> _002 happened, _004 is still in place
+        journal = load_journal()
+        names = {os.path.basename(k): v for k, v in journal["original_filenames"].items()}
+        assert names["2024-05-01_001.jpg"] == "DSC2.jpg"
+        assert names["2024-05-01_002.jpg"] == "DSC3.jpg"
+        assert names["2024-05-01_004.jpg"] == "DSC4.jpg"
+        times = {os.path.basename(k): v["mtime"] for k, v in journal["timestamp_backup"].items()}
+        assert times["2024-05-01_001.jpg"] == 2.0 and times["2024-05-01_002.jpg"] == 3.0
+        assert times["2024-05-01_004.jpg"] == 4.0
+
+        app = MagicMock()
+        app.files = []
+        app.original_filenames = {k: v for k, v in journal["original_filenames"].items() if os.path.exists(k)}
+        app.timestamp_backup, app.exif_backup = {}, {}
+        restored, errors = UndoHandler(app)._restore_filenames(list(app.original_filenames.items()))
+        assert errors == []
+        assert self._photos(tmp_path) == ["DSC2.jpg", "DSC3.jpg", "DSC4.jpg"]
+
+    def test_sidecar_swap_is_reported(self, tmp_path):
+        a = _touch(tmp_path / "A.jpg")
+        b = _touch(tmp_path / "B.arw")
+        (tmp_path / "A.xmp").write_text("a")
+        (tmp_path / "B.xmp").write_text("b")
+        planner = RenamePlanner([a, b], rename_sidecars=True)
+        entries = [PlanEntry(a, str(tmp_path / "B.jpg")), PlanEntry(b, str(tmp_path / "A.arw"))]
+
+        sidecars, errors = planner.plan_sidecars(entries, set())
+
+        assert sidecars == []
+        assert sorted(os.path.basename(p) for p, _msg in errors) == ["A.xmp", "B.xmp"]
+
+
 class TestPlanDialog:
 
     def test_summary_and_rows(self, qapp, tmp_path):

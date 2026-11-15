@@ -32,7 +32,9 @@ from PyQt6.QtWidgets import (
 
 from ..exif_processor import batch_restore_timestamps
 from ..backup_journal import update_entries as _update_journal, rekey_entries, rekey_journal
-from ..file_utilities import is_safe_restore_name, safe_rename, find_sidecars, sidecar_target
+from ..file_utilities import (
+    is_safe_restore_name, safe_rename, find_sidecars, sidecar_target, rename_order, path_key,
+)
 from ..logger_util import get_logger
 
 if TYPE_CHECKING:
@@ -122,6 +124,17 @@ def _do_restore_filenames(
     # Sidecars with their own undo entry are restored through it
     tracked = {os.path.normcase(os.path.abspath(path)) for path, _name in files_to_undo}
 
+    # A chain of renames (A->B while B->C) is undone in dependency order,
+    # otherwise a name is still taken when its file is restored.
+    pairs = [(path, os.path.join(os.path.dirname(path), str(name))) for path, name in files_to_undo]
+    files_to_undo = [files_to_undo[i] for i in rename_order(pairs)]
+    # Backups of files whose path another restored file takes over follow
+    # them right away (a crash must not leave them on the other file's path)
+    sources = {path_key(path) for path, _target in pairs}
+    targets = {path_key(target) for _path, target in pairs}
+    stepwise = {path_key(path) for path, target in pairs
+                if path_key(target) in sources or path_key(path) in targets}
+
     total = len(files_to_undo)
     for idx, (current_file, original_filename) in enumerate(files_to_undo):
         if idx % 20 == 0:
@@ -143,6 +156,8 @@ def _do_restore_filenames(
             safe_rename(current_file, target_path)
             restored_files.append(target_path)
             path_mapping[current_file] = target_path
+            if path_key(current_file) in stepwise:
+                rekey_journal({current_file: target_path})
             UndoHandler._restore_sidecars(sidecars, target_path, path_mapping, errors)
         except FileExistsError:
             errors.append(
@@ -158,7 +173,7 @@ def _do_restore_filenames(
         # Forget only the entries that were restored; remaining backups
         # (e.g. failed timestamp restores) follow the file.
         _update_journal({"original_filenames": {"remove": list(path_mapping)}})
-        rekey_journal(path_mapping)
+        rekey_journal({old: new for old, new in path_mapping.items() if path_key(old) not in stepwise})
 
     return restored_files, errors, path_mapping
 

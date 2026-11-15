@@ -350,3 +350,44 @@ class TestFileConstants:
     def test_all_extensions_lowercase(self):
         for ext in FileConstants.MEDIA_EXTENSIONS:
             assert ext == ext.lower(), f"Extension not lowercase: {ext}"
+
+
+# ---------------------------------------------------------------------------
+# Order of renames within one batch
+# ---------------------------------------------------------------------------
+class TestRenameOrder:
+
+    def test_chain_runs_from_its_free_end(self):
+        from modules.file_utilities import order_renames
+        pairs = [("/d/1", "/d/0"), ("/d/2", "/d/1"), ("/d/3", "/d/2")]
+        assert order_renames(list(reversed(pairs))) == pairs
+
+    def test_independent_renames_keep_their_order(self):
+        from modules.file_utilities import order_renames
+        pairs = [("/d/b", "/d/x"), ("/d/a", "/d/y"), ("/d/c", "/d/z")]
+        assert order_renames(pairs) == pairs
+
+    def test_cycle_keeps_all_pairs(self):
+        from modules.file_utilities import order_renames, rename_cycles
+        pairs = [("/d/a", "/d/b"), ("/d/b", "/d/a"), ("/d/c", "/d/d")]
+        assert sorted(order_renames(pairs)) == sorted(pairs)
+        assert [sorted(c) for c in rename_cycles(pairs)] == [[0, 1]]
+
+    def test_no_cycle_in_a_chain_or_unchanged_entry(self):
+        from modules.file_utilities import rename_cycles
+        assert rename_cycles([("/d/1", "/d/0"), ("/d/2", "/d/1")]) == []
+        assert rename_cycles([("/d/a", "/d/a")]) == []
+
+    def test_longer_cycle(self):
+        from modules.file_utilities import rename_cycles
+        pairs = [("/d/x", "/d/y"), ("/d/a", "/d/b"), ("/d/b", "/d/c"), ("/d/c", "/d/a")]
+        assert [sorted(c) for c in rename_cycles(pairs)] == [[1, 2, 3]]
+
+    def test_vacating_name_is_free(self, tmp_path):
+        from modules.file_utilities import path_key
+        original = tmp_path / "b.jpg"
+        original.touch()
+        (tmp_path / "a.jpg").touch()
+        assert get_safe_target_path(str(original), "a.jpg").endswith("a(1).jpg")
+        vacating = {path_key(str(tmp_path / "a.jpg"))}
+        assert get_safe_target_path(str(original), "a.jpg", vacating) == str(tmp_path / "a.jpg")

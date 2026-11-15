@@ -268,7 +268,12 @@ def _get_windows_max_path() -> int:
     # Classic Windows MAX_PATH (260) minus a small safety buffer
     return 255
 
-def get_safe_target_path(original_path, new_name):
+def path_key(path: str) -> str:
+    """Comparable identity of a path (absolute, case-folded where the OS is)."""
+    return os.path.normcase(os.path.abspath(path))
+
+
+def get_safe_target_path(original_path, new_name, vacating=frozenset()):
     """
     Generate a safe target path, avoiding conflicts with existing files.
     Ignores the source file itself to allow same-name "renames".
@@ -276,6 +281,8 @@ def get_safe_target_path(original_path, new_name):
     Args:
         original_path: The current file path
         new_name: The desired new filename (basename only)
+        vacating: ``path_key`` values of files that are renamed away in the
+            same batch (before this file): their names count as free.
         
     Returns:
         A safe target path within the same directory
@@ -314,15 +321,22 @@ def get_safe_target_path(original_path, new_name):
     if is_case_variant(original_path, new_path):
         return new_path
 
+    original_key = path_key(original_path)
+
+    def occupied(path):
+        # The file's own name is free for itself (e.g. "x(1).jpg" stays)
+        key = path_key(path)
+        return os.path.exists(path) and key not in vacating and key != original_key
+
     # Check if target already exists
-    if not os.path.exists(new_path):
+    if not occupied(new_path):
         return new_path
     
     # Generate alternative name if conflict exists
     base, ext = os.path.splitext(new_name)
     attempt = 1
     
-    while os.path.exists(new_path) and attempt <= 999:
+    while occupied(new_path) and attempt <= 999:
         new_name_attempt = f"{base}({attempt}){ext}"
         new_path = os.path.join(directory, new_name_attempt)
         attempt += 1
@@ -331,6 +345,74 @@ def get_safe_target_path(original_path, new_name):
         raise RuntimeError(f"Cannot generate unique filename for {new_name}")
 
     return new_path
+
+
+def rename_order(pairs) -> list:
+    """Indices of ``(source, target)`` renames in an order that can be executed.
+
+    A rename whose target is another rename's source has to wait until that
+    file has moved away, so it comes after it. The order is otherwise
+    stable. Renames in a cycle (A->B, B->A) cannot all succeed in any order;
+    they keep their relative order (``safe_rename`` then refuses one).
+    """
+    source_index = {}
+    for i, (source, _target) in enumerate(pairs):
+        source_index.setdefault(path_key(source), i)
+    # Each rename waits for at most one other: the one moving its target away
+    waits_for = {}
+    for i, (_source, target) in enumerate(pairs):
+        j = source_index.get(path_key(target))
+        if j is not None and j != i:
+            waits_for[i] = j
+
+    order, state = [], {}
+    for i in range(len(pairs)):
+        chain = []
+        k = i
+        while k is not None and k not in state:
+            state[k] = "visiting"
+            chain.append(k)
+            k = waits_for.get(k)
+        for k in reversed(chain):
+            state[k] = "done"
+            order.append(k)
+    return order
+
+
+def order_renames(pairs):
+    """``(source, target)`` renames in executable order (see :func:`rename_order`)."""
+    pairs = list(pairs)
+    return [pairs[i] for i in rename_order(pairs)]
+
+
+def rename_cycles(pairs) -> list:
+    """Cycles among ``(source, target)`` renames, as lists of indices.
+
+    A cycle (A->B, B->A, or longer) cannot be executed without a temporary
+    name. Renames whose target equals their own source are ignored.
+    """
+    source_index = {}
+    for i, (source, _target) in enumerate(pairs):
+        source_index.setdefault(path_key(source), i)
+    next_of = {}
+    for i, (source, target) in enumerate(pairs):
+        j = source_index.get(path_key(target))
+        if j is not None and j != i:
+            next_of[i] = j
+
+    cycles, state = [], {}
+    for start in range(len(pairs)):
+        chain = []
+        k = start
+        while k is not None and k not in state:
+            state[k] = "visiting"
+            chain.append(k)
+            k = next_of.get(k)
+        if k is not None and state.get(k) == "visiting":
+            cycles.append(chain[chain.index(k):])
+        for k in chain:
+            state[k] = "done"
+    return cycles
 
 
 def is_case_variant(source: str, target: str) -> bool:
