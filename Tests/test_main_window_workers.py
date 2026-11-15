@@ -105,3 +105,71 @@ def test_planner_releases_continuous_raw_cache(tmp_path):
 
     assert errors == [] and len(entries) == 3
     assert worker.planner._continuous_raw_cache == {}
+
+
+# ---------------------------------------------------------------------------
+# "Files carry their original name" check (Restore button)
+# ---------------------------------------------------------------------------
+def _loaded(window, tmp_path, count=4):
+    files = []
+    for i in range(count):
+        path = tmp_path / f"2024_{i:03d}.jpg"
+        path.write_bytes(b"x")
+        files.append(str(path))
+    window.files[:] = files
+    window.exiftool_path = window.exiftool_path or "/fake/exiftool"
+    return files
+
+
+def test_undo_check_is_one_call_and_restarts_after_invalidation(qtbot, tmp_path, window, monkeypatch):
+    from modules import main_application
+    calls = []
+
+    def batch(paths, exiftool_path):
+        calls.append(list(paths))
+        return {p: "DSC0001.jpg" for p in paths}
+
+    monkeypatch.setattr(main_application, "batch_get_original_filenames", batch)
+    _loaded(window, tmp_path)
+    window.invalidate_exif_undo_cache()
+
+    window._start_async_exif_undo_check()
+    window.invalidate_exif_undo_cache()  # files changed while the check runs
+
+    qtbot.waitUntil(lambda: getattr(window, "_exif_undo_checked", False), timeout=10000)
+    assert [len(c) for c in calls] == [3, 3]  # first result discarded, checked again
+    assert window._exif_undo_available is True
+    qtbot.waitUntil(lambda: getattr(window, "_exif_undo_checker_ref", None) is None, timeout=10000)
+
+
+def test_files_at_their_original_name_offer_nothing(qtbot, tmp_path, window, monkeypatch):
+    from modules import main_application
+    monkeypatch.setattr(main_application, "batch_get_original_filenames",
+                        lambda paths, exiftool_path: {p: os.path.basename(p) for p in paths})
+    _loaded(window, tmp_path)
+    window.invalidate_exif_undo_cache()
+
+    window._start_async_exif_undo_check()
+
+    qtbot.waitUntil(lambda: getattr(window, "_exif_undo_checked", False), timeout=10000)
+    assert window._exif_undo_available is False
+
+
+@pytest.mark.parametrize("action", ["clear", "forget"])
+def test_cached_result_is_dropped(qtbot, tmp_path, window, monkeypatch, action):
+    from PyQt6.QtWidgets import QMessageBox
+    from modules import main_application
+    monkeypatch.setattr(main_application, "batch_get_original_filenames",
+                        lambda paths, exiftool_path: {p: None for p in paths})
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes)
+    window._exif_undo_checked = True
+    window._exif_undo_available = True
+    window.original_filenames = {str(tmp_path / "x.jpg"): "y.jpg"}
+
+    if action == "clear":
+        window.clear_file_list()
+    else:
+        window.forget_undo_data()
+
+    assert not hasattr(window, "_exif_undo_available")
+    qtbot.waitUntil(lambda: getattr(window, "_exif_undo_checker_ref", None) is None, timeout=10000)

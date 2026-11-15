@@ -31,7 +31,7 @@ from .handlers.info_dialogs import (
     show_separator_info as _show_separator_info,
     show_exif_sync_info as _show_exif_sync_info,
 )
-from .exif_undo_manager import get_original_filename_from_exif
+from .exif_undo_manager import batch_get_original_filenames
 from .ui import FileListManager, PreviewGenerator, MainWindowUI, MetadataDialogManager
 from .state_model import RenamerState
 from .settings_manager import SettingsManager
@@ -191,9 +191,10 @@ class FileRenamerApp(QMainWindow):
         """Run the EXIF undo-availability check off the GUI thread.
 
         Spawns a lightweight QThread that probes up to 3 files for the
-        original-filename EXIF tag.  On completion, the cached flag is
-        set and ``_update_buttons`` is re-invoked (from the main thread
-        via a signal/slot connection).
+        original-filename EXIF tag (one ExifTool call).  On completion, the
+        cached flag is set and ``_update_buttons`` is re-invoked (from the
+        main thread via a signal/slot connection) - unless the cache was
+        invalidated meanwhile, then a fresh check starts instead.
         """
         # Guard against duplicate concurrent checks
         if getattr(self, '_exif_undo_check_running', False):
@@ -204,16 +205,20 @@ class FileRenamerApp(QMainWindow):
 
         files_to_check = list(self.files[:3])
         exiftool_path = self.exiftool_path
+        generation = getattr(self, '_exif_undo_generation', 0)
 
         class _ExifUndoChecker(QThread):
             result_ready = pyqtSignal(bool)
 
             def run(self_inner):  # noqa: N805 — nested class
-                found = False
-                for fp in files_to_check:
-                    if get_original_filename_from_exif(fp, exiftool_path):
-                        found = True
-                        break
+                try:
+                    originals = batch_get_original_filenames(files_to_check, exiftool_path)
+                    # A file already back at its original name has nothing to restore
+                    found = any(name and name != os.path.basename(path)
+                                for path, name in originals.items())
+                except Exception as e:
+                    log.warning(f"Undo availability check failed: {e}")
+                    found = False
                 self_inner.result_ready.emit(found)
 
         def _on_result(available: bool):
@@ -221,9 +226,11 @@ class FileRenamerApp(QMainWindow):
             checker.wait()
             checker.deleteLater()
             self._exif_undo_checker_ref = None
-            self._exif_undo_available = available
-            self._exif_undo_checked = True
             self._exif_undo_check_running = False
+            if generation == getattr(self, '_exif_undo_generation', 0):
+                self._exif_undo_available = available
+                self._exif_undo_checked = True
+            # else: files or names changed while checking - check again
             self._update_buttons()  # Re-evaluate with the fresh cache
 
         checker = _ExifUndoChecker(self)
@@ -231,6 +238,17 @@ class FileRenamerApp(QMainWindow):
         # prevent garbage collection by keeping a reference
         self._exif_undo_checker_ref = checker
         checker.start()
+
+    def invalidate_exif_undo_cache(self):
+        """Forget whether the loaded files carry their original name.
+
+        Called whenever the files, their names or the undo data change; the
+        next ``_update_buttons`` starts a fresh (background) check.
+        """
+        self._exif_undo_generation = getattr(self, '_exif_undo_generation', 0) + 1
+        for name in ('_exif_undo_checked', '_exif_undo_available'):
+            if hasattr(self, name):
+                delattr(self, name)
 
     def _ui_set_busy(self, busy: bool):
         """Toggle busy state and update button states/labels."""
@@ -339,6 +357,7 @@ class FileRenamerApp(QMainWindow):
         self.timestamp_backup = {}
         self.exif_backup = {}
         _clear_undo_journal()
+        self.invalidate_exif_undo_cache()  # the files may still carry their names
         self.update_restore_button_state()
         self._update_buttons()
         self.status.showMessage("Undo data discarded", 4000)
@@ -1008,6 +1027,10 @@ class FileRenamerApp(QMainWindow):
             if new_path == old_path:
                 continue
             original = merged.pop(old_path, None) or os.path.basename(old_path)
+            if os.path.basename(new_path) == original:
+                # Renamed back to its original name: nothing left to restore
+                merged.pop(new_path, None)
+                continue
             merged[new_path] = original
             self.log(f"Mapping: {os.path.basename(new_path)} -> {original}")
         return merged
@@ -1108,7 +1131,8 @@ class FileRenamerApp(QMainWindow):
         # Rebuild file list widget
         self._rebuild_file_list(moved)
         
-        # Update restore button state
+        # Update restore button state (names were just written to metadata)
+        self.invalidate_exif_undo_cache()
         self.update_restore_button_state()
 
         # Re-enable UI before the (modal) results dialog

@@ -385,6 +385,7 @@ class UndoHandler:
         self._finish_worker()
 
         if isinstance(result, Exception):
+            app.invalidate_exif_undo_cache()
             app._ui_set_busy(False)
             QMessageBox.critical(app, "Undo Failed", f"Unexpected error during undo:\n{result}")
             app.update_restore_button_state()
@@ -394,6 +395,7 @@ class UndoHandler:
         (restored_ts, restored_exif, timestamp_errors), (restored_files, name_errors, path_mapping) = result
         self._apply_timestamp_result(restored_ts, restored_exif)
         self._apply_filename_result(path_mapping)
+        app.invalidate_exif_undo_cache()
         app._ui_set_busy(False)
 
         if not names_requested:

@@ -119,6 +119,36 @@ class TestPlanning:
         assert list(load_journal()["original_filenames"].values()) == ["DSC0001.jpg"]
 
 
+class TestRenamedBackToOriginal:
+    """A file renamed back to its original name has nothing left to restore:
+    no journal entry and no in-memory mapping should keep the Restore
+    button enabled ("Nothing to restore" on click)."""
+
+    def test_journal_has_no_entry(self, tmp_path):
+        from modules import backup_journal
+        a = _touch(tmp_path / "A.jpg")
+        x = str(tmp_path / "X.jpg")
+        _worker([a]).execute_plan([PlanEntry(a, x)])
+        assert load_journal()["original_filenames"] == {x: "A.jpg"}
+        backup_journal.update_entries({"original_filenames": {"set": {a: "stale.jpg"}}})
+
+        worker = _worker([x], prior_originals={x: "A.jpg"})
+        renamed, errors, _mapping = worker.execute_plan([PlanEntry(x, a)])
+
+        assert errors == [] and renamed == [a]
+        assert "original_filenames" not in load_journal()
+
+    def test_merged_mapping_has_no_entry(self):
+        from unittest.mock import MagicMock
+        from modules.main_application import FileRenamerApp
+        app = MagicMock()
+        app.original_filenames = {"/p/X.jpg": "A.jpg", "/p/Y.jpg": "B.jpg"}
+
+        merged = FileRenamerApp._merge_rename_mapping(app, {"/p/A.jpg": "/p/X.jpg"})
+
+        assert merged == {"/p/Y.jpg": "B.jpg"}
+
+
 class TestSidecars:
 
     def test_both_naming_styles(self, tmp_path):

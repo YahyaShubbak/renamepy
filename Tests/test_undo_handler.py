@@ -31,7 +31,8 @@ class _FakeApp(QWidget):
         self.exiftool_path = None
         self._exif_undo_available = False
         for name in ("status", "log", "_ui_set_busy", "update_restore_button_state",
-                     "update_preview", "update_file_list", "exif_service", "preview_generator"):
+                     "update_preview", "update_file_list", "exif_service", "preview_generator",
+                     "invalidate_exif_undo_cache"):
             setattr(self, name, MagicMock())
 
 

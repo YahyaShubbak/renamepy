@@ -70,6 +70,7 @@ class FileListManager:
         
         # Clear EXIF cache when clearing files
         self.parent.exif_service.clear_cache()
+        self.parent.invalidate_exif_undo_cache()
         
         self.update_file_list_placeholder()
         self.update_file_statistics()
@@ -160,12 +161,8 @@ class FileListManager:
         # Clear EXIF cache when loading new files
         self.parent.exif_service.clear_cache()
 
-        # Reset EXIF undo check cache. Unlike exif_service, this really
-        # is an optional one-shot cache flag (set only after the async
-        # check completes, deleted here to force a re-check) - hasattr
-        # is the right tool for "has this been computed yet".
-        if hasattr(self.parent, '_exif_undo_checked'):
-            del self.parent._exif_undo_checked
+        # Reset the EXIF undo check cache (forces a re-check)
+        self.parent.invalidate_exif_undo_cache()
 
         # Extract camera info and refresh the preview for the new files
         self.parent.extract_camera_info()

@@ -800,6 +800,23 @@ class RenameWorkerThread(QThread):
     def _original_name_of(self, path: str) -> str:
         return self.prior_originals.get(path, os.path.basename(path))
 
+    def _journal_names(self, moves: List[PlanEntry]) -> Dict[str, Any]:
+        """``original_filenames`` journal change recording *moves*.
+
+        A file renamed back to its original name needs no entry; any old
+        entry under that path is removed instead (it would describe another
+        file).
+        """
+        names: Dict[str, str] = {}
+        drop: List[str] = []
+        for e in moves:
+            original = self._original_name_of(e.source)
+            if os.path.basename(e.target) == original:
+                drop.append(e.target)
+            else:
+                names[e.target] = original
+        return {"set": names, "remove": drop}
+
     def _debug(self, msg: str) -> None:
         try:
             self._log(msg)
@@ -870,10 +887,9 @@ class RenameWorkerThread(QThread):
                     if path_key(e.target) in sources or path_key(e.source) in targets}
         if planned_moves:
             journaled = backup_journal.update_entries({
-                "original_filenames": {
-                    "set": {e.target: self._original_name_of(e.source) for e in planned_moves
-                            if path_key(e.source) not in into_vacated},
-                },
+                "original_filenames": self._journal_names(
+                    [e for e in planned_moves if path_key(e.source) not in into_vacated]
+                ),
             })
             if not journaled:
                 errors.append(("", "Could not write the undo journal - no files were renamed"))
@@ -915,7 +931,7 @@ class RenameWorkerThread(QThread):
                     if os.path.lexists(entry.target):
                         raise FileExistsError(f"Target already exists: {entry.target}")
                     if not backup_journal.update_entries({
-                        "original_filenames": {"set": {entry.target: self._original_name_of(entry.source)}},
+                        "original_filenames": self._journal_names([entry]),
                     }):
                         raise OSError("Could not write the undo journal - file not renamed")
                 safe_rename(entry.source, entry.target)
