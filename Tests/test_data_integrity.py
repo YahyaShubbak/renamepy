@@ -332,6 +332,66 @@ class TestBackupsKeepOriginals:
         assert results[0][2]["/p/a.jpg"] == original
         assert load_journal()["exif_backup"]["/p/a.jpg"] == original
 
+    @staticmethod
+    def _shift_with_after_read(monkeypatch, after):
+        """Run a +1 h shift of /p/a.jpg whose verification read returns *after*."""
+        from modules.dialogs.exif_time_shift_dialog import TimeShiftWorker
+        monkeypatch.setattr("subprocess.run", MagicMock(return_value=MagicMock(returncode=0, stderr="")))
+        reads = iter([
+            {"/p/a.jpg": {"EXIF:DateTimeOriginal": "2024:01:01 10:00:00",
+                          "EXIF:CreateDate": "2024:01:01 10:00:00"}},
+            after,
+        ])
+        monkeypatch.setattr("modules.exif_processor.get_exiftool_metadata_batch", lambda *a, **k: next(reads))
+        worker = TimeShiftWorker(["/p/a.jpg"], 1, 0, "forward", "/fake/exiftool")
+        results = []
+        worker.finished_signal.connect(lambda *args: results.append(args))
+        worker.run()
+        return results[0]
+
+    def test_time_shift_unverifiable_result_keeps_backup(self, monkeypatch):
+        """Regression: an empty verification read (file locked, ExifTool
+        killed) dropped the backup of a file that may have been shifted."""
+        success_count, errors, backup = self._shift_with_after_read(monkeypatch, {})
+        assert success_count == 0
+        assert errors[0][0] == "/p/a.jpg" and "backup kept" in errors[0][1]
+        assert "/p/a.jpg" in backup
+        assert "/p/a.jpg" in load_journal()["exif_backup"]
+
+    def test_time_shift_unexpected_change_keeps_backup(self, monkeypatch):
+        after = {"/p/a.jpg": {"EXIF:DateTimeOriginal": "2024:01:01 10:30:00",
+                              "EXIF:CreateDate": "2024:01:01 10:00:00"}}
+        success_count, errors, backup = self._shift_with_after_read(monkeypatch, after)
+        assert success_count == 0
+        assert errors == [("/p/a.jpg", "Dates changed unexpectedly - backup kept")]
+        assert "/p/a.jpg" in load_journal()["exif_backup"]
+
+    def test_time_shift_unchanged_file_drops_backup(self, monkeypatch):
+        after = {"/p/a.jpg": {"EXIF:DateTimeOriginal": "2024:01:01 10:00:00",
+                              "EXIF:CreateDate": "2024:01:01 10:00:00"}}
+        success_count, errors, backup = self._shift_with_after_read(monkeypatch, after)
+        assert success_count == 0
+        assert errors == [("/p/a.jpg", "Dates were not changed")]
+        assert backup == {}
+        assert "exif_backup" not in load_journal()
+
+    def test_zero_time_shift_is_refused(self, qapp, monkeypatch):
+        from PyQt6.QtWidgets import QMessageBox
+        from modules.dialogs.exif_time_shift_dialog import ExifTimeShiftDialog
+        info = MagicMock()
+        question = MagicMock(return_value=QMessageBox.StandardButton.Yes)
+        monkeypatch.setattr(QMessageBox, "information", info)
+        monkeypatch.setattr(QMessageBox, "question", question)
+        dialog = ExifTimeShiftDialog(None, [], "/fake/exiftool")
+        dialog.hours_spin.setValue(0)
+        dialog.minutes_spin.setValue(0)
+
+        dialog.apply_time_shift()
+
+        info.assert_called_once()
+        question.assert_not_called()
+        assert dialog.worker is None
+
 
     def test_time_shift_one_exiftool_call_per_chunk(self, monkeypatch):
         from modules.dialogs.exif_time_shift_dialog import TimeShiftWorker

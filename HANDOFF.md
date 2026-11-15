@@ -96,8 +96,8 @@ Audited at commit `95dd4d2` (branch `main`, clean tree). Line numbers refer to t
   - `TimeShiftWorker.run`: after `created = exif_backup.record_originals(new_backups)` (~115), `unsaved = set(new_backups) - created` → error `"Could not save the undo backup - skipped"` per file (chunk order) and removed from `eligible` (+5 lines; `remove_many` now ~142, `_dates_shifted` ~148, `apply_time_shift` ~385).
   - Tests (`test_data_integrity.py`): `TestJournalWriteFailures` (app-data path is a regular file: `record_originals` → `set()`, helper return values, `batch_sync_exif_dates` leaves mtime untouched + skip error, `optimized_rename_files` renames nothing, `TimeShiftWorker` skips the file and never calls ExifTool) and `TestJournalCorruption` (garbage and non-dict journals are set aside with their content, write is fsynced). All 8 fail on the pre-fix code. Targeted run 85 passed; full suite **375 passed**.
 
-### [ ] ID-04: 🟠 Time shift drops a file's backup when the result cannot be verified; zero shift rewrites every file
-- **Status:** `[OPEN]`
+### [x] ID-04: 🟠 Time shift drops a file's backup when the result cannot be verified; zero shift rewrites every file
+- **Status:** `[DONE]`
 - **Location:** `modules/dialogs/exif_time_shift_dialog.py`
 - **Code Anchor:** `exif_backup.remove_many(f for f in failed if f in created)` in `TimeShiftWorker.run` (Approx. Lines: `127–136`); `def _dates_shifted(before, after, delta)` (`142–151`); `def apply_time_shift(self)` (`379`)
 - **Root Cause & Impact:** A file counts as failed when no backed-up field moved by exactly `delta` — which is also the case when the *after* read returned `{}` (file locked, share hiccup, ExifTool killed by the timeout) or when dates moved by a different amount. The backup created for that file is then removed although the file may have been modified: undo is impossible and the user, told "Dates were not changed", shifts again (double shift). Separately the dialog allows 0 h 0 min: `-AllDates+=0:00:00` rewrites every file and every file "verifies".
@@ -107,7 +107,11 @@ Audited at commit `95dd4d2` (branch `main`, clean tree). Line numbers refer to t
   3. Change the `remove_many` argument to only the "verifiably unchanged" files that are in `created`.
   4. In `apply_time_shift`, return early with an information box when `hours == 0 and minutes == 0`.
 - **Verification Criteria:** Tests next to the existing `TimeShiftWorker` tests in `Tests/test_data_integrity.py` (~lines 300–350, they patch `get_exiftool_metadata_batch` and call `worker.run()`): after-read returns `{}` → the path is still in the journal's `exif_backup` and an error is reported; after-read equals before-read → backup removed. `python -m pytest Tests/test_data_integrity.py Tests/test_exiftool_integration.py -q`.
-- **Resolution & Diff Summary:**
+- **Resolution & Diff Summary:** Implemented as specified.
+  - New module function `_dates_unchanged(before, after)` (~168, after `_dates_shifted` ~156): False for an empty `after`, else every `BACKUP_DATE_FIELDS` key of `before` has the identical raw value in `after`.
+  - `TimeShiftWorker.run` verification loop: shifted → success; empty after-read → `"Could not verify the result - backup kept, check the file before shifting again"`; unchanged → ExifTool's error line or `"Dates were not changed"` (backup dropped if created in this run); anything else → `"Dates changed unexpectedly - backup kept"`. The list `failed` was renamed to `unchanged`; `exif_backup.remove_many(f for f in unchanged if f in created)` (~150).
+  - `ExifTimeShiftDialog.apply_time_shift` (~401): `QMessageBox.information(self, "No Time Shift", ...)` and return when `hours == 0 and minutes == 0`, before the confirmation box. The worker itself has no zero guard (not in the blueprint). `load_sample_times` ~328 / `update_preview` ~360 for ID-18.
+  - Tests (`TestBackupsKeepOriginals` in `test_data_integrity.py`): unverifiable result keeps backup, unexpected change keeps backup, unchanged file drops backup, zero shift refused (dialog built with no files, `QMessageBox` patched). The first two and the zero-shift test fail on the pre-fix code. Targeted run 91 passed; full suite **379 passed**.
 
 ### [ ] ID-05: 🟠 ExifTool write timeouts scale with file count, not bytes — video batches time out deterministically
 - **Status:** `[OPEN]`

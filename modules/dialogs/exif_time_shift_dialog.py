@@ -131,15 +131,23 @@ class TimeShiftWorker(QThread):
                 stderr = str(e)
 
             after = get_exiftool_metadata_batch(eligible, self.exiftool_path)
-            failed = []
+            unchanged = []
             for file_path in eligible:
-                if _dates_shifted(before.get(file_path) or {}, after.get(file_path) or {}, delta):
+                old = before.get(file_path) or {}
+                new = after.get(file_path) or {}
+                if _dates_shifted(old, new, delta):
                     success_count += 1
-                else:
-                    failed.append(file_path)
+                elif not new:
+                    # The file may have been modified: keep its backup
+                    errors.append((file_path, "Could not verify the result - backup kept, "
+                                              "check the file before shifting again"))
+                elif _dates_unchanged(old, new):
+                    unchanged.append(file_path)
                     errors.append((file_path, _error_for(file_path, stderr) or "Dates were not changed"))
-            # Drop the backups created for files that stayed unchanged
-            exif_backup.remove_many(f for f in failed if f in created)
+                else:
+                    errors.append((file_path, "Dates changed unexpectedly - backup kept"))
+            # Drop only the backups created for files verifiably left unchanged
+            exif_backup.remove_many(f for f in unchanged if f in created)
         
         self.progress_value.emit(100)
         self.finished_signal.emit(success_count, errors, dict(exif_backup))
@@ -155,6 +163,14 @@ def _dates_shifted(before, after, delta):
         if old is not None and new is not None and new - old == delta:
             return True
     return False
+
+
+def _dates_unchanged(before, after):
+    """True if *after* was read and every backed-up date still has its old value."""
+    if not after:
+        return False
+    return all(after.get(field) == before[field]
+               for field in BACKUP_DATE_FIELDS if field in before)
 
 
 def _error_for(file_path, stderr):
@@ -388,7 +404,12 @@ class ExifTimeShiftDialog(QDialog):
         hours = self.hours_spin.value()
         minutes = self.minutes_spin.value()
         is_forward = self.radio_forward.isChecked()
-        
+
+        if hours == 0 and minutes == 0:
+            # A zero shift would still rewrite every file
+            QMessageBox.information(self, "No Time Shift", "Set a shift of at least one minute.")
+            return
+
         direction_text = "forward" if is_forward else "backward"
         
         reply = QMessageBox.question(
