@@ -117,11 +117,28 @@ def remove_exiftool_tmp_files(file_paths, keep=frozenset()) -> None:
 
 
 def new_exiftool_helper(executable: str | None = None):
-    """Create an ExifToolHelper with the application's common arguments."""
-    kwargs = {"common_args": list(EXIFTOOL_COMMON_ARGS), "encoding": EXIFTOOL_ENCODING}
+    """Create an ExifToolHelper with the application's common arguments.
+
+    ``check_execute=False``: ExifTool exits non-zero if *any* file of a call
+    is unreadable, and the helper would then raise for the whole batch.
+    Unreadable files instead come back as an entry with ``ExifTool:Error``
+    (see :func:`usable_metadata`).
+    """
+    kwargs = {
+        "common_args": list(EXIFTOOL_COMMON_ARGS),
+        "encoding": EXIFTOOL_ENCODING,
+        "check_execute": False,
+    }
     if executable and os.path.exists(executable):
         kwargs["executable"] = executable
     return exiftool.ExifToolHelper(**kwargs)
+
+
+def usable_metadata(meta) -> dict:
+    """*meta* as returned by ExifTool, or ``{}`` for a file it could not read."""
+    if not isinstance(meta, dict) or "ExifTool:Error" in meta:
+        return {}
+    return meta
 
 
 # Capture date/time tags in priority order (ExifTool "-G" group-0 names).
@@ -323,14 +340,14 @@ class ExifService:
         """
         if all(isinstance(meta, dict) and meta.get("SourceFile") for meta in batch_meta):
             by_norm = {os.path.normpath(str(meta["SourceFile"])): meta for meta in batch_meta}
-            return {orig: by_norm.get(norm, {}) for norm, orig in chunk}
-        return {orig: meta for (_norm, orig), meta in zip(chunk, batch_meta)}
+            return {orig: usable_metadata(by_norm.get(norm)) for norm, orig in chunk}
+        return {orig: usable_metadata(meta) for (_norm, orig), meta in zip(chunk, batch_meta)}
 
     def _read_single(self, normalized_path: str, exiftool_path, helper=None) -> dict:
         """Read one file with *helper* (if given) or the shared/temporary process."""
         try:
             if helper is not None:
-                return helper.get_metadata([normalized_path])[0]
+                return usable_metadata(helper.get_metadata([normalized_path])[0])
             return self._get_exiftool_metadata_shared(normalized_path, exiftool_path)
         except Exception as e:
             log.debug(f"Per-file ExifTool fallback failed for {normalized_path}: {e}")
@@ -589,7 +606,7 @@ class ExifService:
         try:
             with self._exiftool_lock:
                 if self._ensure_exiftool_running(exiftool_path):
-                    return self._exiftool_instance.get_metadata([normalized_path])[0]
+                    return usable_metadata(self._exiftool_instance.get_metadata([normalized_path])[0])
         except Exception as e:
             # get_metadata raises for an unreadable file although the shared
             # process is fine; only a dead process is replaced (on next use).
@@ -599,7 +616,7 @@ class ExifService:
         # use a temporary process for this one read.
         try:
             with new_exiftool_helper(exiftool_path) as et:
-                return et.get_metadata([normalized_path])[0]
+                return usable_metadata(et.get_metadata([normalized_path])[0])
         except Exception as e2:
             log.warning(f"Could not read metadata of {normalized_path}: {e2}")
             return {}

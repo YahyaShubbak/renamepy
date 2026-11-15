@@ -123,9 +123,9 @@ def get_exiftool_metadata_shared(image_path: str, exiftool_path: str | None = No
             return {}
         if not exiftool_path:
             exiftool_path = find_exiftool_path()
-        from .exif_service_new import new_exiftool_helper
+        from .exif_service_new import new_exiftool_helper, usable_metadata
         with new_exiftool_helper(exiftool_path) as et:
-            return et.get_metadata([normalized])[0]
+            return usable_metadata(et.get_metadata([normalized])[0])
     except Exception as e:
         log.warning(f"get_exiftool_metadata_shared fallback failed: {e}")
         return {}
@@ -141,7 +141,7 @@ def get_exiftool_metadata_batch(file_paths: list[str], exiftool_path: str | None
         return {}
     if _default_exif_service:
         return _default_exif_service.batch_get_raw_metadata(list(file_paths))
-    from .exif_service_new import new_exiftool_helper
+    from .exif_service_new import new_exiftool_helper, usable_metadata
     results = {path: {} for path in file_paths}
     existing = [p for p in file_paths if os.path.exists(p)]
     by_norm = {os.path.normpath(p): p for p in existing}
@@ -158,7 +158,7 @@ def get_exiftool_metadata_batch(file_paths: list[str], exiftool_path: str | None
                 for meta in metas:
                     path = by_norm.get(os.path.normpath(str(meta.get('SourceFile', ''))))
                     if path:
-                        results[path] = meta
+                        results[path] = usable_metadata(meta)
     except Exception as e:
         log.warning(f"get_exiftool_metadata_batch failed: {e}")
     return results
@@ -508,7 +508,7 @@ def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None
 
     # Fast path: prefetch all capture datetimes via the registered ExifService
     # (reuses the shared ExifTool process) or fall back to a one-shot helper.
-    from .exif_service_new import ExifService, new_exiftool_helper
+    from .exif_service_new import ExifService, new_exiftool_helper, usable_metadata
 
     prefetch_map = {}
     use_custom = options and options.get('use_custom')
@@ -528,7 +528,7 @@ def batch_sync_exif_dates(file_paths, exiftool_path=None, progress_callback=None
                         for meta in et.get_metadata(file_paths[start:start + CHUNK]):
                             source = meta.get('SourceFile')
                             if source:
-                                raw_batch[by_norm.get(os.path.normpath(source), source)] = meta
+                                raw_batch[by_norm.get(os.path.normpath(source), source)] = usable_metadata(meta)
             for fpath, meta in raw_batch.items():
                 dt_value = ExifService.parse_datetime_from_raw(meta)
                 if dt_value is not None:

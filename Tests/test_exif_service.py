@@ -208,3 +208,57 @@ class TestExifToolWriteHelpers:
         assert before == {old}
         assert not os.path.exists(new)
         assert os.path.exists(old)
+
+
+# ---------------------------------------------------------------------------
+# Unreadable files and the batch fallback
+# ---------------------------------------------------------------------------
+class TestUnreadableFiles:
+
+    def test_usable_metadata(self):
+        from modules.exif_service_new import usable_metadata
+        assert usable_metadata({"SourceFile": "a.jpg", "ExifTool:Error": "File is empty"}) == {}
+        assert usable_metadata(None) == {}
+        meta = {"SourceFile": "a.jpg", "EXIF:Model": "X"}
+        assert usable_metadata(meta) is meta
+
+    def test_helper_does_not_raise_on_exit_status(self):
+        from modules.exif_service_new import new_exiftool_helper
+        with patch("modules.exif_service_new.exiftool.ExifToolHelper") as helper:
+            new_exiftool_helper()
+        assert helper.call_args.kwargs["check_execute"] is False
+
+    def test_error_entry_in_batch_maps_to_empty(self, tmp_path):
+        good, bad = str(tmp_path / "good.jpg"), str(tmp_path / "bad.jpg")
+        open(good, "w").close()
+        open(bad, "w").close()
+        svc = ExifService()
+        svc._exiftool_instance = Mock()
+        svc._exiftool_instance.get_metadata.return_value = [
+            {"SourceFile": good, "EXIF:Model": "X"},
+            {"SourceFile": bad, "ExifTool:Error": "File format error"},
+        ]
+        with patch.object(svc, "_ensure_exiftool_running", return_value=True):
+            result = svc.batch_get_raw_metadata([good, bad])
+        assert result[good]["EXIF:Model"] == "X"
+        assert result[bad] == {}
+        assert svc._exiftool_instance.get_metadata.call_count == 1
+
+    def test_raising_batch_still_falls_back_per_file(self, tmp_path):
+        """A dead process still raises; the per-file fallback stays."""
+        files = [str(tmp_path / f"{i}.jpg") for i in range(2)]
+        for f in files:
+            open(f, "w").close()
+        svc = ExifService()
+        svc._exiftool_instance = Mock()
+
+        def get_metadata(paths):
+            if len(paths) > 1:
+                raise RuntimeError("process died")
+            return [{"SourceFile": paths[0], "EXIF:Model": "X"}]
+
+        svc._exiftool_instance.get_metadata.side_effect = get_metadata
+        with patch.object(svc, "_ensure_exiftool_running", return_value=True):
+            result = svc.batch_get_raw_metadata(files)
+        assert all(result[f]["EXIF:Model"] == "X" for f in files)
+        assert svc._exiftool_instance.get_metadata.call_count == 3

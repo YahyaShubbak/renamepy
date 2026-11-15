@@ -142,6 +142,48 @@ class TestSharedProcessAndThreads:
         assert service._exiftool_instance._process is process  # not restarted
 
 
+class TestUnreadableFileInBatch:
+    """Regression: ExifTool exits non-zero if any file of a call is
+    unreadable; the helper raised and the whole chunk was re-read file by
+    file (plus a temporary process for the bad file)."""
+
+    def _files(self, tmp_path):
+        good = [_make_jpeg(tmp_path / f"good_{i}.jpg", "2024:05:01 10:00:00") for i in range(4)]
+        empty = tmp_path / "empty.jpg"
+        empty.write_bytes(b"")
+        return good, str(empty)
+
+    def test_one_call_for_the_chunk(self, tmp_path, service, monkeypatch):
+        import exiftool
+        good, empty = self._files(tmp_path)
+        service.extract_raw_exif(good[0])  # start the shared process (main thread)
+        calls = []
+        real = exiftool.ExifToolHelper.get_metadata
+        monkeypatch.setattr(exiftool.ExifToolHelper, "get_metadata",
+                            lambda self, files, *a, **k: (calls.append(list(files)), real(self, files, *a, **k))[1])
+
+        meta = service.batch_get_raw_metadata(good + [empty])
+
+        assert len(calls) == 1
+        assert meta[empty] == {}
+        assert all(service.parse_date_from_raw(meta[p]) == "20240501" for p in good)
+
+    def test_single_read_of_unreadable_file(self, tmp_path, service):
+        _good, empty = self._files(tmp_path)
+        assert service.extract_raw_exif(empty) == {}
+
+    def test_fallback_without_service(self, tmp_path):
+        from modules import exif_processor
+        good, empty = self._files(tmp_path)
+        assert exif_processor._default_exif_service is None
+
+        meta = exif_processor.get_exiftool_metadata_batch(good + [empty], EXIFTOOL)
+
+        assert meta[empty] == {}
+        assert all(meta[p].get("EXIF:DateTimeOriginal") == "2024:05:01 10:00:00" for p in good)
+        assert exif_processor.get_exiftool_metadata_shared(empty, EXIFTOOL) == {}
+
+
 class TestExifTimeShiftRoundTrip:
 
     def test_backup_and_restore(self, tmp_path, service):
