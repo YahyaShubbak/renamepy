@@ -1178,8 +1178,8 @@ class FileRenamerApp(QMainWindow):
     def closeEvent(self, event):
         """Handle application close event.
         
-        Refuses to close while a rename is running (destroying a running
-        QThread aborts the process mid-operation), stops background threads,
+        Refuses to close while a rename or an undo is running (destroying a
+        running QThread aborts the process mid-operation), stops background threads,
         and cleans up the ExifService to prevent subprocess leaks.
         """
         worker = getattr(self, 'worker', None)
@@ -1188,6 +1188,17 @@ class FileRenamerApp(QMainWindow):
                 self,
                 "Rename in Progress",
                 "Files are still being renamed.\n\n"
+                "Please wait until the operation has finished before closing the application.",
+            )
+            event.ignore()
+            return
+
+        undo_worker = getattr(getattr(self, 'undo_handler', None), 'worker', None)
+        if undo_worker is not None and undo_worker.isRunning():
+            QMessageBox.warning(
+                self,
+                "Restore in Progress",
+                "Files are still being restored.\n\n"
                 "Please wait until the operation has finished before closing the application.",
             )
             event.ignore()
