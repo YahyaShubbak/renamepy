@@ -741,3 +741,78 @@ class TestExifRestoreAllowlist:
         ok, msg = restore_exif_timestamps(f, {"o": "/tmp/x", "config": "evil"}, "/fake/exiftool")
         assert ok is False
         run.assert_not_called()
+
+    def test_value_with_line_break_is_rejected(self, tmp_path, monkeypatch):
+        """Values go into an argument file (one argument per line) in the
+        batch restore: a line break would inject ExifTool options."""
+        from modules.exif_processor import restore_exif_timestamps, batch_restore_exif_timestamps
+        f = _touch(tmp_path / "a.jpg")
+        run = MagicMock()
+        monkeypatch.setattr("subprocess.run", run)
+        evil = {"EXIF:DateTimeOriginal": "2024:01:01 10:00:00\n-o\n/tmp/x"}
+
+        ok, _msg = restore_exif_timestamps(f, evil, "/fake/exiftool")
+        successes, errors = batch_restore_exif_timestamps({f: evil}, "/fake/exiftool")
+
+        assert ok is False
+        assert successes == [] and errors == [(f, "No restorable EXIF fields in backup")]
+        run.assert_not_called()
+
+
+class TestBatchExifRestore:
+
+    def test_one_process_per_chunk(self, tmp_path, monkeypatch):
+        from modules import exif_processor, exif_undo_manager
+        files = [_touch(tmp_path / f"{i}.jpg") for i in range(5)]
+        backup = {f: {"EXIF:DateTimeOriginal": "2024:01:01 10:00:00"} for f in files}
+        argfiles = []
+
+        def run(cmd, timeout):
+            with open(cmd[cmd.index("-@") + 1], encoding="utf-8") as fh:
+                argfiles.append(fh.read().splitlines())
+            return MagicMock(returncode=0, stderr="")
+
+        monkeypatch.setattr(exif_processor, "RESTORE_CHUNK", 2)
+        monkeypatch.setattr(exif_undo_manager, "_run_exiftool", run)
+        monkeypatch.setattr(exif_processor, "get_exiftool_metadata_batch",
+                            lambda paths, *a: {p: dict(backup[p]) for p in paths})
+        progress = []
+
+        successes, errors = exif_processor.batch_restore_exif_timestamps(
+            backup, "/fake/exiftool", progress_callback=progress.append)
+
+        assert errors == [] and len(successes) == 5
+        assert len(argfiles) == 3 and len(progress) == 3
+        assert argfiles[0] == ["-EXIF:DateTimeOriginal=2024:01:01 10:00:00", files[0], "-execute",
+                               "-EXIF:DateTimeOriginal=2024:01:01 10:00:00", files[1]]
+
+    def test_unconfirmed_file_gets_exiftool_message(self, tmp_path, monkeypatch):
+        from modules import exif_processor, exif_undo_manager
+        a = _touch(tmp_path / "a.jpg")
+        b = _touch(tmp_path / "b.jpg")
+        backup = {a: {"EXIF:DateTimeOriginal": "2024:01:01 10:00:00"},
+                  b: {"EXIF:DateTimeOriginal": "2024:01:01 10:00:00"}}
+        monkeypatch.setattr(exif_undo_manager, "_run_exiftool",
+                            lambda cmd, timeout: MagicMock(returncode=1, stderr=f"Error: locked - {b}\n"))
+        monkeypatch.setattr(exif_processor, "get_exiftool_metadata_batch",
+                            lambda paths, *a_: {a: dict(backup[a]),
+                                                b: {"EXIF:DateTimeOriginal": "2024:01:01 11:00:00"}})
+
+        successes, errors = exif_processor.batch_restore_exif_timestamps(backup, "/fake/exiftool")
+
+        assert [p for p, _ in successes] == [a]
+        assert errors == [(b, f"Error: locked - {b}")]
+
+    def test_missing_file_and_empty_backup(self, tmp_path, monkeypatch):
+        from modules import exif_processor
+        run = MagicMock()
+        monkeypatch.setattr("subprocess.run", run)
+        missing = str(tmp_path / "missing.jpg")
+        empty = _touch(tmp_path / "empty.jpg")
+
+        successes, errors = exif_processor.batch_restore_exif_timestamps(
+            {missing: {"EXIF:DateTimeOriginal": "2024:01:01 10:00:00"}, empty: {}}, "/fake/exiftool")
+
+        assert successes == []
+        assert errors == [(missing, f"File not found: {missing}"), (empty, "No backup EXIF data available")]
+        run.assert_not_called()

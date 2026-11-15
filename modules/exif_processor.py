@@ -619,7 +619,38 @@ RESTORABLE_DATE_TAGS = frozenset({
     'QuickTime:MediaModifyDate',
 })
 
-_EXIF_VALUE_RE = re.compile(r'^[\w\s:./+\-]+$')
+# Values end up as ExifTool arguments, one per line in an argument file
+# (batch restore), so line breaks must never pass: a literal space, not \s,
+# and fullmatch (a "$" would also match before a trailing newline).
+_EXIF_VALUE_RE = re.compile(r'[\w :./+\-]+')
+
+# Files per ExifTool process in batch_restore_exif_timestamps
+RESTORE_CHUNK = 200
+
+
+def _restorable_fields(original_exif) -> dict[str, str]:
+    """The backed-up date fields that may be written back, as strings.
+
+    The backup comes from a JSON file on disk, so both the tag name (it
+    becomes "-TAG=...", i.e. an ExifTool option) and the value are
+    validated before use.
+    """
+    fields = {}
+    for field, value in original_exif.items():
+        if field not in RESTORABLE_DATE_TAGS:
+            log.warning(f"Skipping unexpected EXIF restore field: {field!r}")
+            continue
+        str_value = str(value)
+        if not _EXIF_VALUE_RE.fullmatch(str_value):
+            log.warning(f"Skipping suspicious EXIF restore value for {field}: {str_value!r}")
+            continue
+        fields[field] = str_value
+    return fields
+
+
+def _restore_args(original_exif) -> list[str]:
+    """ExifTool "-TAG=value" arguments restoring the valid backup fields."""
+    return [f"-{field}={value}" for field, value in _restorable_fields(original_exif).items()]
 
 
 def restore_exif_timestamps(file_path, original_exif, exiftool_path):
@@ -648,24 +679,11 @@ def restore_exif_timestamps(file_path, original_exif, exiftool_path):
         
         from .exif_service_new import run_exiftool_on_file, exiftool_write_timeout
 
-        # Add each backed-up field. The backup comes from a JSON file on
-        # disk, so both the tag name (it becomes "-TAG=...", i.e. an ExifTool
-        # option) and the value are validated before use.
-        # -P keeps the file's modification time (ExifTool rewrites the file).
-        base = ["-overwrite_original", "-P"]
-        options = list(base)
-        for field, value in original_exif.items():
-            if field not in RESTORABLE_DATE_TAGS:
-                log.warning(f"Skipping unexpected EXIF restore field: {field!r}")
-                continue
-            str_value = str(value)
-            if not _EXIF_VALUE_RE.match(str_value):
-                log.warning(f"Skipping suspicious EXIF restore value for {field}: {str_value!r}")
-                continue
-            options.append(f'-{field}={str_value}')
-
-        if len(options) == len(base):
+        args = _restore_args(original_exif)
+        if not args:
             return False, "No restorable EXIF fields in backup"
+        # -P keeps the file's modification time (ExifTool rewrites the file).
+        options = ["-overwrite_original", "-P", *args]
 
         result = run_exiftool_on_file(exiftool_path, options, file_path,
                                       timeout=exiftool_write_timeout([file_path]))
@@ -682,31 +700,110 @@ def restore_exif_timestamps(file_path, original_exif, exiftool_path):
 def batch_restore_exif_timestamps(backup_data, exiftool_path, progress_callback=None):
     """
     Batch restore original EXIF timestamps for multiple files.
-    
+
+    One ExifTool process per chunk of files, with one ``-execute`` block
+    per file (each file has its own values). The result of every file is
+    confirmed by reading its dates back.
+
     Args:
         backup_data: Dictionary mapping file paths to original EXIF data
         exiftool_path: Path to ExifTool executable
         progress_callback: Optional callback function for progress updates
-        
+            (called once per chunk)
+
     Returns:
-        tuple: (successes: list, errors: list)
+        tuple: (successes: list, errors: list) of (file_path, message)
     """
+    from .exif_undo_manager import _write_argfile, _run_exiftool
+    from .exif_service_new import (
+        EXIFTOOL_CHARSET_ARGS, exiftool_write_timeout,
+        existing_exiftool_tmp_files, remove_exiftool_tmp_files,
+    )
+
     successes = []
     errors = []
-    
-    file_paths = list(backup_data.keys())
-    
-    for i, file_path in enumerate(file_paths):
+
+    pending = []  # (file_path, {field: value})
+    for file_path, original_exif in backup_data.items():
+        if not os.path.exists(file_path):
+            errors.append((file_path, f"File not found: {file_path}"))
+            continue
+        if not original_exif:
+            errors.append((file_path, "No backup EXIF data available"))
+            continue
+        if any(c in file_path for c in "\r\n\0"):
+            # One argument per line in the argument file
+            errors.append((file_path, "Unsupported characters in file name"))
+            continue
+        fields = _restorable_fields(original_exif)
+        if not fields:
+            errors.append((file_path, "No restorable EXIF fields in backup"))
+            continue
+        pending.append((file_path, fields))
+
+    if not pending:
+        return successes, errors
+
+    if not exiftool_path:
+        exiftool_path = find_exiftool_path()
+        if not exiftool_path:
+            errors.extend((file_path, "ExifTool executable not found") for file_path, _ in pending)
+            return successes, errors
+
+    for start in range(0, len(pending), RESTORE_CHUNK):
+        chunk = pending[start:start + RESTORE_CHUNK]
+        chunk_paths = [file_path for file_path, _ in chunk]
         if progress_callback:
-            progress_callback(f"Restoring EXIF {i+1}/{len(file_paths)}: {os.path.basename(file_path)}")
-        
-        original_exif = backup_data[file_path]
-        success, message = restore_exif_timestamps(file_path, original_exif, exiftool_path)
-        
-        if success:
-            successes.append((file_path, message))
-        else:
-            errors.append((file_path, message))
-    
+            progress_callback(f"Restoring EXIF {start + 1}-{start + len(chunk)} of {len(pending)}")
+
+        lines = []
+        for i, (file_path, fields) in enumerate(chunk):
+            if i:
+                lines.append("-execute")
+            lines.extend(f"-{field}={value}" for field, value in fields.items())
+            lines.append(file_path)
+
+        argfile = _write_argfile(lines)
+        stderr = ""
+        chunk_failure = ""
+        tmp_before = existing_exiftool_tmp_files(chunk_paths)
+        try:
+            # -P keeps the file's modification time (ExifTool rewrites the file).
+            cmd = [exiftool_path, "-@", argfile,
+                   "-common_args", "-overwrite_original", "-P", *EXIFTOOL_CHARSET_ARGS]
+            result = _run_exiftool(cmd, timeout=exiftool_write_timeout(chunk_paths))
+            stderr = result.stderr or ""
+        except subprocess.TimeoutExpired:
+            chunk_failure = "ExifTool operation timed out"
+            log.error(chunk_failure)
+            remove_exiftool_tmp_files(chunk_paths, keep=tmp_before)
+        except Exception as e:
+            chunk_failure = f"Error restoring EXIF timestamps: {e}"
+            log.error(chunk_failure)
+        finally:
+            try:
+                os.remove(argfile)
+            except OSError:
+                pass
+
+        # The backups were read by the same "-G -n" reader, so a restored
+        # field reads back as exactly the backed-up string.
+        after = get_exiftool_metadata_batch(chunk_paths, exiftool_path)
+        for file_path, fields in chunk:
+            meta = after.get(file_path) or {}
+            if all(str(meta.get(field)) == value for field, value in fields.items()):
+                successes.append((file_path, "EXIF timestamps restored successfully"))
+            else:
+                errors.append((file_path, _stderr_line_for(file_path, stderr)
+                               or chunk_failure or "EXIF dates not restored"))
+
     return successes, errors
+
+
+def _stderr_line_for(file_path, stderr):
+    """ExifTool's message for *file_path* ("Error: ... - <path>"), if any."""
+    for line in stderr.splitlines():
+        if line.rstrip().endswith(file_path):
+            return line.strip()
+    return ""
 

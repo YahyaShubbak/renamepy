@@ -216,6 +216,46 @@ class TestExifTimeShiftRoundTrip:
             assert service.parse_datetime_from_raw(service.extract_raw_exif(path)).hour == 11
 
 
+class TestBatchExifRestore:
+
+    def test_restores_all_files_with_one_process(self, tmp_path, service, monkeypatch):
+        import subprocess
+        from modules.exif_processor import batch_restore_exif_timestamps
+
+        names = ["a.jpg", "b.jpg", "c.jpg", "d.jpg", "Straße 😀.jpg"]
+        paths = [_make_jpeg(tmp_path / n, f"2024:05:0{i + 1} 10:00:00") for i, n in enumerate(names)]
+        backup = {p: {"EXIF:DateTimeOriginal": f"2024:05:0{i + 1} 10:00:00"} for i, p in enumerate(paths)}
+        assert subprocess.run([EXIFTOOL, "-q", "-overwrite_original", "-AllDates+=1:00:00", *paths]).returncode == 0
+
+        calls = []
+        real_run = subprocess.run
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: (calls.append(a), real_run(*a, **k))[1])
+        progress = []
+        successes, errors = batch_restore_exif_timestamps(backup, EXIFTOOL, progress_callback=progress.append)
+
+        assert errors == []
+        assert sorted(p for p, _ in successes) == sorted(paths)
+        assert len(calls) == 1 and len(progress) == 1
+        meta = service.batch_get_raw_metadata(paths)
+        for i, p in enumerate(paths):
+            assert meta[p]["EXIF:DateTimeOriginal"] == f"2024:05:0{i + 1} 10:00:00"
+
+    def test_failed_file_is_reported_per_file(self, tmp_path):
+        from modules.exif_processor import batch_restore_exif_timestamps
+
+        good = _make_jpeg(tmp_path / "good.jpg", "2024:05:01 11:00:00")
+        broken = tmp_path / "broken.jpg"
+        broken.write_bytes(b"not a jpeg")
+        value = {"EXIF:DateTimeOriginal": "2024:05:01 10:00:00"}
+
+        successes, errors = batch_restore_exif_timestamps(
+            {good: dict(value), str(broken): dict(value)}, EXIFTOOL)
+
+        assert [p for p, _ in successes] == [good]
+        assert [p for p, _ in errors] == [str(broken)]
+        assert errors[0][1]  # ExifTool's message or the generic one
+
+
 class TestRenameWithMetadata:
 
     def test_rename_stores_original_names(self, tmp_path, service):
