@@ -60,6 +60,9 @@ jobs:
     - name: Compile all modules
       run: python -m compileall -q modules RenameFiles.py Tests
 
+    - name: Static checks (ruff)
+      run: python -m ruff check modules RenameFiles.py Tests
+
     - name: Run tests
       run: python -m pytest Tests -q -rs
 

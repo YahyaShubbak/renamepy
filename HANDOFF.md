@@ -27,7 +27,7 @@ Audited at commit `95dd4d2` (branch `main`, clean tree). Line numbers refer to t
   - Public names used by `Tests/` must stay importable/callable: `RenameWorkerThread.optimized_rename_files`, `.planner.*`, `UndoHandler._restore_all_timestamps` / `_restore_filenames` (called synchronously with a `MagicMock` app), `ExifService.get_cached_exif_data`, `exif_processor` delegates, `build_ordered_components`.
   - Support matrix: Python 3.10–3.13, PyQt6 ≥ 6.5, PyExifTool 0.5.5–0.5.x, Windows/macOS/Linux (CI: `.github/workflows/ci.yml`).
 - **Verification tooling (read before Phase 2):**
-  - Test command: `python -m pytest Tests -q -rs` with `QT_QPA_PLATFORM=offscreen`. CI also runs `python -m compileall -q modules RenameFiles.py Tests`. No linter or type checker exists (see ID-23).
+  - Test command: `python -m pytest Tests -q -rs` with `QT_QPA_PLATFORM=offscreen`. CI also runs `python -m compileall -q modules RenameFiles.py Tests` and, since ID-23, `python -m ruff check modules RenameFiles.py Tests` (config `ruff.toml`: syntax errors + pyflakes). No type checker yet.
   - Local interpreter with the runtime deps: `renamepy\Scripts\python.exe` (Python 3.13.5, PyQt6 6.10.0, PyExifTool 0.5.6); ExifTool 13.40 in `exiftool-13.40_64\`. **`pytest` and `pytest-qt` are not installed in it** (nor in any conda env that has PyQt6 + PyExifTool), so the baseline suite was **not** run during the audit. Before ID-01: `renamepy\Scripts\python.exe -m pip install -r requirements-dev.txt` (needs user approval), run the suite once and record the baseline here.
   - **Baseline recorded (2026-11-15, before ID-01):** Linux, project `.venv` (Python 3.14.10, PyQt6 6.11.0, PyExifTool 0.5.6, pytest 9.2.0 + pytest-qt installed via `.venv/bin/python -m pip install -r requirements-dev.txt`), ExifTool 13.55 on `PATH` (`/usr/bin/vendor_perl/exiftool`). `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest Tests -q -rs` → **355 passed, 0 skipped**.
   - **Real test images:** `Tests/Testbilder/` (git-ignored) was moved by the user to `/home/yahya/Schreibtisch/06_Moonrise` (64 Sony ARW+JPG pairs, 06-28/06-29, already named `YYYY-MM-DD-Moon-NNN-400mm`). Without it the 7 tests in `Tests/test_phase1_integration.py` skip; run the suite with `RENAMEPY_TEST_IMAGES=/home/yahya/Schreibtisch/06_Moonrise` (those tests only read). For anything that writes, work on a copy (e.g. in the scratchpad), never on that folder.
@@ -375,11 +375,17 @@ Audited at commit `95dd4d2` (branch `main`, clean tree). Line numbers refer to t
   - `rename_engine`: `TIMESTAMP_OPTIONS` alias dropped.
   - `compileall` clean; full suite **465 passed, 1 skipped** (ruff runs in ID-23).
 
-### [ ] ID-23: 🟡 No static analysis anywhere; local environment cannot run the tests
-- **Status:** `[OPEN]`
+### [x] ID-23: 🟡 No static analysis anywhere; local environment cannot run the tests
+- **Status:** `[DONE]`
 - **Location:** `requirements-dev.txt`, `.github/workflows/ci.yml`, new `ruff.toml`
 - **Code Anchor:** `pytest-qt>=4.4,<5` (last line of `requirements-dev.txt`); CI step `- name: Compile all modules`
 - **Root Cause & Impact:** CI runs `compileall` and `pytest` only. Undefined names, unused imports/variables and shadowed definitions are caught by nothing; most functions outside `rename_engine` / `backup_journal` are untyped. The project venv ships without `pytest`, so contributors (and agents) cannot verify changes locally without an extra install step that is documented nowhere.
 - **Implementation Blueprint:** Add `ruff>=0.6,<1` to `requirements-dev.txt`. Create `ruff.toml` with `target-version = "py310"`, `[lint] select = ["E9", "F"]` (syntax errors, pyflakes) and `exclude = ["renamepy", "exiftool-*"]`. Add a CI step after "Compile all modules": `python -m ruff check modules RenameFiles.py Tests`. Fix what it reports (expected: unused imports and unused locals; module-level imports after `log = get_logger()` are E402 and not selected). Mention `pip install -r requirements-dev.txt` in the README's development section. Type checking (mypy/pyright) is a follow-up, not part of this item.
 - **Verification Criteria:** `python -m ruff check modules RenameFiles.py Tests` exits 0; `python -m pytest Tests -q` green; the workflow file still parses (`python -c "import yaml,sys; yaml.safe_load(open('.github/workflows/ci.yml'))"` if PyYAML is available, else visual check).
-- **Resolution & Diff Summary:**
+- **Resolution & Diff Summary:** Implemented as specified, with one config deviation.
+  - `requirements-dev.txt`: `ruff>=0.6,<1` (resolved locally to ruff 0.17.5).
+  - New `ruff.toml`: `target-version = "py310"`, `[lint] select = ["E9", "F"]`. **Deviation:** `extend-exclude = ["renamepy", "exiftool-*"]` instead of `exclude` — `exclude` would replace ruff's default excludes (`.venv`, `.git`, build folders, ...). Verified ruff uses this file and reports F401/F841/F821 on a sample.
+  - `.github/workflows/ci.yml`: step "Static checks (ruff)" (`python -m ruff check modules RenameFiles.py Tests`) after "Compile all modules" in the `test` job (all OS/Python combinations). The `minimum-versions` job installs pinned packages without `requirements-dev.txt` and has no compile step, so it is unchanged. The workflow parses (system PyYAML) and the step sits between compile and tests.
+  - Findings fixed: only one — an unused local `dlg` in `Tests/test_exiftool_warning_dialog.py::test_windows_instructions` (the fixture call is kept). The unused imports the audit expected were already gone (earlier items removed or reused them).
+  - `README.md` development section: added the ruff command (it already mentioned `pip install -r requirements-dev.txt`). Section 2 of this file updated.
+  - Verification: `python -m ruff check modules RenameFiles.py Tests` → "All checks passed!" (exit 0); `compileall` clean; full suite **465 passed, 1 skipped**.

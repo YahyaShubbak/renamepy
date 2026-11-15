@@ -1,0 +1,11 @@
+# Static checks - run with: python -m ruff check modules RenameFiles.py Tests
+target-version = "py310"
+# Added to ruff's default excludes (.venv, .git, build, ...): the Windows
+# installer's virtual environment and downloaded ExifTool folders.
+extend-exclude = ["renamepy", "exiftool-*"]
+
+[lint]
+# E9: syntax errors; F: pyflakes (undefined names, unused imports and
+# variables, redefinitions). Module-level imports after "log = get_logger()"
+# would be E402, which is deliberately not selected.
+select = ["E9", "F"]

@@ -283,6 +283,8 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 git clone https://github.com/YahyaShubbak/renamepy.git
 cd renamepy
 pip install -r requirements-dev.txt
+# Static checks (syntax errors, undefined names, unused imports/variables)
+python -m ruff check modules RenameFiles.py Tests
 # Run tests (headless; tests against a real ExifTool run if one is installed)
 QT_QPA_PLATFORM=offscreen python -m pytest Tests/
 ```

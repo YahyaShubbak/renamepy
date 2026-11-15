@@ -105,7 +105,7 @@ class TestPlatformInstructions:
 
     @patch("platform.system", return_value="Windows")
     def test_windows_instructions(self, _mock_sys, make_dialog):
-        dlg = make_dialog()
+        make_dialog()
         # Force re-creation to pick up patched platform
         from modules.dialogs.exiftool_warning_dialog import ExifToolWarningDialog
         d = ExifToolWarningDialog(parent=None)
