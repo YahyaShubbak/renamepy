@@ -72,6 +72,24 @@ class TestPlanning:
         assert os.path.basename(entries[0].target) == "2024-05-01_001(1).jpg"
         assert "already exists" in entries[0].note
 
+    def test_one_go_plans_before_the_timestamp_sync(self, tmp_path):
+        """Regression: optimized_rename_files synced first, so names based on
+        file times saw the synced (here: custom) date - unlike the app,
+        which plans, shows the plan, then syncs and renames."""
+        a = _touch(tmp_path / "DSC0001.jpg", datetime.datetime(2024, 5, 1, 10, 0))
+        b = _touch(tmp_path / "DSC0002.jpg", datetime.datetime(2024, 5, 1, 10, 1))
+        options = {"creation": False, "modification": True, "access": True,
+                   "use_custom": True, "custom_dt": datetime.datetime(2030, 1, 1, 12, 0)}
+        worker = _worker([a, b], sync_exif_date=True, timestamp_options=options)
+
+        renamed, errors, backup, _mapping = worker.optimized_rename_files()
+
+        assert errors == []
+        assert [os.path.basename(p) for p in renamed] == ["2024-05-01_001.jpg", "2024-05-01_002.jpg"]
+        assert set(backup) == {a, b}  # backed up under the names they had when synced
+        assert all(os.path.getmtime(p) == pytest.approx(datetime.datetime(2030, 1, 1, 12).timestamp())
+                   for p in renamed)
+
     def test_planning_can_be_cancelled(self, tmp_path):
         a = _touch(tmp_path / "DSC0001.jpg")
         planner = RenamePlanner([a], is_cancelled=lambda: True)

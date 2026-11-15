@@ -974,7 +974,8 @@ class RenameWorkerThread(QThread):
 
     def optimized_rename_files(self) -> Tuple[List[str], List[Tuple[str, str]], Dict[str, Any], Dict[str, str]]:
         """
-        Plan and execute in one go (optional timestamp sync first).
+        Plan and execute in one go, in the application's order: plan, then
+        the optional timestamp sync, then the renames (see "plan"/"execute").
 
         Returns:
             Tuple containing:
@@ -983,14 +984,10 @@ class RenameWorkerThread(QThread):
                 - timestamp_backup: Dictionary of original timestamps for undo
                 - rename_mapping: Dict of {new_path: old_path} for reliable undo
         """
-        _successes, sync_errors, timestamp_backup = self._sync_exif_timestamps()
         if self.leave_names:
-            return [], list(sync_errors), timestamp_backup, {}
+            return self._sync_then_execute([], [])
         entries, plan_errors = self.build_plan()
-        renamed_files, exec_errors, rename_mapping = self.execute_plan(entries)
-        errors = [(path, f"Timestamp sync: {msg}") for path, msg in sync_errors]
-        errors += plan_errors + exec_errors
-        return renamed_files, errors, timestamp_backup, rename_mapping
+        return self._sync_then_execute(entries, plan_errors)
 
     def run(self) -> None:
         """Run the selected mode in the background thread."""

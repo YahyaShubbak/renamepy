@@ -244,14 +244,14 @@ Audited at commit `95dd4d2` (branch `main`, clean tree). Line numbers refer to t
   - **Related fix (not in the blueprint):** `group_values` (~350) only fell back to a sibling's date when the *first* file had a cache entry. An unreadable first file (`{}` → no entry) skipped the siblings and named the group by filename/mtime date, which would have reproduced the mismatch the other way round. The condition is now `if any(exif_cache.get(path) for path in group):`.
   - Tests (`TestGroupCaptureDate` in `test_rename_engine.py`): unreadable `IMG_0001.MOV` (mtime the next day) + `IMG_0001.HEIC` (09:00) + `IMG_0002.JPG` (10:00) → pair named `2024-05-01_001`, single `_002`, in both counter modes (both fail on the pre-fix code); the continuous counter requests every file exactly once. Full suite **431 passed, 1 skipped** (with `RENAMEPY_TEST_IMAGES`).
 
-### [ ] ID-13: 🟡 `optimized_rename_files` (tests only) syncs before planning; production plans before syncing
-- **Status:** `[OPEN]`
+### [x] ID-13: 🟡 `optimized_rename_files` (tests only) syncs before planning; production plans before syncing
+- **Status:** `[DONE]`
 - **Location:** `modules/rename_engine.py`
 - **Code Anchor:** `def optimized_rename_files(self)` (Approx. Lines: `791–809`); `def _sync_then_execute(self, entries, plan_errors)` (`781–789`)
 - **Root Cause & Impact:** The application only uses modes `"plan"` and `"execute"` (plan → review → sync → rename). `optimized_rename_files` runs sync → plan → rename, so its mtime-based fallbacks (`_date_from_mtime`, `_mtime_or_zero`, `capture_timestamp`) see post-sync timestamps (with a custom date every file has the same mtime). Around 23 test call sites exercise an ordering production never runs; a regression in the real sequence would go unnoticed.
 - **Implementation Blueprint:** Replace the body after the docstring with: `if self.leave_names: return self._sync_then_execute([], [])` then `entries, plan_errors = self.build_plan()` and `return self._sync_then_execute(entries, plan_errors)`. The returned tuple shape and error order (sync, plan, exec) are identical.
 - **Verification Criteria:** `python -m pytest Tests -q`; inspect any failure for an assertion that depended on post-sync mtimes (candidates: `Tests/test_rename_engine.py:266`, `Tests/test_data_integrity.py` sync tests) and correct the expectation, not the code.
-- **Resolution & Diff Summary:**
+- **Resolution & Diff Summary:** Body of `optimized_rename_files` replaced as specified (`leave_names` → `_sync_then_execute([], [])`, else `build_plan()` → `_sync_then_execute(entries, plan_errors)`); docstring now states the order (function is 6 lines shorter). No existing test depended on the old order, so no expectation had to change. New regression test `TestPlanning::test_one_go_plans_before_the_timestamp_sync` (`test_rename_plan.py`): mtime-based names with a custom-date sync (2030-01-01) → names keep the pre-sync date `2024-05-01_001/002`, files end with the synced mtime, backups keyed by the pre-rename paths (fails on the pre-fix code: `2030-01-01_…`). Full suite **432 passed, 1 skipped**.
 
 ### [ ] ID-14: 🟡 Timestamp sync re-reads files without a date, re-discovers ExifTool per file, and cannot be cancelled
 - **Status:** `[OPEN]`
