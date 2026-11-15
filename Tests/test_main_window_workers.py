@@ -173,3 +173,53 @@ def test_cached_result_is_dropped(qtbot, tmp_path, window, monkeypatch, action):
 
     assert not hasattr(window, "_exif_undo_available")
     qtbot.waitUntil(lambda: getattr(window, "_exif_undo_checker_ref", None) is None, timeout=10000)
+
+
+# ---------------------------------------------------------------------------
+# Real errors are logged at the default level (not only with debug on)
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def warnings_logged():
+    """WARNING+ records of the app logger (it does not propagate to root)."""
+    import logging
+    from modules.logger_util import get_logger
+
+    class _Collect(logging.Handler):
+        def __init__(self):
+            super().__init__(logging.WARNING)
+            self.messages = []
+
+        def emit(self, record):
+            self.messages.append(record.getMessage())
+
+    handler = _Collect()
+    logger = get_logger()
+    logger.addHandler(handler)
+    yield handler.messages
+    logger.removeHandler(handler)
+
+
+def test_exiftool_lookup_error_is_a_warning(monkeypatch, warnings_logged):
+    from modules import main_application
+    from modules.main_application import FileRenamerApp
+
+    def broken():
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(main_application, "find_exiftool_path", broken)
+    assert FileRenamerApp.get_exiftool_path(MagicMock()) is None
+    assert warnings_logged == ["Error locating ExifTool: permission denied"]
+
+
+def test_camera_info_errors_are_warnings(tmp_path, window, warnings_logged):
+    photo = tmp_path / "a.jpg"
+    photo.write_bytes(b"x")
+    window.files[:] = [str(photo)]
+    window.exif_method = "exiftool"
+    window.exif_service.get_cached_exif_data = MagicMock(side_effect=RuntimeError("busy"))
+    window.exif_service.extract_raw_exif = MagicMock(side_effect=RuntimeError("busy"))
+
+    window.extract_camera_info()
+
+    assert f"Error extracting camera info from {photo}: busy" in warnings_logged
+    assert f"Error extracting shooting settings from {photo}: busy" in warnings_logged

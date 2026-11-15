@@ -143,3 +143,23 @@ def test_time_shift_preview_uses_the_rename_tags(qtbot, monkeypatch):
     assert rows[0] == ("2024:01:15 10:30:45", "2024:01:15 11:30:45")
     assert len(rows) == 3
     assert rows[2] == ("No EXIF time found", "No change")
+
+
+def test_show_exif_info_error_is_a_warning(manager, tmp_path, monkeypatch):
+    import logging
+    from modules.logger_util import get_logger
+    photo = tmp_path / "a.jpg"
+    photo.touch()
+    manager.parent.exif_service.extract_raw_exif.side_effect = RuntimeError("pipe closed")
+    monkeypatch.setattr(QDialog, "exec", lambda self: 0)
+    records = []
+    handler = logging.Handler(logging.WARNING)
+    handler.emit = lambda record: records.append(record.getMessage())
+    get_logger().addHandler(handler)
+    try:
+        with patch("modules.ui.metadata_dialog_manager.get_rename_info",
+                   return_value={"original_filename": None, "rename_date": None}):
+            manager.show_exif_info(str(photo))
+    finally:
+        get_logger().removeHandler(handler)
+    assert records == ["Error in show_exif_info: pipe closed"]

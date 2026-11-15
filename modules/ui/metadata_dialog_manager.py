@@ -31,6 +31,9 @@ from ..file_utilities import is_media_file, is_video_file
 from ..exif_service_new import EXIFTOOL_AVAILABLE, format_exposure_time
 from ..handlers import extract_image_number
 from ..exif_undo_manager import get_rename_info, _parse_legacy_user_comment
+from ..logger_util import get_logger
+
+log = get_logger()
 
 
 class MetadataDialogManager:
@@ -183,7 +186,7 @@ class MetadataDialogManager:
             self.show_exif_dialog(file_path, info_str, raw_exif_data)
             
         except Exception as e:
-            self.parent.log(f"Error in show_exif_info: {e}")
+            log.warning(f"Error in show_exif_info: {e}")
             file_type = "Video" if is_video_file(file_path) else "Image"
             self.show_exif_dialog(file_path, f"Error reading {file_type.lower()} metadata: {e}")
     

@@ -428,7 +428,7 @@ class FileRenamerApp(QMainWindow):
             # Optionally log version if available using subprocess - handled inside find_exiftool_path verify
             return path
         except Exception as e:
-            self.log(f"Error locating ExifTool: {e}")
+            log.warning(f"Error locating ExifTool: {e}")
             return None
     
     # Event handlers implementation
@@ -528,7 +528,7 @@ class FileRenamerApp(QMainWindow):
             self.detected_lens = lens
             
         except Exception as e:
-            self.log(f"Error extracting camera info from {first_media}: {e}")
+            log.warning(f"Error extracting camera info from {first_media}: {e}")
             self.detected_camera = None
             self.detected_lens = None
         
@@ -550,7 +550,7 @@ class FileRenamerApp(QMainWindow):
                 'focal_length': focal_length,
             }
         except Exception as e:
-            self.log(f"Error extracting shooting settings from {first_media}: {e}")
+            log.warning(f"Error extracting shooting settings from {first_media}: {e}")
         
         # Update labels
         self.update_camera_lens_labels()
