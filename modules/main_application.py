@@ -453,13 +453,13 @@ class FileRenamerApp(QMainWindow):
         """Show complete EXIF information in a dialog"""
         self.metadata_dialog_manager.show_exif_info(file_path)
 
-    def show_exif_dialog(self, file_path, info_str):
+    def show_exif_dialog(self, file_path, info_str, raw_metadata=None):
         """Show detailed EXIF metadata dialog with two-stage display and checkboxes for filename inclusion"""
-        self.metadata_dialog_manager.show_exif_dialog(file_path, info_str)
+        self.metadata_dialog_manager.show_exif_dialog(file_path, info_str, raw_metadata)
 
-    def create_essential_metadata_widget(self, full_metadata, file_path):
+    def create_essential_metadata_widget(self, full_metadata, file_path, raw_metadata=None):
         """Create widget with essential metadata and checkboxes for filename inclusion"""
-        return self.metadata_dialog_manager.create_essential_metadata_widget(full_metadata, file_path)
+        return self.metadata_dialog_manager.create_essential_metadata_widget(full_metadata, file_path, raw_metadata)
 
     def on_metadata_checkbox_changed(self, metadata_key, value, checked, user_action=False):
         """Handle metadata checkbox changes for filename inclusion"""

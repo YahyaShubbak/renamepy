@@ -30,7 +30,7 @@ from PyQt6.QtCore import Qt
 from ..file_utilities import is_media_file, is_video_file
 from ..exif_service_new import EXIFTOOL_AVAILABLE, format_exposure_time
 from ..handlers import extract_image_number
-from ..exif_undo_manager import get_rename_info
+from ..exif_undo_manager import get_rename_info, _parse_legacy_user_comment
 
 
 class MetadataDialogManager:
@@ -180,15 +180,19 @@ class MetadataDialogManager:
                 file_type = "Video" if is_video_file(file_path) else "Image"
                 info_str = f"No readable metadata found in {file_type.lower()} file."
             
-            self.show_exif_dialog(file_path, info_str)
+            self.show_exif_dialog(file_path, info_str, raw_exif_data)
             
         except Exception as e:
             self.parent.log(f"Error in show_exif_info: {e}")
             file_type = "Video" if is_video_file(file_path) else "Image"
             self.show_exif_dialog(file_path, f"Error reading {file_type.lower()} metadata: {e}")
     
-    def show_exif_dialog(self, file_path, info_str):
-        """Show detailed EXIF metadata dialog with two-stage display and checkboxes for filename inclusion"""
+    def show_exif_dialog(self, file_path, info_str, raw_metadata=None):
+        """Show detailed EXIF metadata dialog with two-stage display and checkboxes for filename inclusion.
+
+        *raw_metadata* is the ExifTool dict *info_str* was formatted from;
+        when given, the essential view uses it directly.
+        """
         file_type = "Video" if is_video_file(file_path) else "Image"
         
         dialog = QDialog(self.parent)
@@ -201,7 +205,7 @@ class MetadataDialogManager:
         layout.setContentsMargins(15, 10, 15, 10)  # Reduce margins
         
         # Essential metadata section with checkboxes
-        essential_widget = self.create_essential_metadata_widget(info_str, file_path)
+        essential_widget = self.create_essential_metadata_widget(info_str, file_path, raw_metadata)
         layout.addWidget(essential_widget)
         
         # Button section
@@ -228,14 +232,35 @@ class MetadataDialogManager:
         
         dialog.exec()
     
-    def create_essential_metadata_widget(self, full_metadata, file_path):
-        """Create widget with essential metadata and checkboxes for filename inclusion"""
+    def create_essential_metadata_widget(self, full_metadata, file_path, raw_metadata=None):
+        """Create widget with essential metadata and checkboxes for filename inclusion.
+
+        Uses *raw_metadata* (the ExifTool dict) when given; otherwise the
+        ``key: value`` lines of *full_metadata* are parsed.
+        """
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setSpacing(2)
         layout.setContentsMargins(0, 0, 0, 0)
         
-        # Parse metadata
+        if raw_metadata is not None:
+            metadata_dict = {key: str(value) for key, value in raw_metadata.items()}
+        else:
+            metadata_dict = self._parse_metadata_text(full_metadata)
+        self._add_essential_rows(layout, metadata_dict, file_path, raw_metadata)
+
+        # Make it scrollable
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(widget)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setMinimumHeight(250)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        return scroll_area
+
+    @staticmethod
+    def _parse_metadata_text(full_metadata):
+        """``{"Group:Tag": value}`` from ``Group:Tag: value`` lines."""
         lines = full_metadata.split('\n')
         metadata_dict = {}
         for line in lines:
@@ -248,7 +273,19 @@ class MetadataDialogManager:
                         metadata_dict[key] = value
                 except (ValueError, IndexError):
                     continue
-        
+        return metadata_dict
+
+    @staticmethod
+    def _rename_info_from_raw(raw_metadata):
+        """Original name as get_rename_info() reads it, from an already read dict."""
+        preserved = raw_metadata.get("XMP:PreservedFileName")
+        if preserved and str(preserved).strip():
+            return {'original_filename': str(preserved).strip(), 'rename_date': None}
+        name, rename_date = _parse_legacy_user_comment(raw_metadata.get("EXIF:UserComment"))
+        return {'original_filename': name, 'rename_date': rename_date}
+
+    def _add_essential_rows(self, layout, metadata_dict, file_path, raw_metadata):
+        """Fill *layout* with the essential metadata rows."""
         # Helper function to add metadata row, with a checkbox only for
         # fields that can be resolved per file at rename time
         # (FILENAME_METADATA_KEYS) - other values are shown for information.
@@ -278,9 +315,11 @@ class MetadataDialogManager:
                 return checkbox
             return None
         
-        # Get file information
-        file_stats = os.stat(file_path)
-        file_size_mb = file_stats.st_size / (1024 * 1024)
+        # Get file information (the file may be gone: "File not found." dialog)
+        try:
+            file_size_mb = os.stat(file_path).st_size / (1024 * 1024)
+        except OSError:
+            file_size_mb = None
         
         # FILE INFORMATION section
         file_section = QLabel("📁 FILE INFORMATION")
@@ -288,12 +327,18 @@ class MetadataDialogManager:
         layout.addWidget(file_section)
         
         add_metadata_row(layout, "File", os.path.basename(file_path))
-        add_metadata_row(layout, "Size", f"{file_size_mb:.1f} MB")
+        if file_size_mb is not None:
+            add_metadata_row(layout, "Size", f"{file_size_mb:.1f} MB")
         add_metadata_row(layout, "Type", metadata_dict.get('File:FileType', 'Unknown'))
         
-        # Check for original filename in EXIF metadata
-        if self.parent.exiftool_path:
+        # Check for original filename in EXIF metadata (already in the raw
+        # dict when given - no extra ExifTool process on the GUI thread)
+        rename_info = None
+        if raw_metadata is not None:
+            rename_info = self._rename_info_from_raw(raw_metadata)
+        elif self.parent.exiftool_path:
             rename_info = get_rename_info(file_path, self.parent.exiftool_path)
+        if rename_info:
             if rename_info['original_filename']:
                 # Display original filename with special formatting
                 original_row = QHBoxLayout()
@@ -405,15 +450,6 @@ class MetadataDialogManager:
             add_metadata_row(layout, "Image Stabilization", stab_status, 'image_stabilization')
         
         layout.addStretch()
-        
-        # Make it scrollable
-        scroll_area = QScrollArea()
-        scroll_area.setWidget(widget)
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setMinimumHeight(250)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        
-        return scroll_area
     
     # Metadata-dialog fields that can go into the filename. Each is resolved
     # per file at rename time: camera/lens/date map to the main window's
