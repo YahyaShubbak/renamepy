@@ -263,6 +263,39 @@ class TestGetSafeTargetPath:
         result = get_safe_target_path(str(original), "photo.jpg")
         assert os.path.normcase(result) == os.path.normcase(str(original))
 
+    def test_file_in_filesystem_root(self):
+        """Regression: realpath of a root (C:\\, /) already ends with the
+        separator, so every file directly in a root was rejected."""
+        import uuid
+        root = os.path.abspath(os.sep)
+        original = os.path.join(root, f"{uuid.uuid4().hex}.JPG")
+        new_name = f"{uuid.uuid4().hex}.jpg"
+        assert get_safe_target_path(original, new_name) == os.path.join(root, new_name)
+
+    @pytest.mark.parametrize("new_name", ["..", "."])
+    def test_directory_names_rejected(self, tmp_path, new_name):
+        original = tmp_path / "photo.jpg"
+        original.touch()
+        with pytest.raises(ValueError):
+            get_safe_target_path(str(original), new_name)
+
+    def test_embedded_path_is_reduced_to_basename(self, tmp_path):
+        original = tmp_path / "photo.jpg"
+        original.touch()
+        result = get_safe_target_path(str(original), os.path.join("..", "evil.jpg"))
+        assert result == str(tmp_path / "evil.jpg")
+
+    @pytest.mark.skipif(not hasattr(os, "symlink") or os.name == "nt",
+                        reason="symlinks need privileges on Windows")
+    def test_existing_symlink_pointing_outside_rejected(self, tmp_path):
+        source_dir = tmp_path / "src"
+        source_dir.mkdir()
+        original = source_dir / "photo.jpg"
+        original.touch()
+        os.symlink(tmp_path / "outside.jpg", source_dir / "link.jpg")
+        with pytest.raises(ValueError):
+            get_safe_target_path(str(original), "link.jpg")
+
 
 # ---------------------------------------------------------------------------
 # Directory scanning

@@ -294,10 +294,12 @@ def get_safe_target_path(original_path, new_name):
     
     new_path = os.path.join(directory, new_name)
     
-    # SEC: Verify the resolved path stays within the source directory
-    resolved_dir = os.path.realpath(directory)
-    resolved_target = os.path.realpath(new_path)
-    if not resolved_target.startswith(resolved_dir + os.sep) and resolved_target != resolved_dir:
+    # SEC: Verify the resolved path is a direct child of the source directory.
+    # Compare parents instead of a "dir + sep" prefix: for a root directory
+    # (C:\, /, \\server\share\) realpath already ends with the separator.
+    resolved_dir = os.path.normcase(os.path.realpath(directory))
+    resolved_target = os.path.normcase(os.path.realpath(new_path))
+    if os.path.dirname(resolved_target) != resolved_dir or resolved_target == resolved_dir:
         raise ValueError(
             f"Target path escapes source directory: {new_path!r}"
         )
