@@ -32,6 +32,19 @@ BACKUP_DATE_FIELDS = (
     'QuickTime:TrackModifyDate',
     'QuickTime:MediaCreateDate',
     'QuickTime:MediaModifyDate',
+    'QuickTime:CreationDate',  # Apple "Keys": local time + zone, names iPhone videos
+)
+
+# "-AllDates" covers DateTimeOriginal, CreateDate and ModifyDate only. A video
+# keeps its track/media dates and Apple's CreationDate - which ranks first
+# for naming (CAPTURE_DATE_FIELDS) - so they are shifted explicitly.
+# ExifTool ignores tags a file does not have.
+VIDEO_SHIFT_TAGS = (
+    'QuickTime:TrackCreateDate',
+    'QuickTime:TrackModifyDate',
+    'QuickTime:MediaCreateDate',
+    'QuickTime:MediaModifyDate',
+    'QuickTime:CreationDate',
 )
 
 
@@ -88,7 +101,9 @@ class TimeShiftWorker(QThread):
         time_shift = f"{hours_shift}:{minutes_shift:02d}:00"
         operator = "+=" if delta_minutes >= 0 else "-="
         # -P keeps the file's modification time (ExifTool rewrites the file).
-        options = [f"-AllDates{operator}{time_shift}", "-overwrite_original", "-P"]
+        options = [f"-AllDates{operator}{time_shift}",
+                   *(f"-{tag}{operator}{time_shift}" for tag in VIDEO_SHIFT_TAGS),
+                   "-overwrite_original", "-P"]
         
         for start in range(0, total_files, SHIFT_CHUNK):
             if self.isInterruptionRequested():
@@ -163,8 +178,19 @@ class TimeShiftWorker(QThread):
 
 
 def _dates_shifted(before, after, delta):
-    """True if at least one backed-up date moved by exactly *delta*."""
-    from ..exif_service_new import parse_exif_datetime
+    """True if the capture date the rename uses moved by exactly *delta*.
+
+    For a file without such a date: if at least one backed-up date did.
+    """
+    from ..exif_service_new import ExifService, parse_exif_datetime
+
+    old = ExifService.parse_datetime_from_raw(before)
+    if old is not None:
+        new = ExifService.parse_datetime_from_raw(after)
+        try:
+            return new is not None and new - old == delta
+        except TypeError:  # naive vs. zone-aware: not the same field
+            return False
 
     for field in BACKUP_DATE_FIELDS:
         old = parse_exif_datetime(before.get(field))

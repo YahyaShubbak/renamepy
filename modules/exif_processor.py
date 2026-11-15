@@ -649,6 +649,7 @@ RESTORABLE_DATE_TAGS = frozenset({
     'QuickTime:TrackModifyDate',
     'QuickTime:MediaCreateDate',
     'QuickTime:MediaModifyDate',
+    'QuickTime:CreationDate',
 })
 
 # Values end up as ExifTool arguments, one per line in an argument file

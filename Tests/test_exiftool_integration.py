@@ -317,6 +317,60 @@ class TestBatchExifRestore:
         assert errors[0][1]  # ExifTool's message or the generic one
 
 
+def _make_iphone_like_mov(path):
+    """A small MOV with the date tags of an iPhone video (needs ffmpeg)."""
+    import shutil
+    import subprocess
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        pytest.skip("ffmpeg not installed")
+    subprocess.run([ffmpeg, "-loglevel", "error", "-f", "lavfi", "-i",
+                    "testsrc=duration=1:size=64x64:rate=5", "-c:v", "mpeg4", str(path)], check=True)
+    utc = "2024:05:01 08:00:00"
+    tags = [f"-QuickTime:{t}={utc}" for t in ("CreateDate", "ModifyDate", "TrackCreateDate",
+                                               "TrackModifyDate", "MediaCreateDate", "MediaModifyDate")]
+    result = subprocess.run([EXIFTOOL, "-q", "-overwrite_original", *tags,
+                             "-Keys:CreationDate=2024:05:01 10:00:00+02:00", str(path)])
+    assert result.returncode == 0
+    return str(path)
+
+
+class TestVideoTimeShift:
+    """Regression: -AllDates left QuickTime:CreationDate (which names the
+    video) and the track/media dates untouched, yet reported success."""
+
+    def test_shift_moves_the_naming_date_and_restores(self, tmp_path, service):
+        from modules import exif_processor
+        from modules.dialogs.exif_time_shift_dialog import TimeShiftWorker, BACKUP_DATE_FIELDS
+
+        path = _make_iphone_like_mov(tmp_path / "IMG_0001.MOV")
+        before = service.extract_raw_exif(path)
+        assert before["QuickTime:CreationDate"] == "2024:05:01 10:00:00+02:00"
+        exif_processor.set_default_exif_service(service)
+        try:
+            worker = TimeShiftWorker([path], 1, 30, "forward", EXIFTOOL)
+            results = []
+            worker.finished_signal.connect(lambda *args: results.append(args))
+            worker.run()
+        finally:
+            exif_processor.set_default_exif_service(None)
+
+        success_count, errors, backup = results[0]
+        assert (success_count, errors) == (1, [])
+        service.clear_cache()
+        after = service.extract_raw_exif(path)
+        shift = datetime.timedelta(hours=1, minutes=30)
+        assert (service.parse_datetime_from_raw(after) - service.parse_datetime_from_raw(before)) == shift
+        for field in ("QuickTime:CreateDate", "QuickTime:TrackCreateDate", "QuickTime:MediaModifyDate"):
+            assert after[field] == "2024:05:01 09:30:00"
+        assert set(backup[path]) == {f for f in BACKUP_DATE_FIELDS if f in before}
+
+        successes, restore_errors = exif_processor.batch_restore_exif_timestamps(backup, EXIFTOOL)
+        assert restore_errors == [] and [p for p, _ in successes] == [path]
+        restored = service.extract_raw_exif(path)
+        assert {f: restored[f] for f in backup[path]} == backup[path]
+
+
 class TestRenameWithMetadata:
 
     def test_rename_stores_original_names(self, tmp_path, service):

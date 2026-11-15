@@ -375,6 +375,30 @@ class TestBackupsKeepOriginals:
         assert backup == {}
         assert "exif_backup" not in load_journal()
 
+    def test_shift_verification_uses_the_naming_date(self):
+        from modules.dialogs.exif_time_shift_dialog import _dates_shifted
+        hour = datetime.timedelta(hours=1)
+        before = {"QuickTime:CreateDate": "2024:05:01 08:00:00",
+                  "QuickTime:CreationDate": "2024:05:01 10:00:00+02:00"}
+        header_only = dict(before, **{"QuickTime:CreateDate": "2024:05:01 09:00:00"})
+        both = dict(header_only, **{"QuickTime:CreationDate": "2024:05:01 11:00:00+02:00"})
+        assert _dates_shifted(before, header_only, hour) is False  # name date unchanged
+        assert _dates_shifted(before, both, hour) is True
+        # No capture date at all: any backed-up date counts, as before
+        assert _dates_shifted({"EXIF:ModifyDate": "2024:05:01 08:00:00"},
+                              {"EXIF:ModifyDate": "2024:05:01 09:00:00"}, hour) is True
+
+    def test_shift_options_include_video_tags(self, monkeypatch):
+        from modules.dialogs.exif_time_shift_dialog import TimeShiftWorker, VIDEO_SHIFT_TAGS
+        run = MagicMock(return_value=MagicMock(returncode=0, stderr=""))
+        monkeypatch.setattr("subprocess.run", run)
+        monkeypatch.setattr("modules.exif_processor.get_exiftool_metadata_batch",
+                            lambda paths, *a, **k: {p: {"EXIF:DateTimeOriginal": "2024:01:01 10:00:00"} for p in paths})
+        TimeShiftWorker(["/p/a.mov"], 0, 45, "backward", "/fake/exiftool").run()
+        cmd = run.call_args[0][0]
+        assert "-AllDates-=0:45:00" in cmd
+        assert all(f"-{tag}-=0:45:00" in cmd for tag in VIDEO_SHIFT_TAGS)
+
     def test_zero_time_shift_is_refused(self, qapp, monkeypatch):
         from PyQt6.QtWidgets import QMessageBox
         from modules.dialogs.exif_time_shift_dialog import ExifTimeShiftDialog
