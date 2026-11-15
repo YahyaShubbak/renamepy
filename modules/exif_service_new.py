@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import os
 import re
-import time
 import threading
 import subprocess
 from collections import OrderedDict
@@ -494,32 +493,7 @@ class ExifService:
         Returns:
             (date, camera, lens) tuple
         """
-        method = method or self.current_method
-        exiftool_path = exiftool_path or self._exiftool_path
-        
-        try:
-            # Create cache key based on file path and modification time
-            mtime = os.path.getmtime(file_path)
-            cache_key = (file_path, mtime, method)
-            
-            # Check cache first
-            with self._cache_lock:
-                if cache_key in self._cache:
-                    self._cache.move_to_end(cache_key)  # LRU: mark as recently used
-                    return self._cache[cache_key]
-            
-            # Extract EXIF data (not cached)
-            result = self._extract_exif_fields_with_retry(file_path, method, exiftool_path, max_retries=2)
-            
-            # Cache the result
-            with self._cache_lock:
-                self._evict_cache_if_needed()
-                self._cache[cache_key] = result
-            
-            return result
-        except Exception as e:
-            log.debug(f"Cached EXIF extraction failed for {file_path}: {e}")
-            return None, None, None
+        return self._cached_basic(file_path, method, exiftool_path, self._extract_exif_fields_with_retry)
     
     def get_selective_cached_exif_data(self, file_path, method=None, exiftool_path=None,
                                       need_date=True, need_camera=False, need_lens=False):
@@ -527,9 +501,8 @@ class ExifService:
         Get EXIF data with intelligent caching.
         
         Always fetches all three fields (date, camera, lens) from ExifTool since
-        the IPC cost is the same regardless. Caches the full result so subsequent
-        calls for different field subsets hit the cache instead of re-invoking
-        ExifTool.
+        the IPC cost is the same regardless. Shares the cache with
+        :meth:`get_cached_exif_data`.
         
         Args:
             file_path: Path to the image file
@@ -542,49 +515,54 @@ class ExifService:
         Returns:
             (date, camera, lens) - only requested fields are populated, others are None
         """
+        # The cache holds all three fields, whichever were asked for now
+        date_val, camera_val, lens_val = self._cached_basic(
+            file_path, method, exiftool_path,
+            lambda path, method_, tool: self._extract_selective_exif_fields(
+                path, method_, tool, need_date=True, need_camera=True, need_lens=True),
+        )
+        return (
+            date_val if need_date else None,
+            camera_val if need_camera else None,
+            lens_val if need_lens else None,
+        )
+
+    @classmethod
+    def _basic_fields(cls, meta: dict) -> tuple:
+        """(date YYYYMMDD, camera, lens) parsed from one raw metadata dict."""
+        return cls.parse_date_from_raw(meta), cls.parse_camera_from_raw(meta), cls.parse_lens_from_raw(meta)
+
+    def _cached_basic(self, file_path, method, exiftool_path, extract) -> tuple:
+        """(date, camera, lens) of a file, cached by (normalized path, mtime, method).
+
+        *extract* reads the file and returns the tuple, or None if the file
+        could not be read right now - that is not cached, so a transient
+        failure does not stick as "no metadata" until the cache is cleared.
+        """
         method = method or self.current_method
         exiftool_path = exiftool_path or self._exiftool_path
-        
         try:
             normalized_path = os.path.normpath(file_path)
-            
             if not os.path.exists(normalized_path):
                 log.warning(f"File not found: {normalized_path}")
                 return None, None, None
-            
-            # Cache key: (path, mtime, method) — no field_signature needed.
-            # We always extract all 3 fields since ExifTool returns everything.
-            mtime = os.path.getmtime(normalized_path)
-            cache_key = (normalized_path, mtime, method)
-            
+
+            cache_key = (normalized_path, os.path.getmtime(normalized_path), method)
             with self._cache_lock:
                 if cache_key in self._cache:
-                    self._cache.move_to_end(cache_key)
-                    cached_date, cached_camera, cached_lens = self._cache[cache_key]
-                    return (
-                        cached_date if need_date else None,
-                        cached_camera if need_camera else None,
-                        cached_lens if need_lens else None,
-                    )
-            
-            # Extract ALL fields in one call (same IPC cost)
-            result = self._extract_selective_exif_fields(
-                normalized_path, method, exiftool_path,
-                need_date=True, need_camera=True, need_lens=True
-            )
-            
+                    self._cache.move_to_end(cache_key)  # LRU: mark as recently used
+                    return self._cache[cache_key]
+
+            result = extract(normalized_path, method, exiftool_path)
+            if result is None:
+                return None, None, None
+            result = tuple(result)
             with self._cache_lock:
                 self._evict_cache_if_needed()
                 self._cache[cache_key] = result
-            
-            date_val, camera_val, lens_val = result
-            return (
-                date_val if need_date else None,
-                camera_val if need_camera else None,
-                lens_val if need_lens else None,
-            )
+            return result
         except Exception as e:
-            log.debug(f"Error in get_selective_cached_exif_data for {file_path}: {e}")
+            log.debug(f"Cached EXIF extraction failed for {file_path}: {e}")
             return None, None, None
     
     def _get_exiftool_metadata_shared(self, image_path, exiftool_path=None):
@@ -677,118 +655,43 @@ class ExifService:
                     pass
             self._exiftool_instance = None
     
-    def _extract_exif_fields_with_retry(self, image_path, method, exiftool_path=None, max_retries=3):
-        """
-        Extracts EXIF fields with retry mechanism for reliability.
-        OPTIMIZATION: Now uses shared ExifTool instance for better performance!
-        """
-        # CRITICAL FIX: Normalize path to prevent double backslashes
-        normalized_path = os.path.normpath(image_path)
-        
-        # Verify file exists
-        if not os.path.exists(normalized_path):
-            log.warning(f"extract_exif_fields_with_retry: File not found: {normalized_path}")
+    def _read_basic_fields(self, image_path, method, exiftool_path=None):
+        """(date, camera, lens) read from the file, or None if it could not be read."""
+        if method != "exiftool":
+            log.warning(f"Unsupported EXIF method: {method}")
             return None, None, None
-        
-        for attempt in range(max_retries):
-            try:
-                if method == "exiftool":
-                    # PERFORMANCE OPTIMIZATION: Use shared ExifTool instance instead of creating new process
-                    meta = self._get_exiftool_metadata_shared(normalized_path, exiftool_path)
+        meta = self._get_exiftool_metadata_shared(image_path, exiftool_path)
+        return self._basic_fields(meta) if meta else None
 
-                    # Extract date
-                    date = self.parse_date_from_raw(meta)
+    def _extract_exif_fields_with_retry(self, image_path, method, exiftool_path=None, max_retries=3):
+        """(date, camera, lens) of one file, uncached; None if it could not be read.
 
-                    # Extract camera model
-                    camera = meta.get('EXIF:Model')
-                    if camera:
-                        camera = str(camera).replace(' ', '-')
-                    
-                    # Extract lens model
-                    lens = meta.get('EXIF:LensModel') or meta.get('LensInfo')
-                    if lens:
-                        lens = str(lens).replace(' ', '-')
-                    
-                    return date, camera, lens
-                else:
-                    log.warning(f"Unsupported EXIF method: {method}")
-                    return None, None, None
-                    
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    log.error(f"EXIF extraction failed after {max_retries} attempts: {e}")
-                    return None, None, None
-                else:
-                    time.sleep(0.1)
+        *max_retries* is kept for callers: a failed read is not retried here
+        (``_get_exiftool_metadata_shared`` already falls back to a temporary
+        process) but also not cached, so the next call reads again.
+        """
+        return self._read_basic_fields(image_path, method, exiftool_path)
     
     def _extract_selective_exif_fields(self, image_path, method, exiftool_path=None,
                                       need_date=True, need_camera=False, need_lens=False):
         """
-        OPTIMIZED: Extracts only the requested EXIF fields from an image.
-        This dramatically improves performance by only reading what's needed.
-        
-        Args:
-            image_path: Path to the image file
-            method: 'exiftool' (only supported method)
-            exiftool_path: Path to exiftool executable
-            need_date: Whether to extract date information
-            need_camera: Whether to extract camera model
-            need_lens: Whether to extract lens model
+        Like :meth:`_extract_exif_fields_with_retry`, with unrequested fields None.
         
         Returns:
-            (date, camera, lens) - only requested fields are extracted, others are None
+            (date, camera, lens) - only requested fields are populated, or None
+            if the file could not be read
         """
-        # If nothing is needed, return early
         if not any([need_date, need_camera, need_lens]):
             return None, None, None
-        
-        # CRITICAL FIX: Normalize path to prevent double backslashes
-        normalized_path = os.path.normpath(image_path)
-        
-        # Verify file exists
-        if not os.path.exists(normalized_path):
-            log.warning(f"extract_selective_exif_fields: File not found: {normalized_path}")
-            return None, None, None
-        
-        max_retries = 2  # Reduced retries for batch processing
-        
-        for attempt in range(max_retries):
-            try:
-                if method == "exiftool":
-                    # Use shared ExifTool instance for better performance
-                    meta = self._get_exiftool_metadata_shared(normalized_path, exiftool_path)
-                    
-                    # Extract only requested fields
-                    date = None
-                    camera = None
-                    lens = None
-                    
-                    if need_date:
-                        date = self.parse_date_from_raw(meta)
-                    
-                    if need_camera:
-                        # Use the same simple approach as the working old application
-                        camera = meta.get('EXIF:Model') or meta.get('Model')
-                        if camera:
-                            camera = str(camera).replace(' ', '-')
-                    
-                    if need_lens:
-                        # Use the same simple approach as the working old application
-                        lens = meta.get('EXIF:LensModel') or meta.get('LensModel') or meta.get('LensInfo')
-                        if lens:
-                            lens = str(lens).replace(' ', '-')
-                    
-                    return date, camera, lens
-                else:
-                    log.warning(f"Unsupported EXIF method: {method}")
-                    return None, None, None
-                    
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    log.debug(f"EXIF extraction failed for {normalized_path}: {e}")
-                    return None, None, None
-                else:
-                    time.sleep(0.05)  # Shorter pause for batch processing
+        result = self._read_basic_fields(image_path, method, exiftool_path)
+        if result is None:
+            return None
+        date, camera, lens = result
+        return (
+            date if need_date else None,
+            camera if need_camera else None,
+            lens if need_lens else None,
+        )
     
     def get_all_metadata(self, file_path, method=None, exiftool_path=None):
         """Extract all relevant metadata for filename generation.

@@ -262,3 +262,56 @@ class TestUnreadableFiles:
             result = svc.batch_get_raw_metadata(files)
         assert all(result[f]["EXIF:Model"] == "X" for f in files)
         assert svc._exiftool_instance.get_metadata.call_count == 3
+
+
+# ---------------------------------------------------------------------------
+# One cached extraction path for both getters
+# ---------------------------------------------------------------------------
+class TestCachedBasicFields:
+
+    META = {"SourceFile": "x", "EXIF:DateTimeOriginal": "2024:06:15 10:00:00",
+            "EXIF:Model": "ILCE 7CM2", "EXIF:LensModel": "FE 100-400mm"}
+
+    def _service(self, *reads):
+        service = ExifService()
+        service.current_method = "exiftool"
+        service._get_exiftool_metadata_shared = Mock(side_effect=list(reads))
+        return service
+
+    def test_failed_read_is_not_cached(self, tmp_path):
+        """Regression: an empty read was cached as "no metadata"."""
+        f = tmp_path / "photo.jpg"
+        f.touch()
+        service = self._service({}, dict(self.META))
+
+        assert service.get_cached_exif_data(str(f)) == (None, None, None)
+        assert service.get_cached_exif_data(str(f)) == ("20240615", "ILCE-7CM2", "FE-100-400mm")
+
+    def test_failed_selective_read_is_not_cached(self, tmp_path):
+        f = tmp_path / "photo.jpg"
+        f.touch()
+        service = self._service({}, dict(self.META))
+
+        assert service.get_selective_cached_exif_data(str(f)) == (None, None, None)
+        assert service.get_selective_cached_exif_data(str(f), need_camera=True) == ("20240615", "ILCE-7CM2", None)
+
+    def test_getters_share_one_normalized_cache_entry(self, tmp_path):
+        (tmp_path / "sub").mkdir()
+        f = tmp_path / "sub" / "photo.jpg"
+        f.touch()
+        service = self._service(dict(self.META))
+
+        first = service.get_cached_exif_data(os.path.join(str(tmp_path), "sub", ".", "photo.jpg"))
+        second = service.get_selective_cached_exif_data(str(f), need_camera=True, need_lens=True)
+
+        assert first == second == ("20240615", "ILCE-7CM2", "FE-100-400mm")
+        assert service._get_exiftool_metadata_shared.call_count == 1
+
+    def test_readable_file_without_fields_is_cached(self, tmp_path):
+        f = tmp_path / "scan.png"
+        f.touch()
+        service = self._service({"SourceFile": "x", "File:FileType": "PNG"})
+
+        assert service.get_cached_exif_data(str(f)) == (None, None, None)
+        assert service.get_cached_exif_data(str(f)) == (None, None, None)
+        assert service._get_exiftool_metadata_shared.call_count == 1
