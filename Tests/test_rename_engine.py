@@ -180,6 +180,43 @@ class TestFileGrouping:
         # Should be separate groups (different directories)
         assert len(groups) == 2
 
+    def test_hash_in_names_does_not_join_folders(self, tmp_path):
+        """Regression: the key "dir#stem" made a/b#c.jpg and a#b/c.jpg one pair."""
+        (tmp_path / "a").mkdir()
+        (tmp_path / "a#b").mkdir()
+        first = tmp_path / "a" / "b#c.jpg"
+        second = tmp_path / "a#b" / "c.jpg"
+        first.touch()
+        second.touch()
+        groups = _make_worker([str(first), str(second)]).planner.create_file_groups()
+        assert sorted(len(g) for g in groups) == [1, 1]
+
+    @pytest.mark.skipif(os.name != "nt" and sys.platform != "darwin",
+                        reason="case-insensitive file systems only")
+    def test_case_variant_pair_grouped(self, tmp_path):
+        (tmp_path / "IMG_0001.JPG").touch()
+        (tmp_path / "img_0001.arw").touch()
+        groups = _make_worker([str(tmp_path / "IMG_0001.JPG"),
+                               str(tmp_path / "img_0001.arw")]).planner.create_file_groups()
+        assert [len(g) for g in groups] == [2]
+
+    def test_case_variant_pair_grouped_on_macos_logic(self, tmp_path, monkeypatch):
+        """Runs everywhere: the macOS branch of the key."""
+        monkeypatch.setattr(sys, "platform", "darwin")
+        (tmp_path / "IMG_0001.JPG").touch()
+        (tmp_path / "img_0001.arw").touch()
+        groups = _make_worker([str(tmp_path / "IMG_0001.JPG"),
+                               str(tmp_path / "img_0001.arw")]).planner.create_file_groups()
+        assert [len(g) for g in groups] == [2]
+
+    @pytest.mark.skipif(os.name == "nt" or sys.platform == "darwin",
+                        reason="case-sensitive file systems only")
+    def test_case_distinct_files_stay_separate_on_linux(self, tmp_path):
+        (tmp_path / "a.jpg").touch()
+        (tmp_path / "A.jpg").touch()
+        groups = _make_worker([str(tmp_path / "a.jpg"), str(tmp_path / "A.jpg")]).planner.create_file_groups()
+        assert sorted(len(g) for g in groups) == [1, 1]
+
 
 # ---------------------------------------------------------------------------
 # Sort key generation

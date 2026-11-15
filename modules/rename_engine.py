@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 import datetime
 from collections import defaultdict
 from dataclasses import dataclass
@@ -151,17 +152,21 @@ class RenamePlanner:
         Group RAW/JPEG siblings (same basename in same directory).
 
         Files with the same basename but different extensions (e.g., IMG_001.JPG
-        and IMG_001.ARW) are grouped together for synchronized renaming.
+        and IMG_001.ARW) are grouped together for synchronized renaming. On
+        Windows and macOS (case-insensitive file systems) IMG_001.JPG and
+        img_001.arw are siblings too; on Linux they stay separate files.
 
         Returns:
             List of file groups, where each group is a list of related file paths
         """
+        fold_case = os.name == "nt" or sys.platform == "darwin"
         basename_groups = defaultdict(list)
         for path in self.files:
             if is_media_file(path):
-                directory = os.path.dirname(path)
+                directory = os.path.normcase(os.path.dirname(path))
                 stem = os.path.splitext(os.path.basename(path))[0]
-                basename_groups[f"{directory}#{stem}"].append(path)
+                # A tuple, not "dir#stem": "a/b#c" and "a#b/c" must not collide
+                basename_groups[(directory, stem.lower() if fold_case else stem)].append(path)
 
         file_groups = []
         orphans = []
