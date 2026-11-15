@@ -103,6 +103,20 @@ def _journal_path() -> str:
     return os.path.join(get_app_data_dir(), _JOURNAL_FILENAME)
 
 
+def _set_aside_corrupt_journal(path: str, reason: str) -> None:
+    """Move a journal that cannot be parsed out of the way.
+
+    The next write would otherwise replace it and destroy whatever could
+    still be recovered from it by hand.
+    """
+    corrupt_path = f"{path}.corrupt-{int(time.time())}"
+    try:
+        os.replace(path, corrupt_path)
+        log.error(f"Undo journal is corrupt ({reason}) - kept as {corrupt_path!r}, starting fresh")
+    except OSError as e:
+        log.error(f"Undo journal is corrupt ({reason}) and could not be set aside: {e}")
+
+
 def _read_journal_unlocked() -> Dict[str, Any]:
     """Read the journal file. Caller must hold ``_journal_lock``."""
     path = _journal_path()
@@ -111,35 +125,49 @@ def _read_journal_unlocked() -> Dict[str, Any]:
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        if not isinstance(data, dict):
-            log.warning("Undo journal has unexpected format - ignoring")
-            return {}
-        return data
-    except (json.JSONDecodeError, ValueError, OSError) as e:
-        # A corrupt or unreadable journal must never crash the app or block
-        # a rename operation - treat it as "nothing to recover" and move on.
+    except ValueError as e:  # includes JSONDecodeError and UnicodeDecodeError
+        _set_aside_corrupt_journal(path, str(e))
+        return {}
+    except OSError as e:
+        # An unreadable journal must never crash the app or block a rename
+        # operation - treat it as "nothing to recover" and move on.
         log.warning(f"Could not read undo journal ({e}) - starting fresh")
         return {}
+    if not isinstance(data, dict):
+        _set_aside_corrupt_journal(path, f"unexpected format {type(data).__name__}")
+        return {}
+    return data
 
 
-def _write_journal_unlocked(data: Dict[str, Any]) -> None:
-    """Atomically write the journal file. Caller must hold ``_journal_lock``."""
+def _write_journal_unlocked(data: Dict[str, Any]) -> bool:
+    """Atomically and durably write the journal file.
+
+    Caller must hold ``_journal_lock``.
+
+    Returns:
+        True if the journal is on disk. False if it could not be written;
+        callers about to modify a file must then not proceed, because the
+        backup only exists in memory.
+    """
     path = _journal_path()
     tmp_path = f"{path}.tmp"
     try:
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(data, f)
+            # Make the data durable before the rename, otherwise a power
+            # loss can leave an empty journal behind the atomic replace.
+            f.flush()
+            os.fsync(f.fileno())
         os.replace(tmp_path, path)  # atomic on POSIX and Windows
+        return True
     except OSError as e:
-        # Persisting the backup failing is unfortunate but must not raise -
-        # the caller (e.g. TimeShiftWorker) should be able to decide whether
-        # to proceed; we simply log loudly so it's visible in diagnostics.
         log.error(f"Could not persist undo journal to {path!r}: {e}")
         try:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
         except OSError:
             pass
+        return False
 
 
 def load_journal() -> Dict[str, Dict[str, Any]]:
@@ -152,13 +180,16 @@ def load_journal() -> Dict[str, Dict[str, Any]]:
         return _read_journal_unlocked()
 
 
-def save_backup(key: str, data: Dict[str, Any]) -> None:
+def save_backup(key: str, data: Dict[str, Any]) -> bool:
     """Persist ``data`` under ``key`` in the on-disk journal (full replace).
 
     This overwrites any previous contents for ``key`` with ``data`` as given,
     so callers that maintain the authoritative in-memory dict (like
     ``PersistedBackupDict``) should pass the complete current dict, not a
     delta.
+
+    Returns:
+        True if the journal was written.
     """
     with _journal_lock:
         journal = _read_journal_unlocked()
@@ -167,26 +198,34 @@ def save_backup(key: str, data: Dict[str, Any]) -> None:
         else:
             journal.pop(key, None)
         journal["_last_updated"] = time.time()
-        _write_journal_unlocked(journal)
+        return _write_journal_unlocked(journal)
 
 
-def clear_backup(key: str) -> None:
-    """Remove ``key`` from the journal (e.g. after a successful undo)."""
+def clear_backup(key: str) -> bool:
+    """Remove ``key`` from the journal (e.g. after a successful undo).
+
+    Returns:
+        True if the journal was written or nothing had to be removed.
+    """
     with _journal_lock:
         journal = _read_journal_unlocked()
-        if key in journal:
-            journal.pop(key, None)
-            journal["_last_updated"] = time.time()
-            _write_journal_unlocked(journal)
+        if key not in journal:
+            return True
+        journal.pop(key, None)
+        journal["_last_updated"] = time.time()
+        return _write_journal_unlocked(journal)
 
 
-def update_entries(changes: Dict[str, Dict[str, Any]]) -> None:
+def update_entries(changes: Dict[str, Dict[str, Any]]) -> bool:
     """Apply entry-level changes to several journal keys in one write.
 
     ``changes`` maps a journal key to ``{"set": {...}, "remove": [...]}``.
     Removals are applied before additions, so a rename can move an entry
     from its old path to its new path in a single call. Keys that end up
     empty are dropped from the journal.
+
+    Returns:
+        True if the journal was written.
     """
     with _journal_lock:
         journal = _read_journal_unlocked()
@@ -200,7 +239,7 @@ def update_entries(changes: Dict[str, Dict[str, Any]]) -> None:
             else:
                 journal.pop(key, None)
         journal["_last_updated"] = time.time()
-        _write_journal_unlocked(journal)
+        return _write_journal_unlocked(journal)
 
 
 def rekey_entries(entries: Dict[str, Any], path_mapping: Dict[str, str]) -> Dict[str, Any]:
@@ -216,11 +255,15 @@ def rekey_entries(entries: Dict[str, Any], path_mapping: Dict[str, str]) -> Dict
     return result
 
 
-def rekey_journal(path_mapping: Dict[str, str], keys=("timestamp_backup", "exif_backup")) -> None:
-    """Move journal entries of ``keys`` from old to new paths."""
+def rekey_journal(path_mapping: Dict[str, str], keys=("timestamp_backup", "exif_backup")) -> bool:
+    """Move journal entries of ``keys`` from old to new paths.
+
+    Returns:
+        True if the journal was written or nothing had to be moved.
+    """
     moved = {old: new for old, new in path_mapping.items() if old != new}
     if not moved:
-        return
+        return True
     with _journal_lock:
         journal = _read_journal_unlocked()
         changed = False
@@ -229,9 +272,10 @@ def rekey_journal(path_mapping: Dict[str, str], keys=("timestamp_backup", "exif_
             if entries and any(old in entries for old in moved):
                 journal[key] = rekey_entries(entries, moved)
                 changed = True
-        if changed:
-            journal["_last_updated"] = time.time()
-            _write_journal_unlocked(journal)
+        if not changed:
+            return True
+        journal["_last_updated"] = time.time()
+        return _write_journal_unlocked(journal)
 
 
 def clear_all() -> None:
@@ -301,12 +345,17 @@ class PersistedBackupDict(dict):
         modified) keeps the "backup before the destructive write" guarantee.
 
         Returns:
-            The keys that were recorded (keys with an existing backup are kept).
+            The keys that were recorded (keys with an existing backup are
+            kept). Empty if the journal could not be written: the caller
+            must then not modify those files.
         """
         new = {key: value for key, value in values.items() if key not in self}
         if new:
             super().update(new)
-            save_backup(self._journal_key, dict(self))
+            if not save_backup(self._journal_key, dict(self)):
+                for key in new:
+                    super().pop(key)
+                return set()
         return set(new)
 
     def remove_many(self, keys) -> None:

@@ -113,6 +113,11 @@ class TimeShiftWorker(QThread):
                     new_backups[file_path] = fields
                 eligible.append(file_path)
             created = exif_backup.record_originals(new_backups)
+            unsaved = set(new_backups) - created
+            if unsaved:
+                errors.extend((f, "Could not save the undo backup - skipped")
+                              for f in new_backups if f in unsaved)
+                eligible = [f for f in eligible if f not in unsaved]
             if not eligible:
                 continue
 

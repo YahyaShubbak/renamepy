@@ -358,6 +358,99 @@ class TestBackupsKeepOriginals:
 
 
 # ---------------------------------------------------------------------------
+# Nothing is modified when its backup cannot be written to the journal
+# ---------------------------------------------------------------------------
+class TestJournalWriteFailures:
+
+    @pytest.fixture
+    def unwritable_journal(self, tmp_path, monkeypatch):
+        """App-data "directory" that is a regular file: every write fails."""
+        blocker = tmp_path / "not_a_directory"
+        blocker.write_text("")
+        monkeypatch.setattr(backup_journal, "get_app_data_dir", lambda: str(blocker))
+
+    def test_record_originals_reports_nothing_recorded(self, unwritable_journal):
+        backup = PersistedBackupDict("exif_backup")
+        assert backup.record_originals({"/p/a.jpg": {"EXIF:DateTimeOriginal": "2024:01:01 10:00:00"}}) == set()
+        assert dict(backup) == {}
+
+    def test_journal_helpers_report_failure(self, unwritable_journal):
+        assert backup_journal.save_backup("exif_backup", {"/p/a.jpg": {}}) is False
+        assert backup_journal.update_entries({"original_filenames": {"set": {"/p/b.jpg": "a.jpg"}}}) is False
+        # Nothing to write counts as success
+        assert backup_journal.clear_backup("exif_backup") is True
+        assert backup_journal.rekey_journal({"/p/a.jpg": "/p/b.jpg"}) is True
+
+    def test_timestamp_sync_skips_file(self, tmp_path, unwritable_journal):
+        from modules.exif_processor import batch_sync_exif_dates
+        original = datetime.datetime(2020, 1, 1, 12, 0, 0)
+        f = _touch(tmp_path / "a.jpg", original)
+        options = {"use_custom": True, "custom_dt": datetime.datetime(2022, 1, 1)}
+
+        successes, errors, _backup = batch_sync_exif_dates([f], options=options)
+
+        assert successes == []
+        assert errors == [(f, "Could not back up the original timestamps - skipped")]
+        assert os.path.getmtime(f) == pytest.approx(original.timestamp())
+
+    def test_rename_renames_nothing(self, tmp_path, unwritable_journal):
+        a = _touch(tmp_path / "DSC0001.jpg", datetime.datetime(2024, 5, 1, 10))
+        worker = _make_worker([a], exif_method=None)
+
+        renamed, errors, _ts, mapping = worker.optimized_rename_files()
+
+        assert renamed == [] and mapping == {}
+        assert ("", "Could not write the undo journal - no files were renamed") in errors
+        assert [p.name for p in tmp_path.glob("*.jpg")] == ["DSC0001.jpg"]
+
+    def test_time_shift_skips_file(self, monkeypatch, unwritable_journal):
+        from modules.dialogs.exif_time_shift_dialog import TimeShiftWorker
+        run = MagicMock()
+        monkeypatch.setattr("subprocess.run", run)
+        monkeypatch.setattr(
+            "modules.exif_processor.get_exiftool_metadata_batch",
+            lambda *a, **k: {"/p/a.jpg": {"EXIF:DateTimeOriginal": "2024:01:01 10:00:00"}},
+        )
+        worker = TimeShiftWorker(["/p/a.jpg"], 1, 0, "forward", "/fake/exiftool")
+        results = []
+        worker.finished_signal.connect(lambda *args: results.append(args))
+        worker.run()
+
+        success_count, errors, backup = results[0]
+        assert success_count == 0
+        assert errors == [("/p/a.jpg", "Could not save the undo backup - skipped")]
+        assert backup == {}
+        run.assert_not_called()
+
+
+class TestJournalCorruption:
+
+    def test_corrupt_journal_is_set_aside(self, isolated_app_data):
+        journal = isolated_app_data / "pending_undo.json"
+        journal.write_text("{not json", encoding="utf-8")
+
+        assert load_journal() == {}
+        assert backup_journal.save_backup("exif_backup", {"/p/a.jpg": {"EXIF:DateTimeOriginal": "x"}}) is True
+
+        corrupt = list(isolated_app_data.glob("pending_undo.json.corrupt-*"))
+        assert len(corrupt) == 1
+        assert corrupt[0].read_text(encoding="utf-8") == "{not json"
+        assert load_journal()["exif_backup"] == {"/p/a.jpg": {"EXIF:DateTimeOriginal": "x"}}
+
+    def test_non_dict_journal_is_set_aside(self, isolated_app_data):
+        (isolated_app_data / "pending_undo.json").write_text("[1, 2]", encoding="utf-8")
+        assert load_journal() == {}
+        assert len(list(isolated_app_data.glob("pending_undo.json.corrupt-*"))) == 1
+
+    def test_write_is_fsynced(self, monkeypatch):
+        synced = []
+        real_fsync = os.fsync
+        monkeypatch.setattr(backup_journal.os, "fsync", lambda fd: (synced.append(fd), real_fsync(fd)))
+        assert backup_journal.save_backup("exif_backup", {"/p/a.jpg": {}}) is True
+        assert len(synced) == 1
+
+
+# ---------------------------------------------------------------------------
 # Undo keeps entries that could not be restored
 # ---------------------------------------------------------------------------
 class TestUndoKeepsFailures:

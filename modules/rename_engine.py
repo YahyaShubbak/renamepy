@@ -712,11 +712,14 @@ class RenameWorkerThread(QThread):
 
         planned_moves = [e for e in entries if e.changed]
         if planned_moves:
-            backup_journal.update_entries({
+            journaled = backup_journal.update_entries({
                 "original_filenames": {
                     "set": {e.target: self._original_name_of(e.source) for e in planned_moves},
                 },
             })
+            if not journaled:
+                errors.append(("", "Could not write the undo journal - no files were renamed"))
+                return renamed_files, errors, rename_mapping
 
         moved: Dict[str, str] = {}
         total = len(entries)
