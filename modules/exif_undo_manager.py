@@ -261,7 +261,7 @@ def batch_write_original_filenames(
         stderr = ""
         try:
             cmd = [exiftool_path, "-@", argfile,
-                   "-common_args", "-overwrite_original", *_CHARSET_ARGS]
+                   "-common_args", "-overwrite_original", "-P", *_CHARSET_ARGS]
             proc = _run_exiftool(cmd, timeout=max(60, 2 * len(chunk)))
             stderr = proc.stderr.strip()
             if proc.returncode != 0:
@@ -332,7 +332,7 @@ def clear_original_filename_from_exif(
         if not exiftool_path or not os.path.exists(exiftool_path):
             return False, "ExifTool executable not found"
 
-        cmd = [exiftool_path, "-overwrite_original", *_CHARSET_ARGS,
+        cmd = [exiftool_path, "-overwrite_original", "-P", *_CHARSET_ARGS,
                f"-{PRESERVED_FILENAME_TAG}="]
         if _read_rename_info([file_path], exiftool_path)[file_path]["legacy_marker"]:
             cmd.append(f"-{EXIF_USER_COMMENT_FIELD}=")

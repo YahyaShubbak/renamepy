@@ -242,3 +242,101 @@ class TestRenameWithMetadata:
         assert sorted(stored.values()) == ["DSC00001.JPG", "DSC00002.JPG"]
         by_new = {os.path.basename(k): v for k, v in stored.items()}
         assert by_new["2024-05-01_Trip_001.JPG"] == "DSC00001.JPG"
+
+
+class TestModificationTimePreserved:
+    """Regression: ExifTool rewrites the file, and without -P every metadata
+    write set its modification time to "now" - undoing a timestamp sync and
+    the timestamps restored by an undo."""
+
+    T = datetime.datetime(2020, 1, 2).timestamp()
+
+    def _jpeg_at_t(self, path, date_time_original=None):
+        path = _make_jpeg(path, date_time_original)
+        os.utime(path, (self.T, self.T))
+        return path
+
+    def _assert_mtime(self, path, expected):
+        assert abs(os.path.getmtime(path) - expected) < 2
+
+    def test_write_original_filename(self, tmp_path):
+        from modules.exif_undo_manager import batch_write_original_filenames
+        path = self._jpeg_at_t(tmp_path / "a.jpg")
+        successes, errors = batch_write_original_filenames([(path, "DSC00001.JPG")], EXIFTOOL)
+        assert (successes, errors) == ([path], [])
+        self._assert_mtime(path, self.T)
+
+    def test_clear_original_filename(self, tmp_path):
+        from modules.exif_undo_manager import (
+            batch_write_original_filenames, clear_original_filename_from_exif,
+        )
+        path = _make_jpeg(tmp_path / "a.jpg")
+        batch_write_original_filenames([(path, "DSC00001.JPG")], EXIFTOOL)
+        os.utime(path, (self.T, self.T))
+        ok, msg = clear_original_filename_from_exif(path, EXIFTOOL)
+        assert ok, msg
+        self._assert_mtime(path, self.T)
+
+    def test_restore_exif_timestamps(self, tmp_path):
+        from modules.exif_processor import restore_exif_timestamps
+        path = self._jpeg_at_t(tmp_path / "a.jpg", "2024:05:01 11:00:00")
+        ok, msg = restore_exif_timestamps(path, {"EXIF:DateTimeOriginal": "2024:05:01 10:00:00"}, EXIFTOOL)
+        assert ok, msg
+        self._assert_mtime(path, self.T)
+
+    def test_time_shift(self, tmp_path, service):
+        from modules import exif_processor
+        from modules.dialogs.exif_time_shift_dialog import TimeShiftWorker
+        path = self._jpeg_at_t(tmp_path / "a.jpg", "2024:05:01 10:00:00")
+        exif_processor.set_default_exif_service(service)
+        try:
+            worker = TimeShiftWorker([path], 1, 0, "forward", EXIFTOOL)
+            results = []
+            worker.finished_signal.connect(lambda *args: results.append(args))
+            worker.run()
+        finally:
+            exif_processor.set_default_exif_service(None)
+        success_count, errors, _backup = results[0]
+        assert (success_count, errors) == (1, [])
+        self._assert_mtime(path, self.T)
+
+    def test_sync_then_rename_with_original_name(self, tmp_path, service):
+        """Sync runs before the rename writes PreservedFileName; the synced
+        modification time must survive that write."""
+        from modules.rename_engine import RenameWorkerThread
+        from modules.exif_undo_manager import batch_get_original_filenames
+
+        path = _make_jpeg(tmp_path / "DSC00001.JPG", "2021:05:06 07:08:09")
+        worker = RenameWorkerThread(
+            files=[path], camera_prefix="", additional="", use_camera=False,
+            use_lens=False, exif_method="exiftool", separator="_",
+            exiftool_path=EXIFTOOL, custom_order=["Date", "Number"],
+            date_format="YYYY-MM-DD", use_date=True, continuous_counter=False,
+            selected_metadata={}, sync_exif_date=True, exif_service=service,
+            save_original_to_exif=True, mode="plan",
+        )
+        entries, plan_errors = worker.build_plan()
+        renamed, errors, _ts, _mapping = worker._sync_then_execute(entries, plan_errors)
+
+        assert errors == []
+        assert [os.path.basename(p) for p in renamed] == ["2021-05-06_001.JPG"]
+        assert batch_get_original_filenames(renamed, EXIFTOOL) == {renamed[0]: "DSC00001.JPG"}
+        self._assert_mtime(renamed[0], datetime.datetime(2021, 5, 6, 7, 8, 9).timestamp())
+
+    def test_undo_restores_exif_and_file_times(self, tmp_path, service):
+        from unittest.mock import MagicMock
+        from modules.handlers.undo_handler import UndoHandler
+
+        path = _make_jpeg(tmp_path / "a.jpg", "2024:05:01 11:00:00")  # shifted, mtime = now
+        app = MagicMock()
+        app.exiftool_path = EXIFTOOL
+        app.exif_backup = {path: {"EXIF:DateTimeOriginal": "2024:05:01 10:00:00"}}
+        app.timestamp_backup = {path: {"atime": self.T, "mtime": self.T, "ctime": self.T}}
+
+        errors = UndoHandler(app)._restore_all_timestamps()
+
+        assert errors == []
+        assert (app.exif_backup, app.timestamp_backup) == ({}, {})
+        self._assert_mtime(path, self.T)
+        assert service.parse_datetime_from_raw(service.extract_raw_exif(path)) == datetime.datetime(2024, 5, 1, 10)
+        app.preview_generator.clear_cache.assert_called()

@@ -651,7 +651,9 @@ def restore_exif_timestamps(file_path, original_exif, exiftool_path):
         # Add each backed-up field. The backup comes from a JSON file on
         # disk, so both the tag name (it becomes "-TAG=...", i.e. an ExifTool
         # option) and the value are validated before use.
-        options = ["-overwrite_original"]
+        # -P keeps the file's modification time (ExifTool rewrites the file).
+        base = ["-overwrite_original", "-P"]
+        options = list(base)
         for field, value in original_exif.items():
             if field not in RESTORABLE_DATE_TAGS:
                 log.warning(f"Skipping unexpected EXIF restore field: {field!r}")
@@ -662,7 +664,7 @@ def restore_exif_timestamps(file_path, original_exif, exiftool_path):
                 continue
             options.append(f'-{field}={str_value}')
 
-        if len(options) == 1:
+        if len(options) == len(base):
             return False, "No restorable EXIF fields in backup"
 
         result = run_exiftool_on_file(exiftool_path, options, file_path, timeout=60)

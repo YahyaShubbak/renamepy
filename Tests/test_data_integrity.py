@@ -350,6 +350,7 @@ class TestBackupsKeepOriginals:
         worker.run()
         success_count, errors, backup = results[0]
         assert run.call_count == 1
+        assert "-P" in run.call_args[0][0]  # keep the file's modification time
         assert success_count == 1
         assert errors == [("/p/b.jpg", "Error: locked - /p/b.jpg")]
         assert list(backup) == ["/p/a.jpg"]
@@ -377,6 +378,27 @@ class TestUndoKeepsFailures:
         assert list(app.timestamp_backup) == [missing]
         assert list(load_journal()["timestamp_backup"]) == [missing]
         assert os.path.getmtime(present) == pytest.approx(1.0e9)
+
+    def test_file_times_restored_after_exif(self, tmp_path, monkeypatch):
+        """The EXIF restore rewrites the file, so file times must come last."""
+        from modules.handlers.undo_handler import UndoHandler
+        f = _touch(tmp_path / "a.jpg")
+
+        def exif_restore_touching_mtime(backup, exiftool_path, progress_callback=None):
+            for path in backup:
+                os.utime(path, None)  # a write that cannot preserve mtime
+            return [(path, "ok") for path in backup], []
+
+        monkeypatch.setattr("modules.exif_processor.batch_restore_exif_timestamps",
+                            exif_restore_touching_mtime)
+        app = MagicMock()
+        app.timestamp_backup = {f: {"atime": 1.0e9, "mtime": 1.0e9, "ctime": 1.0e9}}
+        app.exif_backup = {f: {"EXIF:DateTimeOriginal": "2024:01:01 10:00:00"}}
+
+        errors = UndoHandler(app)._restore_all_timestamps()
+
+        assert errors == []
+        assert os.path.getmtime(f) == pytest.approx(1.0e9)
 
     def test_failed_name_restore_keeps_mapping(self, tmp_path):
         from modules.handlers.undo_handler import UndoHandler

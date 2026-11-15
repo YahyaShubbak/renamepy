@@ -955,9 +955,11 @@ class FileRenamerApp(QMainWindow):
                 self.log(f"📦 Backed up EXIF data for {len(exif_backup)} files")
                 self.update_restore_button_state()
             
-            # Clear EXIF cache to reload updated data
+            # Clear EXIF caches to reload updated data (they are keyed by
+            # mtime, which the shift deliberately leaves unchanged)
             self.exif_service.clear_cache()
-            
+            self.preview_generator.clear_cache()
+
             # Update preview with new times
             self.update_preview()
             

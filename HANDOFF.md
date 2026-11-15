@@ -29,6 +29,7 @@ Audited at commit `95dd4d2` (branch `main`, clean tree). Line numbers refer to t
 - **Verification tooling (read before Phase 2):**
   - Test command: `python -m pytest Tests -q -rs` with `QT_QPA_PLATFORM=offscreen`. CI also runs `python -m compileall -q modules RenameFiles.py Tests`. No linter or type checker exists (see ID-23).
   - Local interpreter with the runtime deps: `renamepy\Scripts\python.exe` (Python 3.13.5, PyQt6 6.10.0, PyExifTool 0.5.6); ExifTool 13.40 in `exiftool-13.40_64\`. **`pytest` and `pytest-qt` are not installed in it** (nor in any conda env that has PyQt6 + PyExifTool), so the baseline suite was **not** run during the audit. Before ID-01: `renamepy\Scripts\python.exe -m pip install -r requirements-dev.txt` (needs user approval), run the suite once and record the baseline here.
+  - **Baseline recorded (2026-11-15, before ID-01):** Linux, project `.venv` (Python 3.14.10, PyQt6 6.11.0, PyExifTool 0.5.6, pytest 9.2.0 + pytest-qt installed via `.venv/bin/python -m pip install -r requirements-dev.txt`), ExifTool 13.55 on `PATH` (`/usr/bin/vendor_perl/exiftool`). `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest Tests -q -rs` → **355 passed, 0 skipped**.
   - `Tests/conftest.py` redirects the journal to `tmp_path` (autouse). Any ad-hoc script must do the same (`backup_journal.get_app_data_dir = lambda: <tmp>`) or it pollutes the user's real undo journal.
   - Items marked "Reproduced" were confirmed by running the current code against real ExifTool 13.40 in a temp directory.
 - **Audit coverage & observations deliberately not queued:**
@@ -41,8 +42,8 @@ Audited at commit `95dd4d2` (branch `main`, clean tree). Line numbers refer to t
 ## 3. Prioritized Execution Queue
 (Ordered by logical execution sequence: foundational/structural fixes before dependent bug fixes, weighted by criticality: 🔴 Critical, 🟠 Architecture/Performance, 🟡 Hygiene/Quick Win)
 
-### [ ] ID-01: 🔴 ExifTool writes reset the file modification time (no `-P`) — defeats timestamp sync and corrupts undo
-- **Status:** `[OPEN]`
+### [x] ID-01: 🔴 ExifTool writes reset the file modification time (no `-P`) — defeats timestamp sync and corrupts undo
+- **Status:** `[DONE]`
 - **Location:** `modules/exif_undo_manager.py`, `modules/exif_processor.py`, `modules/dialogs/exif_time_shift_dialog.py`, `modules/main_application.py`, `modules/handlers/undo_handler.py`
 - **Code Anchor:**
   - `cmd = [exiftool_path, "-@", argfile, "-common_args", "-overwrite_original", *_CHARSET_ARGS]` in `batch_write_original_filenames` (Approx. Lines: `263–264`)
@@ -58,7 +59,14 @@ Audited at commit `95dd4d2` (branch `main`, clean tree). Line numbers refer to t
   4. In `UndoHandler._restore_all_timestamps`, move the whole "Restore EXIF timestamps" block above the "Restore file timestamps" block (file times last), so a platform where ExifTool cannot preserve a time still ends correct.
   5. Do not add `-P` to test helpers. Update tests that assert the exact command (`Tests/test_exif_undo_manager.py` fake `run(cmd, timeout)` around lines 143 and 267).
 - **Verification Criteria:** New tests in `Tests/test_exiftool_integration.py`: create a JPEG, `os.utime(f, (T, T))` with T = 2020-01-02, then assert `abs(os.path.getmtime(f) - T) < 2` after each of `batch_write_original_filenames`, `restore_exif_timestamps`, a `TimeShiftWorker.run()` shift, and after the end-to-end flow (plan → `_sync_then_execute` with `sync_exif_date=True, save_original_to_exif=True` → mtime equals the EXIF date). Add an undo test: file with both `timestamp_backup` and `exif_backup` → after `_restore_all_timestamps` mtime equals the backup. Run `python -m pytest Tests/test_exiftool_integration.py Tests/test_exif_undo_manager.py Tests/test_data_integrity.py -q`.
-- **Resolution & Diff Summary:**
+- **Resolution & Diff Summary:** Re-reproduced on Linux/ExifTool 13.55 before the fix (mtime → now without `-P`, kept with `-P`).
+  - `exif_undo_manager.py`: `-P` added after `-overwrite_original` in `batch_write_original_filenames` (inside `-common_args`, so it applies to every `-execute` block) and `clear_original_filename_from_exif`.
+  - `exif_processor.restore_exif_timestamps`: `base = ["-overwrite_original", "-P"]`, `options = list(base)`, emptiness check is now `len(options) == len(base)` (+2 lines; `batch_restore_exif_timestamps` now starts at ~681).
+  - `dialogs/exif_time_shift_dialog.py::TimeShiftWorker.run`: options are now `[f"-AllDates{operator}{time_shift}", "-overwrite_original", "-P"]` (+1 comment line; **ID-20's anchor text changed accordingly**; `remove_many` ~137, `_dates_shifted` ~143, `apply_time_shift` ~380).
+  - Cache coupling: `self.preview_generator.clear_cache()` after `self.exif_service.clear_cache()` in `FileRenamerApp.show_time_shift_dialog`; `app.preview_generator.clear_cache()` after `app.exif_service.clear_cache()` in `_restore_all_timestamps`.
+  - `UndoHandler._restore_all_timestamps`: the EXIF block now runs first, the file-timestamp block last (blocks swapped verbatim; `if app.exif_backup:` ~389, `if app.timestamp_backup:` ~418). Synchronous signature/behaviour unchanged for ID-07.
+  - Tests: new `TestModificationTimePreserved` (6 tests: write/clear original name, EXIF restore, time shift, plan → `_sync_then_execute` with sync + save-original, undo of both backups incl. `preview_generator.clear_cache` call) in `test_exiftool_integration.py`; `TestUndoKeepsFailures::test_file_times_restored_after_exif` (order, with an EXIF restore stub that bumps mtime) in `test_data_integrity.py`; `-P` assertions added to `test_time_shift_one_exiftool_call_per_chunk`, `TestBatchWrite::test_each_file_gets_its_own_value` (`_FakeExifTool` now records `write_cmds`) and `test_user_comment_only_cleared_if_ours`. All 11 new/changed checks fail on the pre-fix code.
+  - Verification: targeted command → 101 passed; full suite `QT_QPA_PLATFORM=offscreen .venv/bin/python -m pytest Tests -q -rs` → **362 passed, 0 skipped**; `compileall` clean; `git diff --check` clean.
 
 ### [ ] ID-02: 🔴 Files in a drive or filesystem root cannot be renamed ("Target path escapes source directory")
 - **Status:** `[OPEN]`

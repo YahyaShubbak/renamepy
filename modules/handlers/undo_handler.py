@@ -383,6 +383,37 @@ class UndoHandler:
         app = self.app
         errors: list[str] = []
 
+        # Restore EXIF timestamps first: writing metadata rewrites the file,
+        # so file timestamps are restored last and end up correct even where
+        # ExifTool cannot preserve a time.
+        if app.exif_backup:
+            app.log("🔄 Restoring original EXIF timestamps...")
+            try:
+                from ..exif_processor import batch_restore_exif_timestamps
+
+                exif_successes, exif_errors = batch_restore_exif_timestamps(
+                    dict(app.exif_backup),
+                    app.exiftool_path,
+                    progress_callback=lambda msg: app.status.showMessage(msg, 1000),
+                )
+                restored = {file_path for file_path, _ in exif_successes}
+                if restored:
+                    app.log(f"✅ Restored EXIF timestamps for {len(restored)} files")
+                    app.exif_service.clear_cache()
+                    app.preview_generator.clear_cache()
+                for file_path, error_msg in exif_errors:
+                    errors.append(
+                        f"EXIF timestamp restore failed for "
+                        f"{os.path.basename(file_path)}: {error_msg}"
+                    )
+                app.exif_backup = {
+                    k: v for k, v in app.exif_backup.items() if k not in restored
+                }
+                _update_journal({"exif_backup": {"remove": list(restored)}})
+            except Exception as e:
+                app.log(f"❌ Error during EXIF timestamp restore: {e}")
+                errors.append(f"EXIF timestamp restore error: {e}")
+
         # Restore file timestamps
         if app.timestamp_backup:
             app.log("🔄 Restoring original file timestamps...")
@@ -406,34 +437,6 @@ class UndoHandler:
             except Exception as e:
                 app.log(f"❌ Error during file timestamp restore: {e}")
                 errors.append(f"File timestamp restore error: {e}")
-
-        # Restore EXIF timestamps
-        if app.exif_backup:
-            app.log("🔄 Restoring original EXIF timestamps...")
-            try:
-                from ..exif_processor import batch_restore_exif_timestamps
-
-                exif_successes, exif_errors = batch_restore_exif_timestamps(
-                    dict(app.exif_backup),
-                    app.exiftool_path,
-                    progress_callback=lambda msg: app.status.showMessage(msg, 1000),
-                )
-                restored = {file_path for file_path, _ in exif_successes}
-                if restored:
-                    app.log(f"✅ Restored EXIF timestamps for {len(restored)} files")
-                    app.exif_service.clear_cache()
-                for file_path, error_msg in exif_errors:
-                    errors.append(
-                        f"EXIF timestamp restore failed for "
-                        f"{os.path.basename(file_path)}: {error_msg}"
-                    )
-                app.exif_backup = {
-                    k: v for k, v in app.exif_backup.items() if k not in restored
-                }
-                _update_journal({"exif_backup": {"remove": list(restored)}})
-            except Exception as e:
-                app.log(f"❌ Error during EXIF timestamp restore: {e}")
-                errors.append(f"EXIF timestamp restore error: {e}")
 
         return errors
 

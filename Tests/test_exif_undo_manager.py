@@ -63,6 +63,7 @@ class _FakeExifTool:
     def __init__(self):
         self.tags = {}  # path -> {"PreservedFileName": ..., "UserComment": ...}
         self.write_argfiles = []
+        self.write_cmds = []
 
     def __call__(self, cmd, timeout):
         with open(_argfile_of(cmd), encoding="utf-8") as f:
@@ -76,6 +77,7 @@ class _FakeExifTool:
             return _completed(0, stdout=json.dumps(entries))
         # Write: blocks separated by -execute
         self.write_argfiles.append(lines)
+        self.write_cmds.append(cmd)
         block = []
         for line in lines + ["-execute"]:
             if line != "-execute":
@@ -135,6 +137,8 @@ class TestBatchWrite:
         lines = fake.write_argfiles[0]
         assert lines.count("-execute") == 4
         assert f"-{PRESERVED_FILENAME_TAG}-=" in lines  # create-only
+        cmd = fake.write_cmds[0]
+        assert "-P" in cmd[cmd.index("-common_args"):]  # keep mtime in every block
 
     def test_file_not_confirmed_is_an_error(self, tmp_path, fake_exiftool):
         f = tmp_path / "clip.mp4"
@@ -276,6 +280,7 @@ class TestClearOriginalFilename:
         assert ok is True
         assert "cleared" in msg.lower()
         write_cmd = calls[-1]
+        assert "-P" in write_cmd
         assert f"-{PRESERVED_FILENAME_TAG}=" in write_cmd
         assert (f"-{EXIF_USER_COMMENT_FIELD}=" in write_cmd) is clears_comment
 

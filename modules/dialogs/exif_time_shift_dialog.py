@@ -83,7 +83,8 @@ class TimeShiftWorker(QThread):
         minutes_shift = abs(delta_minutes) % 60
         time_shift = f"{hours_shift}:{minutes_shift:02d}:00"
         operator = "+=" if delta_minutes >= 0 else "-="
-        options = [f"-AllDates{operator}{time_shift}", "-overwrite_original"]
+        # -P keeps the file's modification time (ExifTool rewrites the file).
+        options = [f"-AllDates{operator}{time_shift}", "-overwrite_original", "-P"]
         
         for start in range(0, total_files, SHIFT_CHUNK):
             if self.isInterruptionRequested():
