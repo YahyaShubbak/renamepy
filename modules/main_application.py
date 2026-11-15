@@ -217,6 +217,10 @@ class FileRenamerApp(QMainWindow):
                 self_inner.result_ready.emit(found)
 
         def _on_result(available: bool):
+            # result_ready is the last statement of run(): release the thread
+            checker.wait()
+            checker.deleteLater()
+            self._exif_undo_checker_ref = None
             self._exif_undo_available = available
             self._exif_undo_checked = True
             self._exif_undo_check_running = False
@@ -842,6 +846,8 @@ class FileRenamerApp(QMainWindow):
         )
         self.worker.progress_update.connect(self.update_status)
         self.worker.error.connect(self.on_rename_error)
+        # Release the thread object (and the plan/planner it holds) once done
+        self.worker.finished.connect(self.worker.deleteLater)
 
     def _show_progress(self, text, busy=False, total=0):
         """Modal progress dialog whose Cancel button stops the worker."""
@@ -868,6 +874,17 @@ class FileRenamerApp(QMainWindow):
         worker.progress_value.connect(on_value)
         self._progress_dialog = progress
 
+    def _release_worker(self):
+        """Forget the finished rename worker (deleted via QThread.finished).
+
+        Its result signal is the last statement of ``run()``; waiting makes
+        sure the thread has actually ended before the UI is re-enabled.
+        """
+        worker = self.worker
+        if worker is not None:
+            worker.wait()
+            self.worker = None
+
     def _close_progress(self):
         progress = getattr(self, '_progress_dialog', None)
         if progress is not None:
@@ -882,7 +899,9 @@ class FileRenamerApp(QMainWindow):
         self._close_progress()
         worker = self.worker
         worker.wait()
-        if worker.was_cancelled:
+        was_cancelled = worker.was_cancelled
+        self.worker = None
+        if was_cancelled:
             self._ui_set_busy(False)
             self.status.showMessage("Rename cancelled", 4000)
             return
@@ -896,7 +915,7 @@ class FileRenamerApp(QMainWindow):
 
     def _start_rename_execution(self, entries, plan_errors):
         self._start_worker("execute", plan=entries, plan_errors=plan_errors)
-        self.worker.finished.connect(self.on_rename_finished)
+        self.worker.rename_finished.connect(self.on_rename_finished)
         total = sum(1 for e in entries if e.changed)
         self._show_progress("Renaming files..." if total else "Synchronizing timestamps...",
                             busy=not total, total=total)
@@ -1067,6 +1086,7 @@ class FileRenamerApp(QMainWindow):
         """
         from .backup_journal import rekey_entries
 
+        self._release_worker()
         self._close_progress()
         rename_mapping = rename_mapping or {}
         moved = {old: new for new, old in rename_mapping.items() if new != old}
@@ -1102,6 +1122,7 @@ class FileRenamerApp(QMainWindow):
         self.status.showMessage(f"Completed: {len(renamed_files)} files renamed", 5000)
 
     def on_rename_error(self, error_message):
+        self._release_worker()
         self._close_progress()
         self._ui_set_busy(False)
         QMessageBox.critical(self, "Critical Error", f"Unexpected error during renaming:\n{error_message}")

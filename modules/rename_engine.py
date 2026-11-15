@@ -540,6 +540,9 @@ class RenamePlanner:
         file_groups = self.create_file_groups()
         self._progress(f"Processing {len(file_groups)} file groups...")
         exif_cache = self.pre_extract_exif_cache(file_groups)
+        # Consumed by pre_extract_exif_cache; the raw dicts of every group
+        # would otherwise stay alive as long as the planner.
+        self._continuous_raw_cache = {}
 
         self._progress("Sorting files by capture time...")
         file_groups.sort(key=lambda g: self.exif_sort_key(g, exif_cache))
@@ -585,13 +588,15 @@ class RenameWorkerThread(QThread):
 
     ``mode``:
         ``"plan"``    - only compute the plan, emit ``plan_ready``
-        ``"execute"`` - run the sync and execute ``plan``, emit ``finished``
+        ``"execute"`` - run the sync and execute ``plan``, emit ``rename_finished``
         ``"full"``    - plan and execute in one go (default)
     """
     progress_update = pyqtSignal(str)
     progress_value = pyqtSignal(int, int)  # done, total
     plan_ready = pyqtSignal(list, list)  # plan entries, errors
-    finished = pyqtSignal(list, list, dict, dict)  # renamed_files, errors, timestamp_backup, rename_mapping
+    # Not "finished": that would hide QThread.finished (thread end), which
+    # the window needs to release the worker.
+    rename_finished = pyqtSignal(list, list, dict, dict)  # renamed_files, errors, timestamp_backup, rename_mapping
     error = pyqtSignal(str)
 
     def __init__(
@@ -823,8 +828,8 @@ class RenameWorkerThread(QThread):
                     entries, errors = [], []
                 self.plan_ready.emit(entries, errors)
             elif self.mode == 'execute':
-                self.finished.emit(*self._sync_then_execute(self.plan, self.plan_errors))
+                self.rename_finished.emit(*self._sync_then_execute(self.plan, self.plan_errors))
             else:
-                self.finished.emit(*self.optimized_rename_files())
+                self.rename_finished.emit(*self.optimized_rename_files())
         except Exception as e:
             self.error.emit(str(e))
