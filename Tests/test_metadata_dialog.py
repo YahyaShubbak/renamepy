@@ -105,3 +105,41 @@ def test_show_exif_info_for_missing_file(manager, tmp_path, monkeypatch):
         manager.show_exif_info(str(tmp_path / "gone.jpg"))
     assert len(shown) == 1
     manager.parent.log.assert_called()  # the "File not found" note, not an error
+
+
+# ---------------------------------------------------------------------------
+# EXIF time shift dialog: preview parses dates like the rename does
+# ---------------------------------------------------------------------------
+def _shift_preview(qtbot, monkeypatch, metas, hours=1):
+    from modules.dialogs.exif_time_shift_dialog import ExifTimeShiftDialog
+    files = list(metas)
+    monkeypatch.setattr("modules.exif_processor.get_exiftool_metadata_shared",
+                        lambda path, exiftool_path=None: metas[path])
+    dialog = ExifTimeShiftDialog(None, files, "/fake/exiftool")
+    qtbot.addWidget(dialog)
+    dialog.hours_spin.setValue(hours)
+    dialog.minutes_spin.setValue(0)
+    table = dialog.preview_table
+    return [(table.item(r, 1).text(), table.item(r, 2).text()) for r in range(table.rowCount())]
+
+
+def test_time_shift_preview_with_subseconds_and_zone(qtbot, monkeypatch):
+    """Regression: strptime failed on sub-seconds/zones ("Error: ...")."""
+    rows = _shift_preview(qtbot, monkeypatch, {
+        "/p/a.jpg": {"EXIF:DateTimeOriginal": "2024:01:15 10:30:45.12+02:00"},
+    })
+    assert rows == [("2024:01:15 10:30:45", "2024:01:15 11:30:45")]
+
+
+def test_time_shift_preview_uses_the_rename_tags(qtbot, monkeypatch):
+    rows = _shift_preview(qtbot, monkeypatch, {
+        # Apple video: CreationDate (local, with zone) ranks above CreateDate
+        "/p/clip.mov": {"QuickTime:CreateDate": "2024:01:15 08:30:45",
+                        "QuickTime:CreationDate": "2024:01:15 10:30:45+02:00"},
+        # Not a string (ExifTool -n can return numbers): row must not be dropped
+        "/p/b.jpg": {"EXIF:DateTimeOriginal": 20240115},
+        "/p/c.jpg": {"EXIF:Model": "X"},
+    })
+    assert rows[0] == ("2024:01:15 10:30:45", "2024:01:15 11:30:45")
+    assert len(rows) == 3
+    assert rows[2] == ("No EXIF time found", "No change")

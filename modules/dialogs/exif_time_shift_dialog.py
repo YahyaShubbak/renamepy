@@ -12,7 +12,7 @@ from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
 import os
 import subprocess
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from ..file_utilities import is_media_file
 from ..logger_util import get_logger
@@ -337,27 +337,28 @@ class ExifTimeShiftDialog(QDialog):
     def load_sample_times(self):
         """Load current timestamps from first 10 files"""
         from ..exif_processor import get_exiftool_metadata_shared
+        from ..exif_service_new import ExifService
         
         sample_files = self.files[:10]
         
         for file_path in sample_files:
             try:
-                # Get current EXIF time
+                # Current capture time: the same tags, in the same order and
+                # parsed the same way as for renaming (sub-seconds and zone
+                # suffixes included)
                 meta = get_exiftool_metadata_shared(file_path, self.exiftool_path)
-                
-                current_time = "No EXIF time found"
-                if meta:
-                    for field in ['EXIF:DateTimeOriginal', 'EXIF:CreateDate', 'QuickTime:CreateDate']:
-                        if field in meta:
-                            current_time = meta[field]
-                            break
+                current_dt = ExifService.parse_datetime_from_raw(meta) if meta else None
+                current_item = QTableWidgetItem(
+                    current_dt.strftime("%Y:%m:%d %H:%M:%S") if current_dt else "No EXIF time found"
+                )
+                current_item.setData(Qt.ItemDataRole.UserRole, current_dt)
                 
                 # Add to table (will be updated by update_preview)
                 row = self.preview_table.rowCount()
                 self.preview_table.insertRow(row)
                 
                 self.preview_table.setItem(row, 0, QTableWidgetItem(os.path.basename(file_path)))
-                self.preview_table.setItem(row, 1, QTableWidgetItem(current_time))
+                self.preview_table.setItem(row, 1, current_item)
                 self.preview_table.setItem(row, 2, QTableWidgetItem(""))
                 
             except Exception as e:
@@ -379,17 +380,13 @@ class ExifTimeShiftDialog(QDialog):
         
         # Update each row
         for row in range(self.preview_table.rowCount()):
-            current_time_str = self.preview_table.item(row, 1).text()
+            current_dt = self.preview_table.item(row, 1).data(Qt.ItemDataRole.UserRole)
             
-            if current_time_str == "No EXIF time found":
+            if current_dt is None:
                 self.preview_table.setItem(row, 2, QTableWidgetItem("No change"))
                 continue
             
             try:
-                # Parse current time: "2024:01:15 10:30:45"
-                current_time_clean = current_time_str.replace(':', '-', 2)
-                current_dt = datetime.strptime(current_time_clean, "%Y-%m-%d %H:%M:%S")
-                
                 # Apply delta
                 new_dt = current_dt + delta
                 
