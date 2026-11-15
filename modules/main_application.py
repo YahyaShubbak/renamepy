@@ -265,17 +265,7 @@ class FileRenamerApp(QMainWindow):
             bool: True if there are filenames, file timestamps, or EXIF
                   timestamps that can be restored
         """
-        # Check if we have original filename tracking (regardless of whether they've changed)
-        has_filename_data = bool(self.original_filenames)
-        
-        # Check if we have timestamp backup data
-        has_timestamp_data = bool(self.timestamp_backup)
-
-        # Check if we have EXIF timestamp backup data (e.g. from a Time
-        # Shift operation, or recovered from a previous session)
-        has_exif_data = bool(self.exif_backup)
-        
-        return has_filename_data or has_timestamp_data or has_exif_data
+        return self.state.has_restore_data()
 
     def update_restore_button_state(self):
         """Update the restore button state based on available restore data"""
@@ -1213,12 +1203,6 @@ class FileRenamerApp(QMainWindow):
         if theme:
             self.theme_combo.setCurrentText(theme)
             self.theme_manager.apply_theme(theme, self)
-            
-        # Restore last directory
-        last_dir = self.settings_manager.get_last_directory()
-        if last_dir and os.path.exists(last_dir):
-            # We don't automatically load files, but we could set the default dir for dialogs
-            pass
 
     def closeEvent(self, event):
         """Handle application close event.

@@ -63,9 +63,3 @@ class SettingsManager:
 
     def set_show_exiftool_warning(self, show: bool):
         self.settings.setValue("show_exiftool_warning", show)
-        
-    def get_last_directory(self) -> str:
-        return self.settings.value("last_directory", "", type=str)
-        
-    def set_last_directory(self, path: str):
-        self.settings.setValue("last_directory", path)

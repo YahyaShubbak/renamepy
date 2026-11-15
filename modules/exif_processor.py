@@ -15,12 +15,10 @@ from typing import TYPE_CHECKING
 from .logger_util import get_logger
 log = get_logger()
 
-# EXIF processing imports - exact same as original
-import importlib.util
-
 # PyExifTool (pip install PyExifTool) is used through exif_service_new;
-# here only its availability matters.
-EXIFTOOL_AVAILABLE = importlib.util.find_spec("exiftool") is not None
+# here only its availability matters (no import cycle: exif_service_new
+# imports this module only inside functions).
+from .exif_service_new import EXIFTOOL_AVAILABLE
 
 # ---------------------------------------------------------------------------
 # Module-level ExifService reference for backward-compatible delegate functions.
@@ -253,24 +251,14 @@ def find_exiftool_path():
                         log.debug(f"ExifTool located at: {candidate}")
                         return candidate
 
-    # 2) Check a few legacy project paths explicitly (backwards compatibility)
-    legacy_paths = [
-        os.path.join(script_dir, "exiftool-13.33_64", "exiftool.exe"),
-        os.path.join(script_dir, "exiftool-13.32_64", "exiftool.exe"),
-    ]
-    for path in legacy_paths:
-        if os.path.exists(path) and verify_exiftool(path):
-            log.debug(f"ExifTool located at: {path}")
-            return path
-
-    # 3) Check system PATH using shutil.which
+    # 2) Check system PATH using shutil.which
     for name in ("exiftool.exe", "exiftool"):
         which_path = shutil.which(name)
         if which_path and verify_exiftool(which_path):
             log.debug(f"ExifTool located on PATH: {which_path}")
             return which_path
 
-    # 4) Common Windows locations (only checked on Windows)
+    # 3) Common Windows locations (only checked on Windows)
     if os.name == 'nt':
         common_windows = [
             "C:\\exiftool\\exiftool.exe",

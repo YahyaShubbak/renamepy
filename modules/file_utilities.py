@@ -24,11 +24,15 @@ class FileConstants:
     """Constants for file processing"""
     
     # File extension constants
+    RAW_EXTENSIONS = [
+        '.cr2', '.cr3', '.nef', '.arw', '.orf', '.rw2', '.dng', '.raw', '.sr2', '.pef', '.raf',
+        '.3fr', '.erf', '.kdc', '.mos', '.nrw', '.srw', '.x3f'
+    ]
+
     IMAGE_EXTENSIONS = [
         '.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif', '.gif',
         '.heic', '.heif', '.avif', '.webp',
-        '.cr2', '.cr3', '.nef', '.arw', '.orf', '.rw2', '.dng', '.raw', '.sr2', '.pef', '.raf',
-        '.3fr', '.erf', '.kdc', '.mos', '.nrw', '.srw', '.x3f'
+        *RAW_EXTENSIONS,
     ]
 
     VIDEO_EXTENSIONS = [

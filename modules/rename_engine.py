@@ -767,7 +767,7 @@ class RenameWorkerThread(QThread):
         self.sync_exif_date = sync_exif_date
         self._log = log_callable or (lambda *a, **k: None)
         self.save_original_to_exif = save_original_to_exif  # Persistent undo feature
-        self.timestamp_options = kwargs.get('timestamp_options') or kwargs.get('TIMESTAMP_OPTIONS')
+        self.timestamp_options = kwargs.get('timestamp_options')
         self.leave_names = kwargs.get('leave_names', False)
         # {current_path: original_basename} from earlier renames, so a
         # second rename still remembers the name before the first one.

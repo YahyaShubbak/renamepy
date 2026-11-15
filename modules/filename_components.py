@@ -18,7 +18,7 @@ FORBIDDEN_CHARS_PATTERN = re.compile(r'[<>:"/\\|?*]')
 WHITESPACE_PATTERN = re.compile(r'\s+')
 
 # Metadata keys that can appear as boolean flags meaning: value must be resolved later
-BOOLEAN_META_KEYS = {"iso", "aperture", "focal_length", "shutter", "shutter_speed", "resolution"}
+BOOLEAN_META_KEYS = {"iso", "aperture", "focal_length", "shutter", "shutter_speed"}
 
 
 def _format_date(raw: Optional[str], fmt: str) -> Optional[str]:

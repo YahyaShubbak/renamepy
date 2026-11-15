@@ -35,19 +35,12 @@ def extract_image_number(image_path, exif_method, exiftool_path, exif_service=No
         if not exif_data:
             return None
         
-        # List of possible fields for image/shutter count in priority order
+        # List of possible fields for image/shutter count in priority order.
+        # Metadata is read with "-G" (group 0), which reports the camera
+        # makers' tags as "MakerNotes:...", never "Canon:..."/"Sony:...".
         image_number_fields = [
             'EXIF:ShutterCount',
-            'Canon:ShutterCount', 
-            'Nikon:ShutterCount',
-            'Sony:ShutterCount',
-            'Olympus:ShutterCount',
-            'Panasonic:ShutterCount',
-            'Fujifilm:ShutterCount',
             'EXIF:ImageNumber',
-            'Canon:ImageNumber',
-            'Nikon:ImageNumber', 
-            'Sony:ImageNumber',
             'MakerNotes:ShutterCount',
             'MakerNotes:ImageNumber',
             'File:FileNumber'
@@ -65,7 +58,6 @@ def extract_image_number(image_path, exif_method, exiftool_path, exif_service=No
         # If no specific image number field found, try sequential numbering fields
         sequence_fields = [
             'EXIF:SequenceNumber',
-            'Canon:SequenceNumber',
             'File:SequenceNumber'
         ]
         

@@ -25,7 +25,7 @@ from typing import Optional, Tuple, List
 from .logger_util import get_logger
 from .exif_service_new import (
     exiftool_write_timeout, existing_exiftool_tmp_files, remove_exiftool_tmp_files,
-    argfile_safe, argfile_path_line,
+    argfile_safe, argfile_path_line, EXIFTOOL_CHARSET_ARGS,
 )
 
 log = get_logger()
@@ -38,8 +38,6 @@ EXIF_USER_COMMENT_FIELD = "EXIF:UserComment"
 ORIGINAL_NAME_PREFIX = "OriginalName: "
 RENAME_DATE_PREFIX = " | RenameDate: "
 
-# UTF-8 file names on every platform (see exif_service_new.EXIFTOOL_CHARSET_ARGS)
-_CHARSET_ARGS = ["-charset", "filename=utf8"]
 
 # Files per ExifTool invocation. File names go through an argument file,
 # so this only bounds the work per subprocess, not the command-line length.
@@ -115,7 +113,7 @@ def _read_rename_info(file_paths: List[str], exiftool_path: str) -> dict:
         argfile = _write_argfile([argfile_path_line(p) for p in chunk])
         try:
             cmd = [
-                exiftool_path, "-json", *_CHARSET_ARGS,
+                exiftool_path, "-json", *EXIFTOOL_CHARSET_ARGS,
                 f"-{PRESERVED_FILENAME_TAG}", f"-{EXIF_USER_COMMENT_FIELD}",
                 "-@", argfile,
             ]
@@ -271,7 +269,7 @@ def batch_write_original_filenames(
         tmp_before = existing_exiftool_tmp_files(chunk_paths)
         try:
             cmd = [exiftool_path, "-@", argfile,
-                   "-common_args", "-overwrite_original", "-P", *_CHARSET_ARGS]
+                   "-common_args", "-overwrite_original", "-P", *EXIFTOOL_CHARSET_ARGS]
             proc = _run_exiftool(cmd, timeout=exiftool_write_timeout(chunk_paths))
             stderr = proc.stderr.strip()
             if proc.returncode != 0:
@@ -343,7 +341,7 @@ def clear_original_filename_from_exif(
         if not exiftool_path or not os.path.exists(exiftool_path):
             return False, "ExifTool executable not found"
 
-        cmd = [exiftool_path, "-overwrite_original", "-P", *_CHARSET_ARGS,
+        cmd = [exiftool_path, "-overwrite_original", "-P", *EXIFTOOL_CHARSET_ARGS,
                f"-{PRESERVED_FILENAME_TAG}="]
         if _read_rename_info([file_path], exiftool_path)[file_path]["legacy_marker"]:
             cmd.append(f"-{EXIF_USER_COMMENT_FIELD}=")

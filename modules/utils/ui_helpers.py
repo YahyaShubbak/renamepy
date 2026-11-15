@@ -3,7 +3,9 @@ UI Helper Utilities - Common utility functions for UI operations
 Extracted from main_application.py to reduce clutter
 """
 
-from ..file_utilities import is_video_file as _is_video_file_canonical
+import os
+
+from ..file_utilities import FileConstants, is_image_file, is_video_file
 
 
 def calculate_stats(files):
@@ -18,24 +20,14 @@ def calculate_stats(files):
     """
     total = len(files)
     
-    # Count different file types
+    # Count different file types (extension lists from FileConstants)
     jpeg_count = sum(1 for f in files if f.lower().endswith(('.jpg', '.jpeg')))
-    raw_count = sum(1 for f in files if any(
-        f.lower().endswith(ext) for ext in [
-            '.cr2', '.cr3', '.nef', '.arw', '.orf', '.rw2', '.dng', '.raw',
-            '.sr2', '.pef', '.raf', '.3fr', '.erf', '.kdc', '.mos', 
-            '.nrw', '.srw', '.x3f'
-        ]
-    ))
-    other_images = sum(1 for f in files if any(
-        f.lower().endswith(ext) for ext in [
-            '.png', '.bmp', '.tiff', '.tif', '.gif', '.heic', '.heif', '.avif', '.webp'
-        ]
-    ))
-    total_images = jpeg_count + raw_count + other_images
+    raw_count = sum(1 for f in files
+                    if os.path.splitext(f)[1].lower() in FileConstants.RAW_EXTENSIONS)
+    total_images = sum(1 for f in files if is_image_file(f))
     # EDGE 3 fix: count actual video files instead of assuming
     # everything that isn't an image is a video.
-    videos = sum(1 for f in files if _is_video_file_canonical(f))
+    videos = sum(1 for f in files if is_video_file(f))
     
     return {
         'total_files': total,
@@ -47,12 +39,3 @@ def calculate_stats(files):
         'images': total_images, 
         'videos': videos
     }
-
-
-def is_video_file(file_path: str) -> bool:
-    """Check if file is a video file.
-
-    Delegates to the canonical implementation in file_utilities to avoid
-    maintaining a duplicate extension list.
-    """
-    return _is_video_file_canonical(file_path)
