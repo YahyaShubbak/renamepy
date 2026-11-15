@@ -494,3 +494,57 @@ class TestCounterLogic:
             renamed, errors, _, _mapping = worker.optimized_rename_files()
 
         assert len(errors) == 0
+
+
+# ---------------------------------------------------------------------------
+# A group's date may come from a sibling (live photo: .MOV listed first)
+# ---------------------------------------------------------------------------
+class TestGroupCaptureDate:
+    """Regression: ordering and the continuous counter used only group[0],
+    while the name took the date of the first member that had one."""
+
+    @staticmethod
+    def _files(tmp_path):
+        # Pair: IMG_0001.MOV (unreadable, mtime next day) + IMG_0001.HEIC (09:00)
+        mov = tmp_path / "IMG_0001.MOV"
+        heic = tmp_path / "IMG_0001.HEIC"
+        single = tmp_path / "IMG_0002.JPG"  # 10:00
+        for path in (mov, heic, single):
+            path.write_bytes(b"x")
+        late = datetime.datetime(2024, 5, 2, 12, 0).timestamp()
+        os.utime(mov, (late, late))
+        meta = {
+            str(mov): {},
+            str(heic): {"EXIF:DateTimeOriginal": "2024:05:01 09:00:00"},
+            str(single): {"EXIF:DateTimeOriginal": "2024:05:01 10:00:00"},
+        }
+        service = MagicMock()
+        service.batch_get_raw_metadata.side_effect = lambda paths, chunk_size=50: {p: meta[p] for p in paths}
+        service.get_selective_cached_exif_data.return_value = (None, None, None)
+        return [str(mov), str(heic), str(single)], service
+
+    @pytest.mark.parametrize("continuous", [False, True])
+    def test_pair_ordered_and_named_by_sibling_date(self, tmp_path, continuous):
+        files, service = self._files(tmp_path)
+        worker = _make_worker(files, exif_service=service, continuous_counter=continuous,
+                              custom_order=["Date", "Number"], camera_prefix="")
+
+        entries, errors = worker.build_plan()
+
+        assert errors == []
+        names = {os.path.basename(e.source): os.path.basename(e.target) for e in entries}
+        assert names == {
+            "IMG_0001.MOV": "2024-05-01_001.MOV",
+            "IMG_0001.HEIC": "2024-05-01_001.HEIC",
+            "IMG_0002.JPG": "2024-05-01_002.JPG",
+        }
+
+    def test_counter_map_reads_every_member_once(self, tmp_path):
+        files, service = self._files(tmp_path)
+        worker = _make_worker(files, exif_service=service, continuous_counter=True,
+                              custom_order=["Date", "Number"], camera_prefix="")
+
+        worker.build_plan()
+
+        requested = [p for call in service.batch_get_raw_metadata.call_args_list for p in call.args[0]]
+        assert sorted(requested) == sorted(files)

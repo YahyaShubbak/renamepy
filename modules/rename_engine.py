@@ -227,10 +227,27 @@ class RenamePlanner:
                 pass
         return _mtime_or_zero(path)
 
+    @staticmethod
+    def _group_capture_meta(
+        group: List[str], raw_by_path: Dict[str, Optional[Dict[str, Any]]]
+    ) -> Optional[Dict[str, Any]]:
+        """Raw metadata of the first group member that has a capture date.
+
+        The same member whose date names the group (see :meth:`group_values`),
+        e.g. the HEIC of a live photo whose .MOV is listed first.
+        """
+        for path in group:
+            meta = raw_by_path.get(path)
+            if meta and ExifService.parse_datetime_from_raw(meta) is not None:
+                return meta
+        return None
+
     def exif_sort_key(self, group: List[str], exif_cache: Dict[str, Optional[Dict[str, Any]]]) -> Tuple[float, int, str]:
         """Sort key for chronological order: capture time, sequence number, path."""
         first_file = group[0]
-        raw_meta = (exif_cache.get(first_file) or {}).get('raw_meta')
+        raw_meta = self._group_capture_meta(
+            group, {path: (exif_cache.get(path) or {}).get('raw_meta') for path in group}
+        )
         return (self.capture_timestamp(first_file, raw_meta), _last_number(first_file), first_file)
 
     def _selective_exif(self, path, need_date, need_camera, need_lens):
@@ -257,39 +274,39 @@ class RenamePlanner:
 
         self._progress("Creating continuous counter map...")
         file_groups = self.create_file_groups()
-        first_files = [group[0] for group in file_groups]
+        # Every member, not just the first: the group's date may come from a
+        # sibling (pre_extract_exif_cache reuses this, so no extra I/O)
+        all_files = [path for group in file_groups for path in group]
 
-        date_by_file: Dict[str, Optional[str]] = {}
         raw_batch: Dict[str, Dict[str, Any]] = {}
-        if self.exif_service and self.exif_method and first_files:
-            raw_batch = self.exif_service.batch_get_raw_metadata(first_files, chunk_size=50)
+        if self.exif_service and self.exif_method and all_files:
+            raw_batch = self.exif_service.batch_get_raw_metadata(all_files, chunk_size=50)
             # Save raw metadata for reuse by pre_extract_exif_cache
             self._continuous_raw_cache = raw_batch
-            for fp, meta in raw_batch.items():
-                date_by_file[fp] = ExifService.parse_date_from_raw(meta) if meta else None
 
-        date_group_pairs = []
+        date_group_triples = []
         for group in file_groups:
             first_file = group[0]
-            file_date = date_by_file.get(first_file)
+            capture_meta = self._group_capture_meta(group, raw_batch)
+            file_date = ExifService.parse_date_from_raw(capture_meta) if capture_meta else None
             # Per-file fallback when the batch didn't run or returned nothing
-            if file_date is None and first_file not in date_by_file:
+            if file_date is None and first_file not in raw_batch:
                 file_date = self._selective_exif(first_file, True, False, False)[0]
             file_date = (file_date or _date_from_filename(first_file)
                          or _date_from_mtime(first_file) or '19700101')
-            date_group_pairs.append((file_date, group))
+            date_group_triples.append((file_date, group, capture_meta))
 
         # Sort by date, then capture time (mtime fallback), then the camera's
         # sequence number. Every key has the same element types, so equal
         # dates and times never end up comparing an int with a str.
-        date_group_pairs.sort(key=lambda pair: (
-            pair[0],
-            self.capture_timestamp(pair[1][0], raw_batch.get(pair[1][0])),
-            _last_number(pair[1][0]),
-            pair[1][0],
+        date_group_triples.sort(key=lambda triple: (
+            triple[0],
+            self.capture_timestamp(triple[1][0], triple[2]),
+            _last_number(triple[1][0]),
+            triple[1][0],
         ))
         counter_map: Dict[str, int] = {}
-        for number, (_date, group) in enumerate(date_group_pairs, start=1):
+        for number, (_date, group, _meta) in enumerate(date_group_triples, start=1):
             for file in group:
                 counter_map[file] = number
         self.continuous_counter_map = counter_map
@@ -338,7 +355,8 @@ class RenamePlanner:
         date_taken = camera_model = lens_model = None
         first_file = group[0]
 
-        if exif_cache.get(first_file):
+        # Any member's metadata counts (the first file may be unreadable)
+        if any(exif_cache.get(path) for path in group):
             for path in group:
                 entry = exif_cache.get(path)
                 if not entry:
